@@ -1,0 +1,69 @@
+w:\unisim_iv_2024\sens_hist\base_case_3a.sr3
+
+Filename: base_case_3a.sr3
+Path: W:\unisim_iv_2024\sens_hist
+Simulator: GEM 2023.20
+Date Modified: 2024-Jan-24 18:20:59
+
+Simulation Timeline:
+  base_case_3a.sr3
+    2018-Sep-02 to 2024-Aug-03
+
+Wells: 20 (137 Parameters)
+Layers: 1,642 (1 Parameters)
+Groups: 16 (131 Parameters)
+Sectors: 1 (79 Parameters)
+SpecHist: 1 (12 Parameters)
+Block Properties: 1 (0 Parameters)
+
+Simulation Time Steps: 3,609
+Grid Output Time Steps: 2
+Grid Dimensions: i=47, j=39, k=291
+Grid Blocks: 533,403 (Fundamental), 0 (Refined)
+DFNs: 0 (0 DFUs, 0 DFSs)
+Spatial Properties: 58
+
+Wells:
+    I11
+    I11-W
+    I12
+    I12-W
+    13
+    I13-W
+    I14
+    I14-W
+    I15
+    I15-W
+    I16
+    I16-W
+    I17
+    I17-W
+    P11
+    P12
+    P13
+    P14
+    P15
+    P16
+
+Components:
+    CO2
+    N2toCH4
+    C2HtoNC5
+    C6ttoC19
+    C29toC63
+
+Groups:
+    Default-Group
+    FIELD
+    I-PLAT1
+    I-PLA-TLD
+    P-PLAT1
+    P-PLAT-TLDPLAT1
+    PLAT-TLD
+
+Sectors:
+    FIELD
+
+Special History
+
+
