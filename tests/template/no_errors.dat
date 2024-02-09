@@ -1,0 +1,17 @@
+** Some comments
+No variables to read
+The first variable is <\var>No_Default<var>
+Second is <\var>With_Default_12[12]<var> is ok
+<\var>With_Type_int[int,42]<var> is an integer
+Now a normal distribution <\var>normal_variable[float,0.5,(normal,0, 2.5)]<var> with mean 0 and variance 2.5.
+Another a normal distribution <\var>normal_variable_no_type[0.5,(normal,0, 2.5)]<var> with mean 0 and variance 2.5.
+just a line
+
+Two variables: <\var>List_int[int,3,(categorical,{1,3,7,-12},{0.2,0.15,0.25,0.400})]<var> and <\var>List_float[float,7.,(categorical,{1,3,7,-12},{0.2,0.15,0.25,0.400})]<var>
+
+Distribution with explicit type: <\var>normal_no_type_float[(normal,0, 2.5)]<var>
+Distribution with explicit type: <\var>uniform_no_type_int[(uniform,0, 12)]<var>
+Distribution with explicit type: <\var>uniform_no_type_float[(uniform,0., 12.)]<var>
+Distribution with explicit type: <\var>constant_no_type_str[(constant,0)]<var>
+
+The last line with no variables.
