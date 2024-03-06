@@ -1,12 +1,13 @@
+"""
+Implements the class TemplateProcessor
+"""
 from pathlib import Path
 import re
-from ast import literal_eval
+from pyDOE import lhs # type: ignore
+from scipy import stats # type: ignore
 
-from pyDOE import lhs
-import numpy as np
-import pandas as pd
-
-from scipy import stats
+import numpy as np # type: ignore # noqa: F401
+import pandas as pd # type: ignore # noqa: F401
 
 class TemplateProcessor:
 
@@ -190,7 +191,9 @@ class TemplateProcessor:
                     return None
             return var
         try:
-            var_type = literal_eval(variable_type)
+            var_type = {'int': int,
+                    'str': str,
+                    'float': float}[variable_type.strip().lower()]
             return var_type(variable)
         except (ValueError, TypeError, NameError):
             return None
@@ -468,8 +471,9 @@ class TemplateProcessor:
                         print(f"Variable '{key}' already has a distribution. Will ignore data.")
                         continue
                     self.variables[key]['values'] = list(df[key])
-            except (ValueError, TypeError, NameError):
-                print(f'Error reading variables table file: {variables_table_path}')
+            except (ValueError, TypeError, NameError) as e:
+                msg = f'Error reading variables table file: {variables_table_path}'
+                raise ValueError(msg) from e
 
     def _check_generate_experiments(self, n_samples=0):
         tables_n_values = []
@@ -659,10 +663,6 @@ class TemplateProcessor:
             pattern = f'<\\\\var>{var}[^<]+<var>'
             value = self._transform_variable(values[var], data['type'])
             new_text = re.sub(pattern, str(value), new_text)
-        # for var in self.variables:
-        #     pattern = f'<\\\\var>{var}[^<]+<var>'
-        #     value = self._transform_variable(values[var], self.variables[var]['type'])
-        #     new_text = re.sub(pattern, str(value), new_text)
         with open(output_file_path, 'w', encoding=self._encoding) as f:
             f.write(new_text)
 
