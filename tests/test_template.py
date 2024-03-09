@@ -197,7 +197,7 @@ class TestTemplate(unittest.TestCase):
                             f"Failed to calculate max for '{k}': {np.max(data)} > {v['max']}")
 
     def test_generate_files(self):
-        """Generate files based on template"""
+        """Test file generation based on template"""
         text = [
             r'uniform int         = "<\var>var1[int,1,(uniform,1,10)]<var>"',
             r'uniform float       = "<\var>var2[float,1,(uniform,0,1)]<var>"',
@@ -231,6 +231,30 @@ class TestTemplate(unittest.TestCase):
             msg = f'File {file_name} was not generated.'
             self.assertTrue(Path(temp_dir / file_name).exists(), msg)
         delete_temp_folder(temp_dir=temp_dir)
+    
+    def test_error_catching(self):
+        """Test error catching"""
+        error_list = {
+            # 'no error': r'<\var>var[1.5, (normal,0, 2.5)]<var>',
+            # 'bogus text 1': r'<\var>var[1.5, (normal,0,2.)ABC]<var>',
+            'bogus text 2': r'<\var>var[1.5, (normal,0,2.), ABC]<var>',
+            # 'bogus text 3': r'<\var>var[1.5, (normal,0,2.)]ABC<var>',
+            # 'bogus text 4': r'<\var>var[1.5, (normal,0,2.)], ABC<var>',
+            'too few parameters': r'<\var>var[(normal,0)]<var>',
+            'too many parameters': r'<\var>var[(normal,0, 2.5, 7)]<var>',
+            'invalid distribution': r'<\var>var[(nomal,0, 2.5)]<var>',
+            'missing comma 1': r'<\var>var[float 1.5, (normal,0, 2.5)]<var>',
+            'missing comma 2': r'<\var>var[float, 1.5 (normal,0, 2.5)]<var>',
+            'missing comma 3': r'<\var>var[float, 1.5, (normal 0, 2.5)]<var>',
+            'missing comma 4': r'<\var>var[float, 1.5, (normal,0 2.5)]<var>',
+            'type inconsistency': r'<\var>var[str, 1.5, (normal,0, 2.5)]<var>',
+            'unclosed var': r'<\var>var[1.5, (normal,0, 2.5)]var>',
+        }
+
+        for k,v in error_list.items():
+            msg = f'Could not catch the "{k}" error.'
+            with self.assertRaises(ValueError,msg=msg):
+                _ = process_temporary_file(v)
 
 
 if __name__ == '__main__':
