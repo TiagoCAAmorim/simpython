@@ -637,10 +637,15 @@ class TemplateProcessor:
 
         if self._verbose:
             print('Building experiments')
+
+        if len(self.variables) == 1:
+            iterations = 1
+        else:
+            iterations = min(100, max(1, int(1e6*np.power(n_samples, -2.))))
         samples = lhs(len(self.variables),
                       samples=n_samples,
                       criterion='maximin',
-                      iterations=min(100, max(1, int(1e6*np.power(10, -2.)))))
+                      iterations=iterations)
 
         if self._verbose:
             print('Calculating inverse CDF')
@@ -691,6 +696,7 @@ class TemplateProcessor:
         with open(self._template_path, 'r', encoding=self._encoding) as f:
             text = f.read()
 
+        self._output_file_path.parent.mkdir(parents=True, exist_ok=True)
         for index, row in self.experiments_table.iterrows():
             file_name = f"{self._output_file_path.stem}_{index}{self._output_file_path.suffix}"
             new_file_path = self._output_file_path.with_name(file_name)
