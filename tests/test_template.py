@@ -153,8 +153,8 @@ class TestTemplate(unittest.TestCase):
                 'text': r'<\var>var[float,1,(lognormal,0,1)]<var>',
                 'min': 0,
                 'max': np.inf,
-                'mean': lognorm.mean(s=1, loc=0, scale=np.exp(0)), 
-                'std_dev': lognorm.std(s=1, loc=0, scale=np.exp(0)) 
+                'mean': lognorm.mean(s=1, loc=0, scale=np.exp(0)),
+                'std_dev': lognorm.std(s=1, loc=0, scale=np.exp(0))
             },
             'triangular 0,3,1': {
                 'text': r'<\var>var[float,1,(triangular,0,3,1)]<var>',
@@ -189,7 +189,7 @@ class TestTemplate(unittest.TestCase):
             self.assertTrue(_aproximate(np.mean(data), v['mean'], 0.05),
                             f"Failed to calculate mean for '{k}': {np.mean(data)} != {v['mean']}")
             self.assertTrue(_aproximate(np.std(data), v['std_dev'], 0.10),
-                            f"Failed to calculate std dev for '{k}':"+
+                            f"Failed to calculate std dev for '{k}':" +
                             f" {np.std(data)} != {v['std_dev']}")
             self.assertTrue(np.min(data) >= v['min'],
                             f"Failed to calculate min for '{k}': {np.min(data)} < {v['min']}")
@@ -209,11 +209,11 @@ class TestTemplate(unittest.TestCase):
             r'constant int        = "<\var>var8A[int,1,(constant,2)]<var>"',
             r'constant float      = "<\var>var8B[float,1,(constant,2)]<var>"',
             r'constant str        = "<\var>var8C[str,1,(constant,2)]<var>"',
-            r'categorical int     = "<\var>var9A[int,1,(categorical,{1,2,3,4}'+
+            r'categorical int     = "<\var>var9A[int,1,(categorical,{1,2,3,4}' +
             ',{0.1,0.1,0.2,0.6})]<var>"',
-            r'categorical float   = "<\var>var9B[float,1,(categorical,{1,2,3,4}'+
+            r'categorical float   = "<\var>var9B[float,1,(categorical,{1,2,3,4}' +
             ',{0.1,0.1,0.2,0.6})]<var>"',
-            r'categorical str     = "<\var>var9C[str,1,(categorical,{1,2,3,4}'+
+            r'categorical str     = "<\var>var9C[str,1,(categorical,{1,2,3,4}' +
             ',{0.1,0.1,0.2,0.6})]<var>"',
         ]
 
@@ -231,7 +231,7 @@ class TestTemplate(unittest.TestCase):
             msg = f'File {file_name} was not generated.'
             self.assertTrue(Path(temp_dir / file_name).exists(), msg)
         delete_temp_folder(temp_dir=temp_dir)
-    
+
     def test_error_catching(self):
         """Test error catching"""
         error_list = {
@@ -251,9 +251,9 @@ class TestTemplate(unittest.TestCase):
             'unclosed var': r'<\var>var[1.5, (normal,0, 2.5)]var>',
         }
 
-        for k,v in error_list.items():
+        for k, v in error_list.items():
             msg = f'Could not catch the "{k}" error.'
-            with self.assertRaises(ValueError,msg=msg):
+            with self.assertRaises(ValueError, msg=msg):
                 _ = process_temporary_file(v)
 
 

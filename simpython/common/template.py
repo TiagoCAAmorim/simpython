@@ -3,11 +3,12 @@ Implements the class TemplateProcessor
 """
 from pathlib import Path
 import re
-from pyDOE import lhs # type: ignore
-from scipy import stats # type: ignore
+from pyDOE import lhs  # type: ignore
+from scipy import stats  # type: ignore
 
-import numpy as np # type: ignore # noqa: F401
-import pandas as pd # type: ignore # noqa: F401
+import numpy as np  # type: ignore # noqa: F401
+import pandas as pd  # type: ignore # noqa: F401
+
 
 class TemplateProcessor:
 
@@ -80,37 +81,38 @@ class TemplateProcessor:
 
         self._template_path = Path(template_path)
         if not self._template_path.exists():
-            raise FileNotFoundError(f"Template file '{self._template_path}' not found.")
+            raise FileNotFoundError(
+                f"Template file '{self._template_path}' not found.")
 
         self._verbose = verbose
         self._all_uniform = all_uniform
         self._encoding = encoding
 
         self._valid_distributions = {
-            'uniform':      {'parameters':2,
-                             'description':('minimum','maximum'),
-                             'types':['int','float']},
-            'normal':       {'parameters':2,
-                             'description':('mean','std_var'),
-                             'types':['float']},
-            'truncnormal':  {'parameters':4,
-                             'description':('mean','std_var','minimum','maximum'),
-                             'types':['float']},
-            'lognormal':    {'parameters':2,
-                             'description':('mean','std_var'),
-                             'types':['float']},
-            'triangular':   {'parameters':3,
-                             'description':('minimum','maximum','most_likelly'),
-                             'types':['float']},
-            'constant':     {'parameters':1,
-                             'description':('value',),
-                             'types':['int','float','str']},
-            'categorical':  {'parameters':2,
-                             'description':('values_list','probabilities_list'),
-                             'types':['int','float','str']},
-            'table':        {'parameters':0,
-                             'description':('no parameters',),
-                             'types':['str']}
+            'uniform':      {'parameters': 2,
+                             'description': ('minimum', 'maximum'),
+                             'types': ['int', 'float']},
+            'normal':       {'parameters': 2,
+                             'description': ('mean', 'std_var'),
+                             'types': ['float']},
+            'truncnormal':  {'parameters': 4,
+                             'description': ('mean', 'std_var', 'minimum', 'maximum'),
+                             'types': ['float']},
+            'lognormal':    {'parameters': 2,
+                             'description': ('mean', 'std_var'),
+                             'types': ['float']},
+            'triangular':   {'parameters': 3,
+                             'description': ('minimum', 'maximum', 'most_likelly'),
+                             'types': ['float']},
+            'constant':     {'parameters': 1,
+                             'description': ('value',),
+                             'types': ['int', 'float', 'str']},
+            'categorical':  {'parameters': 2,
+                             'description': ('values_list', 'probabilities_list'),
+                             'types': ['int', 'float', 'str']},
+            'table':        {'parameters': 0,
+                             'description': ('no parameters',),
+                             'types': ['str']}
         }
         # std_dev from mean to define limits of normal distribution variables when
         # using option all_uniform=True
@@ -136,8 +138,9 @@ class TemplateProcessor:
     def list_valid_distributions(self):
         """Lists all valid distribuition and respective arguments."""
 
-        for k,v in self._valid_distributions.items():
-            msg1 = f"{k} distribution - parameters: {', '.join(v['description'])};"
+        for k, v in self._valid_distributions.items():
+            msg1 = f"{
+                k} distribution - parameters: {', '.join(v['description'])};"
             msg2 = f"valid type(s): {', '.join(v['types'])}"
             print(" ".join([msg1, msg2]))
 
@@ -172,13 +175,16 @@ class TemplateProcessor:
         with open(self._template_path, 'r', encoding=self._encoding) as file:
             for line_num, line in enumerate(file, start=1):
                 if line.count(r'<\var>') != line.count('<var>'):
-                    raise ValueError(f"Unclosed <\\var> <var> at line {line_num}.")
-                parts = self._extract_contents(text=line, start=r'<\\var>', end=r'<var>')
+                    raise ValueError(
+                        f"Unclosed <\\var> <var> at line {line_num}.")
+                parts = self._extract_contents(
+                    text=line, start=r'<\\var>', end=r'<var>')
                 if len(parts) > 0:
                     for part in parts:
                         var = part.strip()
                         if var == '':
-                            raise ValueError(f"Empty variable name at line {line_num}.")
+                            raise ValueError(
+                                f"Empty variable name at line {line_num}.")
                         variables_raw.append(var)
         return variables_raw
 
@@ -186,14 +192,15 @@ class TemplateProcessor:
         if isinstance(variable, list):
             var = []
             for v in variable:
-                var.append(self._transform_variable(variable=v, variable_type=variable_type))
+                var.append(self._transform_variable(
+                    variable=v, variable_type=variable_type))
                 if var[-1] is None:
                     return None
             return var
         try:
             var_type = {'int': int,
-                    'str': str,
-                    'float': float}[variable_type.strip().lower()]
+                        'str': str,
+                        'float': float}[variable_type.strip().lower()]
             return var_type(variable)
         except (ValueError, TypeError, NameError):
             return None
@@ -211,13 +218,15 @@ class TemplateProcessor:
         parameters = parameters[1:]
         if len(parameters) != self._valid_distributions[distribution]['parameters']:
             expected = self._valid_distributions[distribution]['parameters']
-            msg1 = f"Invalid number of parameters for distribution '{distribution}'."
+            msg1 = f"Invalid number of parameters for distribution '{
+                distribution}'."
             msg2 = f" Expected {expected}, found {len(parameters)}."
             raise ValueError(" ".join([msg1, msg2]))
 
         if var_type is not None:
             if var_type not in self._valid_distributions[distribution]['types']:
-                types = ', '.join(self._valid_distributions[distribution]['types'])
+                types = ', '.join(
+                    self._valid_distributions[distribution]['types'])
                 msg1 = f"Invalid type ({var_type})"
                 msg2 = f"for distribution '{distribution}'."
                 msg3 = f"Valid option(s): {types}."
@@ -228,8 +237,9 @@ class TemplateProcessor:
             else:
                 param_list = parameters
 
-            for i,p in enumerate(param_list):
-                new_value = self._transform_variable(variable=p, variable_type=var_type)
+            for i, p in enumerate(param_list):
+                new_value = self._transform_variable(
+                    variable=p, variable_type=var_type)
                 if new_value is None:
                     msg1 = f"Parameters for distribution '{distribution}'"
                     msg2 = f"must be of type {var_type}."
@@ -252,27 +262,22 @@ class TemplateProcessor:
         if distribution == 'categorical':
             param_list = parameters[1].lstrip('{').rstrip('}').split(',')
             if len(parameters[0]) != len(param_list):
-                msg1 = f"Inconsistent number of values in distribution '{distribution}'."
+                msg1 = f"Inconsistent number of values in distribution '{
+                    distribution}'."
                 msg2 = f"Values found: {len(parameters[0])},"
                 msg3 = f"associated probabilities: {len(param_list)}."
                 raise ValueError(" ".join([msg1, msg2, msg3]))
             for i, p in enumerate(param_list):
-                new_value = self._transform_variable(variable=p, variable_type='float')
+                new_value = self._transform_variable(
+                    variable=p, variable_type='float')
                 if new_value is None:
                     msg1 = f"Probabilities for distribution '{distribution}'"
                     msg2 = f"must be of type float. Cannot transform '{p}'."
                     raise ValueError(" ".join([msg1, msg2]))
                 param_list[i] = new_value
-            # for i in range(len(param_list)):
-                # new_value = self._transform_variable(variable=param_list[i],
-                                                    #  variable_type='float')
-            #     if new_value is None:
-            #         raise ValueError(f"Probabilities for distribution '{distribution}'
-                #  must be of type float.
-                                       # Cannot transform '{param_list[i]}'.")
-            #     param_list[i] = new_value
             s = sum(param_list)
-            cum_list = [sum(param_list[:i+1])/s for i in range(len(param_list))]
+            cum_list = [sum(param_list[:i+1]) /
+                        s for i in range(len(param_list))]
             parameters[1] = cum_list
 
         return distribution, parameters
@@ -311,7 +316,8 @@ class TemplateProcessor:
         default = None
         var_type = None
 
-        distribution_text = self._extract_contents(text=text, start=r'\(', end=r'\)')
+        distribution_text = self._extract_contents(
+            text=text, start=r'\(', end=r'\)')
         if len(distribution_text) > 1:
             msg1 = f"Bad distribution options format in: '{text}'."
             msg2 = "Only one distribution with ( and ) can be defined."
@@ -329,27 +335,32 @@ class TemplateProcessor:
             distribution_text = None
 
         if len(options) > 2:
-            raise ValueError(f"Bad options format in: '{options}'. Too many options.")
+            raise ValueError(f"Bad options format in: '{
+                             options}'. Too many options.")
         elif len(options) > 0:
             if len(options) > 1 or options[0] != '':
                 default = options[-1].strip()
                 if len(options) == 2:
                     var_type = options[0].strip()
-                    default = self._transform_variable(variable=default, variable_type=var_type)
+                    default = self._transform_variable(
+                        variable=default, variable_type=var_type)
                     if default is None:
                         msg1 = f"Default value ({options[-1]})"
                         msg2 = "must be of the defined type ({var_type})."
                         raise ValueError(" ".join([msg1, msg2]))
 
-        distribution, parameters = self._parse_distribution(distribution_text, var_type)
+        distribution, parameters = self._parse_distribution(
+            distribution_text, var_type)
 
         if var_type is None:
-            check_type = self._check_variable_type(default, distribution, parameters)
+            check_type = self._check_variable_type(
+                default, distribution, parameters)
             default, distribution, parameters, var_type = check_type
         if var_type is None:
             msg1 = "Couldn't find the variable type based on provided data: "
             msg2 = f"'{text}'. Possible type(s) for {distribution} are:"
-            msg3 = f"{', '.join(self._valid_distributions[distribution]['types'])}."
+            msg3 = f"{
+                ', '.join(self._valid_distributions[distribution]['types'])}."
             raise ValueError(" ".join([msg1, msg2, msg3]))
 
         return {'active': True,
@@ -388,7 +399,8 @@ class TemplateProcessor:
             key = self._parse_key(text)
             if key in variables:
                 if self._verbose and key not in repetition:
-                    print(f'  key {key} found more than once. Ignoring options in repetitions.')
+                    print(
+                        f'  key {key} found more than once. Ignoring options in repetitions.')
                     repetition.append(key)
             else:
                 options = self._parse_options(text)
@@ -419,7 +431,8 @@ class TemplateProcessor:
                 self._output_file_path = Path(output_file_path)
             except (ValueError, TypeError, NameError) as exc:
                 self._output_file_path = None
-                raise ValueError(f'Invalid file path: {str(output_file_path)}') from exc
+                raise ValueError(f'Invalid file path: {
+                                 str(output_file_path)}') from exc
 
     def set_encoding(self, encoding):
         """Sets the encoding used for reading and writting files.
@@ -465,14 +478,17 @@ class TemplateProcessor:
                 df = pd.read_csv(variables_table_path, skipinitialspace=True)
                 for key in df.columns:
                     if key not in self.variables:
-                        print(f"Variable '{key}' not found in template. Will ignore data.")
+                        print(f"Variable '{
+                              key}' not found in template. Will ignore data.")
                         continue
                     if self.variables[key]['distribution'] != 'table':
-                        print(f"Variable '{key}' already has a distribution. Will ignore data.")
+                        print(f"Variable '{
+                              key}' already has a distribution. Will ignore data.")
                         continue
                     self.variables[key]['values'] = list(df[key])
             except (ValueError, TypeError, NameError) as e:
-                msg = f'Error reading variables table file: {variables_table_path}'
+                msg = f'Error reading variables table file: {
+                    variables_table_path}'
                 raise ValueError(msg) from e
 
     def _check_generate_experiments(self, n_samples=0):
@@ -484,7 +500,8 @@ class TemplateProcessor:
         if len(tables_n_values) > 0:
             if not min(tables_n_values) == max(tables_n_values):
                 msg1 = "Number of entries in 'table' variables is inconsistent,"
-                msg2 = f"ranging from {min(tables_n_values)} to {max(tables_n_values)}."
+                msg2 = f"ranging from {min(tables_n_values)} to {
+                    max(tables_n_values)}."
                 msg3 = "Cannot continue."
                 print(" ".join([msg1, msg2, msg3]))
                 return None
@@ -505,7 +522,8 @@ class TemplateProcessor:
             return None
         elif tables_n_values != n_samples:
             msg1 = f"Number of values in 'table' variables ({tables_n_values})"
-            msg2 = f"is different from the requested sample size ({n_samples})."
+            msg2 = f"is different from the requested sample size ({
+                n_samples})."
             msg3 = "Cannot continue."
             print(" ".join([msg1, msg2, msg3]))
             return None
@@ -608,7 +626,8 @@ class TemplateProcessor:
         if variable not in self.variables:
             raise ValueError(f"Unknown variable: {variable}.")
         if not active and self.variables[variable]['default'] is None:
-            raise ValueError(f"Cannot deactivate a variable without a default value: {variable}.")
+            raise ValueError(
+                f"Cannot deactivate a variable without a default value: {variable}.")
         self.variables[variable]['default'] = active
 
     def generate_experiments(self, n_samples=0, all_uniform=None):
@@ -659,7 +678,8 @@ class TemplateProcessor:
             elif data['distribution'] == 'table':
                 df[var] = data['values']
             else:
-                df[var] = self._inv_cdf(samples[:, column_index], data, all_uniform)
+                df[var] = self._inv_cdf(
+                    samples[:, column_index], data, all_uniform)
         self.experiments_table = df
 
     def _create_new_file(self, output_file_path, values, text):
@@ -698,6 +718,7 @@ class TemplateProcessor:
 
         self._output_file_path.parent.mkdir(parents=True, exist_ok=True)
         for index, row in self.experiments_table.iterrows():
-            file_name = f"{self._output_file_path.stem}_{index}{self._output_file_path.suffix}"
+            file_name = f"{self._output_file_path.stem}_{
+                index}{self._output_file_path.suffix}"
             new_file_path = self._output_file_path.with_name(file_name)
             self._create_new_file(new_file_path, row.to_dict(), text)
