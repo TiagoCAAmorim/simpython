@@ -75,7 +75,7 @@ class TemplateProcessor:
             Number of samples to be generated.
             (default: 0)
         encoding : str, optional
-            Encoding used for read and writting files.
+            Encoding used for reading and writting files.
             (default: 'utf-8')
         """
 
@@ -246,13 +246,6 @@ class TemplateProcessor:
                     msg3 = f"Cannot transform '{param_list[i]}'."
                     raise ValueError(" ".join([msg1, msg2, msg3]))
                 param_list[i] = new_value
-            # for i in range(len(param_list)):
-            #     new_value = self._transform_variable(variable=param_list[i],
-                #  variable_type=var_type)
-            #     if new_value is None:
-            #         raise ValueError(f"Parameters for distribution '{distribution}'
-                #  must be of type {var_type}. Cannot transform '{param_list[i]}'.")
-            #     param_list[i] = new_value
 
             if distribution == 'categorical':
                 parameters[0] = param_list
@@ -337,7 +330,7 @@ class TemplateProcessor:
         if len(options) > 2:
             raise ValueError(f"Bad options format in: '{
                              options}'. Too many options.")
-        elif len(options) > 0:
+        if len(options) > 0:
             if len(options) > 1 or options[0] != '':
                 default = options[-1].strip()
                 if len(options) == 2:
