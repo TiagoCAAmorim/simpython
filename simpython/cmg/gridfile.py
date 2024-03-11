@@ -57,7 +57,8 @@ class GridFile:
                       'values': []}
         self._encoding = encoding
         if auto_read and self._file_path.exists():
-            self.read()
+            if self._file_path.is_file():
+              self.read()
 
     def set_file_path(self, file_path):
         """Sets path to grid file.
@@ -189,6 +190,10 @@ class GridFile:
         if not self._file_path.exists():
             raise FileNotFoundError(
                 f"Grid file '{self._file_path}' not found.")
+        if not self._file_path.is_file():
+            raise FileNotFoundError(
+                f"Provided path is not a file: {self._file_path}.")
+
 
         with self._file_path.open(mode='r', encoding=self._encoding) as file:
             for line in file:
