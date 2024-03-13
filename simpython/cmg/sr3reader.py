@@ -54,6 +54,7 @@ class Sr3Reader:
             raise FileNotFoundError(f'File not found: {self._file_path}')
 
         self._f = None
+        self._open_count = 0
         self._group_type = None
         self._dataset_type = None
 
@@ -70,6 +71,8 @@ class Sr3Reader:
         self._timestep = {}
         self._day = {}
         self._date = {}
+
+        self._grid_size = {}
 
         self.read()
 
@@ -88,22 +91,39 @@ class Sr3Reader:
         """Manually open sr3 file."""
         if self._f is None:
             self._f = h5py.File(self._file_path)
+            self._open_count = 0
+        self._open_count += 1
 
-    def close(self):
+    def close(self, force=False):
         """Manually close sr3 file."""
-        if self._f is not None:
-            self._f.close()
+        if self._f is None:
+            self._open_count = 0
+        else:
+            if force:
+                self._open_count = 1
+            if self._open_count == 1:
+                self._f.close()
+                self._f = None
+            self._open_count -= 1
 
+    def _need_read_file(func):  # pylint: disable=no-self-argument
+        def wrapper(self, *args, **kwargs):
+            self.open()
+            result = func(*args, **kwargs) # pylint: disable=not-callable
+            self.close()
+            return result
+        return wrapper
+
+    @_need_read_file # type: ignore[arg-type]
     def list_hdf(self):
         """Returns dict with all groups and databases in file"""
-        self.open()
         sr3_elements = {}
         def get_type(name):
             sr3_elements[name] = type(self._f[name])
         self._f.visit(get_type)
-        self.close()
         return sr3_elements
 
+    @_need_read_file # type: ignore[arg-type]
     def read(self, read_elements=True):
         """Reads general data
 
@@ -114,19 +134,19 @@ class Sr3Reader:
             should be read from sr3 file.
             (default: True)
         """
-        self.open()
         self._group_type = type(self._f['General'])
         self._dataset_type = type(self._f['General/HistoryTable'])
 
         self._read_master_dates(self._f)
         self._read_master_units(self._f)
+        self._read_master_component_table(self._f)
         self._read_master_properties(self._f)
 
         if read_elements:
+            self._get_grid_sizes()
             for _ in ['well', 'group', 'sector', 'layer', 'special', 'grid']:
                 # elements, properties, dates, days
                 pass
-        self.close()
 
     def _read_master_dates(self, f):
         dataset = f['General/MasterTimeTable']
@@ -238,7 +258,9 @@ class Sr3Reader:
                 d = d + c
         return unit
 
-    def _unit_conversion_from_dimensionality(self, dimensionality_string, is_delta=False):
+    def _unit_conversion_from_dimensionality(self,
+                                             dimensionality_string,
+                                             is_delta=False):
         if dimensionality_string == '':
             return (1., 0.)
         gain = 1.
@@ -407,7 +429,8 @@ class Sr3Reader:
             unique_items[item] = None
         return list(unique_items.keys())
 
-    def _get_dataset(self, f, element_type, dataset_string):
+    @_need_read_file # type: ignore[arg-type]
+    def _get_dataset(self, element_type, dataset_string):
         if element_type == 'grid':
             s = f'SpatialProperties/{dataset_string.upper()}'
         else:
@@ -417,26 +440,25 @@ class Sr3Reader:
             else:
                 el_type_string = el_type_string + 'S'
             s = f'TimeSeries/{el_type_string}/{dataset_string}'
-        if s in f:
-            return f[s]
+        if s in self._f:
+            return self._f[s]
         msg = f'Dataset {dataset_string} not found for {element_type}. {s} does not exist.'
         raise ValueError(msg)
 
-    def _get_elements(self, f, element_type):
+    def _get_elements(self, element_type):
         if element_type not in self._element:
-            dataset = self._get_dataset(f=f, element_type=element_type, dataset_string='Origins')
+            dataset = self._get_dataset(element_type=element_type, dataset_string='Origins')
             self._element[element_type] = {
                 name.decode():number for (number,name)
                 in enumerate(dataset[:]) if name.decode()!=''}
         return self._element[element_type]
 
-    def _get_properties(self, f, element_type):
+    def _get_properties(self, element_type):
         if element_type not in self._property:
             if element_type == 'grid':
-                self._property[element_type] = self._get_grid_properties(f=f)
+                self._property[element_type] = self._get_grid_properties()
             else:
                 dataset = self._get_dataset(
-                    f=f,
                     element_type=element_type,
                     dataset_string='Variables')
                 self._property[element_type] = {
@@ -446,34 +468,32 @@ class Sr3Reader:
                     self._property[element_type])
         return self._property[element_type]
 
-    def _get_timesteps(self, f, element_type):
+    def _get_timesteps(self, element_type):
         if element_type not in self._timestep:
             if element_type == 'grid':
-                self._timestep[element_type] = self._get_grid_timesteps(f)
+                self._timestep[element_type] = self._get_grid_timesteps()
             else:
                 dataset = self._get_dataset(
-                    f=f,
                     element_type=element_type,
                     dataset_string='Timesteps')
                 self._timestep[element_type] = dataset[:]
         return self._timestep[element_type]
 
-    def _get_days(self, f, element_type):
+    def _get_days(self, element_type):
         if element_type not in self._day:
-            timesteps = self._get_timesteps(f=f, element_type=element_type)
+            timesteps = self._get_timesteps(element_type=element_type)
             self._day[element_type] = np.vectorize(lambda x: self._all_days[x])(timesteps)
         return self._day[element_type]
 
-    def _get_dates(self, f, element_type):
+    def _get_dates(self, element_type):
         if element_type not in self._date:
-            timesteps = self._get_timesteps(f=f, element_type=element_type)
+            timesteps = self._get_timesteps(element_type=element_type)
             self._date[element_type] = np.vectorize(lambda x: self._all_dates[x])(timesteps)
         return self._date[element_type]
 
-    def _get_parents(self, f, element_type):
+    def _get_parents(self, element_type):
         if element_type in ['well', 'group', 'layer']:
             dataset = self._get_dataset(
-                f=f,
                 element_type=element_type,
                 dataset_string=f'{element_type.capitalize()}Table')
 
@@ -487,17 +507,16 @@ class Sr3Reader:
                 in zip(dataset['Name'], dataset['Parent'])}
         else:
             self._parent[element_type] = {
-                name:'' for name in self._get_elements(f, element_type)}
+                name:'' for name in self._get_elements(element_type)}
 
-    def _get_parent(self, f, element_type, element_name):
+    def _get_parent(self, element_type, element_name):
         if element_type not in self._parent:
-            self._get_parents(f, element_type)
+            self._get_parents(element_type)
         return self._parent[element_type][element_name]
 
-    def _get_connections(self, f, element_type):
+    def _get_connections(self, element_type):
         if element_type == 'layer':
             dataset = self._get_dataset(
-                f=f,
                 element_type=element_type,
                 dataset_string=f'{element_type.capitalize()}Table')
 
@@ -509,15 +528,16 @@ class Sr3Reader:
                 in zip(dataset['Name'], dataset['Parent'], dataset['Connect To'])}
         else:
             self._connection[element_type] = {
-                name:'' for name in self._get_elements(f, element_type)}
+                name:'' for name in self._get_elements(element_type)}
 
-    def _get_connection(self, f, element_type, element_name):
+    def _get_connection(self, element_type, element_name):
         if element_type not in self._connection:
-            self._get_connections(f, element_type)
+            self._get_connections(element_type)
         return self._connection[element_type][element_name]
 
-    def _get_grid_sizes(self, f):
-        dataset = f['SpatialProperties/000000/GRID']
+    @_need_read_file # type: ignore[arg-type]
+    def _get_grid_sizes(self):
+        dataset = self._f['SpatialProperties/000000/GRID']
         ni = dataset['IGNTID'][0]
         nj = dataset['IGNTJD'][0]
         nk = dataset['IGNTKD'][0]
@@ -525,15 +545,16 @@ class Sr3Reader:
         n_active = dataset['IPSTCS'].size
         if dataset['IPSTCS'][-1] > ni*nj*nk:
             self._element['grid']['FRACTURE'] = np.where(
-                f['SpatialProperties/000000/GRID/IPSTCS'] > ni*nj*nk)[0][0]
+                self._f['SpatialProperties/000000/GRID/IPSTCS'] > ni*nj*nk)[0][0]
             n_cells = 2*n_cells
-        return ni, nj, nk, n_active, n_cells
+        self._grid_size = {'ni': ni, 'nj': nj, 'nk': nk, 'n_active': n_active, 'n_cells': n_cells}
 
-    def _get_grid_timesteps(self, f):
-        dataset = f['SpatialProperties']
-        grid_timestep_list = list()
+    @_need_read_file # type: ignore[arg-type]
+    def _get_grid_timesteps(self):
+        dataset = self._f['SpatialProperties']
+        grid_timestep_list = []
         for key in dataset.keys():
-            sub_dataset = f[f"SpatialProperties/{key}"]
+            sub_dataset = self._f[f"SpatialProperties/{key}"]
             if isinstance(sub_dataset, self._group_type):
                 grid_timestep_list.append(int(key))
         return np.array(grid_timestep_list)
@@ -544,8 +565,9 @@ class Sr3Reader:
         #         v['is_internal'] = True
         pass
 
-    def _get_grid_properties(self, f):
-        dataset = f['SpatialProperties/Statistics']
+    @_need_read_file # type: ignore[arg-type]
+    def _get_grid_properties(self):
+        dataset = self._f['SpatialProperties/Statistics']
         grid_property_list = {
             name.decode():{
                 'min':min_,
@@ -555,12 +577,15 @@ class Sr3Reader:
                 'is_complete':False}
                 for name,min_,max_ in zip(dataset['Keyword'],dataset['Min'],dataset['Max'])}
 
-        ni, nj, nk, n_active, _ = self._get_grid_sizes(f=f)
+        ni = self._grid_size['ni']
+        nj = self._grid_size['nj']
+        nk = self._grid_size['nk']
+        n_active = self._grid_size['n_active']
         n_cells = ni * nj * nk
         def _list_grid_properties(timestep, set_timestep=None):
-            dataset = f[f'SpatialProperties/{timestep}']
+            dataset = self._f[f'SpatialProperties/{timestep}']
             for key in dataset.keys():
-                sub_dataset = f[f"SpatialProperties/{timestep}/{key}"]
+                sub_dataset = self._f[f"SpatialProperties/{timestep}/{key}"]
                 if isinstance(sub_dataset, self._dataset_type):
                     key = key.replace('%2F','/')
                     if key in grid_property_list:
@@ -583,7 +608,7 @@ class Sr3Reader:
                         raise ValueError(f'{key} not listed previously!')
 
         _list_grid_properties('000000/GRID', 0)
-        for ts in self._get_timesteps(f=f, element_type='grid'):
+        for ts in self._get_timesteps(element_type='grid'):
             _list_grid_properties(str(ts).zfill(6))
         for p in grid_property_list.values():
             p['timesteps'] = list(p['timesteps'])
@@ -649,7 +674,6 @@ class Sr3Reader:
         return data[:, order]
 
     def _get_raw_data(self,
-                      f,
                       element_type,
                       property_names,
                       element_names=None,
@@ -662,10 +686,10 @@ class Sr3Reader:
                 return [index_dict[name] for name in name_list]
             return [index_dict[name_list]]
 
-        property_indexes = _get_indexes(property_names, self._get_properties(f, element_type))
-        element_indexes = _get_indexes(element_names, self._get_elements(f, element_type))
+        property_indexes = _get_indexes(property_names, self._get_properties(element_type))
+        element_indexes = _get_indexes(element_names, self._get_elements(element_type))
 
-        dataset = self._get_dataset(f=f, element_type=element_type, dataset_string='Data')
+        dataset = self._get_dataset(element_type=element_type, dataset_string='Data')
 
         data = self._get_dataset_2d_data(dataset, property_indexes,element_indexes)
         self._data_unit_conversion(data, property_names)
@@ -674,17 +698,16 @@ class Sr3Reader:
             return data
         if index == 'dates':
             return self._concatenate_arrays(
-                self._get_dates(f=f, element_type=element_type), data)
+                self._get_dates(element_type=element_type), data)
         if index == 'days':
             return self._concatenate_arrays(
-                self._get_days(f=f, element_type=element_type), data)
+                self._get_days(element_type=element_type), data)
         if index == 'timesteps':
             return self._concatenate_arrays(
-                self._get_timesteps(f=f, element_type=element_type), data)
+                self._get_timesteps(element_type=element_type), data)
         raise ValueError(f'Invalid index: {index}.')
 
     def _get_interp_data(self,
-                         f,
                          days,
                          element_type=None,
                          property_names=None,
@@ -693,8 +716,7 @@ class Sr3Reader:
         if element_names is None:
             element_names=['']
         if raw_data is None:
-            raw_data = self._get_raw_data(f=f,
-                                          element_type=element_type,
+            raw_data = self._get_raw_data(element_type=element_type,
                                           property_names=property_names,
                                           element_names=element_names,
                                           index='days')
@@ -706,7 +728,6 @@ class Sr3Reader:
         return data
 
     def get_data(self,
-                 f,
                  days=None,
                  element_type=None,
                  property_names=None,
@@ -716,7 +737,6 @@ class Sr3Reader:
             element_names=['']
         if raw_data is None:
             raw_data = self._get_raw_data(
-                f=f,
                 element_type=element_type,
                 property_names=property_names,
                 element_names=element_names,
@@ -724,7 +744,7 @@ class Sr3Reader:
         if days is None:
             data = raw_data
         else:
-            data = self._get_interp_data(f=f, days=days, raw_data=raw_data)
+            data = self._get_interp_data(days=days, raw_data=raw_data)
         return data
 
     def get_series_order(self, property_names, element_names=None):
@@ -740,3 +760,155 @@ class Sr3Reader:
             for property_ in property_names:
                 original_index.append((element, property_))
         return original_index
+
+    def _cannot_interpolate_grid_data(self, property_names, ts):
+        problem = []
+        for p in property_names:
+            if not self._get_properties('grid')[p]['is_internal']:
+                if ts not in self._get_properties('grid')[p]['timesteps']:
+                    problem.append(p)
+        return problem
+
+    @_need_read_file # type: ignore[arg-type]
+    def _get_single_grid_property(self, property_name, ts=None, element_names=None):
+        if element_names is None:
+            element_names=['MATRIX']
+        if 'FRACTURE' not in self._get_elements('grid') and 'FRACTURE' in element_names:
+            raise ValueError('Current grid does not have fracture values.')
+
+        if self._get_properties('grid')[property_name]['is_internal']:
+            ts = '000000/GRID'
+        else:
+            if ts is None:
+                ts = 0
+            if ts not in self._get_properties('grid')[property_name]['timesteps']:
+                msg = f'Grid property {property_name} does not have values for timestep {ts}.'
+                raise ValueError(msg)
+            ts = str(ts).zfill(6)
+
+        data = self._get_dataset(
+            element_type='grid',
+            dataset_string=f'{ts}/{property_name.replace('/','%2F')}')[:]
+        self._data_unit_conversion(data, [property_name], has_dates=False, is_1d=True)
+
+        ni = self._grid_size['ni']
+        nj = self._grid_size['nj']
+        nk = self._grid_size['nk']
+        size = self._get_properties('grid')[property_name]['size']
+        if size == ni*nj*nk:
+            return data[:]
+        elif 'FRACTURE' not in self._get_elements('grid'):
+            return data[:]
+        elif element_names == ['MATRIX','FRACTURE']:
+            return data[:]
+        elif element_names == ['MATRIX']:
+            return data[:self._get_elements('grid')['FRACTURE']]
+        elif element_names == ['FRACTURE']:
+            return data[self._get_elements('grid')['FRACTURE']:]
+        raise ValueError(f'Invalid option: {element_names}.')
+
+    def _get_grid_data_to_complete(self, values, element_names=None, default=0):
+        if element_names is None:
+            element_names=['MATRIX']
+        ni = self._grid_size['ni']
+        nj = self._grid_size['nj']
+        nk = self._grid_size['nk']
+
+        dtype = values.dtype
+        default = np.array(default).astype(dtype)
+        new_array = np.full((ni*nj*nk*2,), default)
+
+        indexes = self._get_single_grid_property(
+            property_name='IPSTCS',
+            ts=0,
+            element_names=element_names)
+        new_array[indexes-1] = values
+
+        if element_names == ['MATRIX']:
+            return new_array[:ni*nj*nk]
+        if element_names == ['FRACTURE']:
+            return new_array[ni*nj*nk:]
+        if element_names == ['MATRIX','FRACTURE']:
+            return new_array
+        raise ValueError(f'Invalid elements: {", ".join(element_names)}')
+
+    @_need_read_file # type: ignore[arg-type]
+    def _get_multiple_grid_properties(self, property_names, ts=None, element_names=None):
+        if element_names is None:
+            element_names=['MATRIX']
+        if isinstance(property_names, str):
+            property_names = [property_names]
+        is_complete = {p:self._get_properties('grid')[p]['is_complete'] for p in property_names}
+        any_complete = any(v for v in is_complete.values())
+        data = self._get_single_grid_property(
+            property_name=property_names[0],
+            ts=ts,
+            element_names=element_names)
+        if any_complete and not is_complete[property_names[0]]:
+            data = self._get_grid_data_to_complete(values=data, element_names=element_names)
+        data = data.reshape(-1,1)
+        for p in property_names[1:]:
+            data_new = self._get_single_grid_property(
+                property_name=p,
+                ts=ts,
+                element_names=element_names)
+            if any_complete and not is_complete[p]:
+                data_new = self._get_grid_data_to_complete(
+                    values=data_new,
+                    element_names=element_names)
+            data = self._concatenate_arrays(data, data_new)
+        return data
+
+    @_need_read_file # type: ignore[arg-type]
+    def _get_grid_data_interpolated(self, property_names, day=None, element_names=None):
+        if element_names is None:
+            element_names=['MATRIX']
+        if day is None:
+            day = 0
+        elif day < 0:
+            raise ValueError('Negative days are not valid.')
+        elif day > self._get_days('grid')[-1]:
+            msg = f'No data beyond {self._get_days('grid')[-1]} days. {day} days is not valid.'
+            raise ValueError(msg)
+
+        if isinstance(property_names, str):
+            property_names = [property_names]
+
+        ts_index = np.where(self._get_days('grid') == day)[0]
+        if len(ts_index) > 0:
+            ts = self._get_timesteps('grid')[ts_index[0]]
+            return self._get_multiple_grid_properties(
+                property_names=property_names,
+                ts=ts,
+                element_names=element_names)
+
+        ts_index = np.where(self._get_days('grid') > day)[0][0]
+        ts_a = self._get_timesteps('grid')[ts_index - 1]
+        ts_b = self._get_timesteps('grid')[ts_index]
+        cannot_interpolate = self._remove_duplicates(
+            self._cannot_interpolate_grid_data(property_names, ts_a) +
+            self._cannot_interpolate_grid_data(property_names, ts_b))
+        if len(cannot_interpolate) > 0:
+            msg = f'Cannot interpolate the following properties at {day} days: '
+            msg = msg + f'{', '.join(cannot_interpolate)}.'
+            raise ValueError(msg)
+
+        data_a = self._get_multiple_grid_properties(
+            property_names=property_names,
+            ts=ts_a,
+            element_names=element_names)
+        data_b = self._get_multiple_grid_properties(
+            property_names=property_names,
+            ts=ts_b,
+            element_names=element_names)
+
+        day_a = self._get_days('grid')[ts_index - 1]
+        day_b = self._get_days('grid')[ts_index]
+
+        alfa = (day - day_a) / (day_b - day_a)
+        return data_a + alfa * (data_b - data_a)
+
+    def get_grid_data(self):
+
+        #_data_unit_conversion(data, property_names, has_dates=True)
+        pass
