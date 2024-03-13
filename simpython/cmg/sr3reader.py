@@ -37,15 +37,15 @@ class Sr3Reader:
         Writes data into a grid file.
     """
 
-    def __init__(self, file_path, include_additional_units=True):
+    def __init__(self, file_path, usual_units=True):
         """
         Parameters
         ----------
         file_path : str
             Path to grid file.
-        include_additional_units : bool, optional
-            Defines if some additional units
-            should be included.
+        usual_units : bool, optional
+            Adds some extra units
+            and changes current units.
             (default: True)
         """
 
@@ -53,17 +53,27 @@ class Sr3Reader:
         if not self._file_path.is_file():
             raise FileNotFoundError(f'File not found: {self._file_path}')
 
+        self._f = None
+        self._group_type = None
+        self._dataset_type = None
+
         self._all_days = {}
         self._all_dates = {}
         self._unit_list = {}
         self._component_list = {}
         self._master_property_list = {}
 
-
+        self._element = {'special':{'':0}, 'grid':{'MATRIX':0}}
+        self._parent = {}
+        self._connection = {}
+        self._property = {}
+        self._timestep = {}
+        self._day = {}
+        self._date = {}
 
         self.read()
 
-        if include_additional_units:
+        if usual_units:
             additional_units = [
                 ('m3', 'MMm3', (1.e-6, 0.0)),
                 ('bbl', 'MMbbl', (1.e-6, 0.0)),
@@ -74,14 +84,25 @@ class Sr3Reader:
                 self.add_new_unit(old, new, gain, offset)
             self.set_current_unit('pressure','kgf/cm2')
 
+    def open(self):
+        """Manually open sr3 file."""
+        if self._f is None:
+            self._f = h5py.File(self._file_path)
+
+    def close(self):
+        """Manually close sr3 file."""
+        if self._f is not None:
+            self._f.close()
+
     def list_hdf(self):
         """Returns dict with all groups and databases in file"""
-        with h5py.File(self._file_path, 'r') as f:
-            sr3_elements = {}
-            def get_type(name):
-                sr3_elements[name] = type(f[name])
-            f.visit(get_type)
-            return sr3_elements
+        self.open()
+        sr3_elements = {}
+        def get_type(name):
+            sr3_elements[name] = type(self._f[name])
+        self._f.visit(get_type)
+        self.close()
+        return sr3_elements
 
     def read(self, read_elements=True):
         """Reads general data
@@ -93,14 +114,19 @@ class Sr3Reader:
             should be read from sr3 file.
             (default: True)
         """
-        with h5py.File(self._file_path, 'r') as f:
-            self._read_master_dates(f)
-            self._read_master_units(f)
-            self._read_master_properties(f)
+        self.open()
+        self._group_type = type(self._f['General'])
+        self._dataset_type = type(self._f['General/HistoryTable'])
 
-            if read_elements:
+        self._read_master_dates(self._f)
+        self._read_master_units(self._f)
+        self._read_master_properties(self._f)
+
+        if read_elements:
+            for _ in ['well', 'group', 'sector', 'layer', 'special', 'grid']:
                 # elements, properties, dates, days
                 pass
+        self.close()
 
     def _read_master_dates(self, f):
         dataset = f['General/MasterTimeTable']
@@ -374,3 +400,193 @@ class Sr3Reader:
         if property_name not in self._master_property_list:
             raise ValueError(f'{property_name} was not found in Master Property Table.')
         return self._master_property_list[property_name]['unit']
+
+    def _remove_duplicates(self, input_list):
+        unique_items = OrderedDict()
+        for item in input_list:
+            unique_items[item] = None
+        return list(unique_items.keys())
+
+    def _get_dataset(self, f, element_type, dataset_string):
+        if element_type == 'grid':
+            s = f'SpatialProperties/{dataset_string.upper()}'
+        else:
+            el_type_string = element_type.upper()
+            if element_type == 'special':
+                el_type_string = el_type_string + ' HISTORY'
+            else:
+                el_type_string = el_type_string + 'S'
+            s = f'TimeSeries/{el_type_string}/{dataset_string}'
+        if s in f:
+            return f[s]
+        msg = f'Dataset {dataset_string} not found for {element_type}. {s} does not exist.'
+        raise ValueError(msg)
+
+    def _get_elements(self, f, element_type):
+        if element_type not in self._element:
+            dataset = self._get_dataset(f=f, element_type=element_type, dataset_string='Origins')
+            self._element[element_type] = {
+                name.decode():number for (number,name)
+                in enumerate(dataset[:]) if name.decode()!=''}
+        return self._element[element_type]
+
+    def _get_properties(self, f, element_type):
+        if element_type not in self._property:
+            if element_type == 'grid':
+                self._property[element_type] = self._get_grid_properties(f=f)
+            else:
+                dataset = self._get_dataset(
+                    f=f,
+                    element_type=element_type,
+                    dataset_string='Variables')
+                self._property[element_type] = {
+                    name.decode():number for (number,name)
+                    in enumerate(dataset[:])}
+                self._property[element_type] = self._replace_components_property_list(
+                    self._property[element_type])
+        return self._property[element_type]
+
+    def _get_timesteps(self, f, element_type):
+        if element_type not in self._timestep:
+            if element_type == 'grid':
+                self._timestep[element_type] = self._get_grid_timesteps(f)
+            else:
+                dataset = self._get_dataset(
+                    f=f,
+                    element_type=element_type,
+                    dataset_string='Timesteps')
+                self._timestep[element_type] = dataset[:]
+        return self._timestep[element_type]
+
+    def _get_days(self, f, element_type):
+        if element_type not in self._day:
+            timesteps = self._get_timesteps(f=f, element_type=element_type)
+            self._day[element_type] = np.vectorize(lambda x: self._all_days[x])(timesteps)
+        return self._day[element_type]
+
+    def _get_dates(self, f, element_type):
+        if element_type not in self._date:
+            timesteps = self._get_timesteps(f=f, element_type=element_type)
+            self._date[element_type] = np.vectorize(lambda x: self._all_dates[x])(timesteps)
+        return self._date[element_type]
+
+    def _get_parents(self, f, element_type):
+        if element_type in ['well', 'group', 'layer']:
+            dataset = self._get_dataset(
+                f=f,
+                element_type=element_type,
+                dataset_string=f'{element_type.capitalize()}Table')
+
+            def _name(name, parent):
+                if element_type == 'layer':
+                    return f'{parent.decode()}{{{name.decode()}}}'
+                return name.decode()
+
+            self._parent[element_type] = {
+                _name(name, parent):parent.decode() for (name,parent)
+                in zip(dataset['Name'], dataset['Parent'])}
+        else:
+            self._parent[element_type] = {
+                name:'' for name in self._get_elements(f, element_type)}
+
+    def _get_parent(self, f, element_type, element_name):
+        if element_type not in self._parent:
+            self._get_parents(f, element_type)
+        return self._parent[element_type][element_name]
+
+    def _get_connections(self, f, element_type):
+        if element_type == 'layer':
+            dataset = self._get_dataset(
+                f=f,
+                element_type=element_type,
+                dataset_string=f'{element_type.capitalize()}Table')
+
+            def _name(name, parent):
+                return f'{parent.decode()}{{{name.decode()}}}'
+
+            self._connection[element_type] = {
+                _name(name, parent):connection for (name,parent,connection)
+                in zip(dataset['Name'], dataset['Parent'], dataset['Connect To'])}
+        else:
+            self._connection[element_type] = {
+                name:'' for name in self._get_elements(f, element_type)}
+
+    def _get_connection(self, f, element_type, element_name):
+        if element_type not in self._connection:
+            self._get_connections(f, element_type)
+        return self._connection[element_type][element_name]
+
+    def _get_grid_sizes(self, f):
+        dataset = f['SpatialProperties/000000/GRID']
+        ni = dataset['IGNTID'][0]
+        nj = dataset['IGNTJD'][0]
+        nk = dataset['IGNTKD'][0]
+        n_cells = ni*nj*nk
+        n_active = dataset['IPSTCS'].size
+        if dataset['IPSTCS'][-1] > ni*nj*nk:
+            self._element['grid']['FRACTURE'] = np.where(
+                f['SpatialProperties/000000/GRID/IPSTCS'] > ni*nj*nk)[0][0]
+            n_cells = 2*n_cells
+        return ni, nj, nk, n_active, n_cells
+
+    def _get_grid_timesteps(self, f):
+        dataset = f['SpatialProperties']
+        grid_timestep_list = list()
+        for key in dataset.keys():
+            sub_dataset = f[f"SpatialProperties/{key}"]
+            if isinstance(sub_dataset, self._group_type):
+                grid_timestep_list.append(int(key))
+        return np.array(grid_timestep_list)
+
+    def _grid_properties_adjustments(self, grid_property_list):
+        # for p,v in grid_property_list.items():
+        #     if p in ['DIFRAC','DJFRAC','DKFRAC']:
+        #         v['is_internal'] = True
+        pass
+
+    def _get_grid_properties(self, f):
+        dataset = f['SpatialProperties/Statistics']
+        grid_property_list = {
+            name.decode():{
+                'min':min_,
+                'max':max_,
+                'timesteps':set(),
+                'is_internal':False,
+                'is_complete':False}
+                for name,min_,max_ in zip(dataset['Keyword'],dataset['Min'],dataset['Max'])}
+
+        ni, nj, nk, n_active, _ = self._get_grid_sizes(f=f)
+        n_cells = ni * nj * nk
+        def _list_grid_properties(timestep, set_timestep=None):
+            dataset = f[f'SpatialProperties/{timestep}']
+            for key in dataset.keys():
+                sub_dataset = f[f"SpatialProperties/{timestep}/{key}"]
+                if isinstance(sub_dataset, self._dataset_type):
+                    key = key.replace('%2F','/')
+                    if key in grid_property_list:
+                        size = sub_dataset.size
+                        if size in [n_cells, n_active]:
+                            if 'size' in grid_property_list[key]:
+                                if grid_property_list[key]['size'] != sub_dataset.size:
+                                    raise ValueError(f'Inconsistent grid size for {key}.')
+                            else:
+                                grid_property_list[key]['size'] = sub_dataset.size
+                                grid_property_list[key]['is_complete'] = sub_dataset.size == n_cells
+                            if set_timestep is None:
+                                grid_property_list[key]['timesteps'].add(int(timestep))
+                            else:
+                                grid_property_list[key]['timesteps'].add(set_timestep)
+                                grid_property_list[key]['is_internal'] = True
+                        else:
+                            _ = grid_property_list.pop(key)
+                    else:
+                        raise ValueError(f'{key} not listed previously!')
+
+        _list_grid_properties('000000/GRID', 0)
+        for ts in self._get_timesteps(f=f, element_type='grid'):
+            _list_grid_properties(str(ts).zfill(6))
+        for p in grid_property_list.values():
+            p['timesteps'] = list(p['timesteps'])
+            p['timesteps'].sort()
+        self._grid_properties_adjustments(grid_property_list)
+        return grid_property_list
