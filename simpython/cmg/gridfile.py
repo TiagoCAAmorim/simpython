@@ -58,7 +58,7 @@ class GridFile:
         self._encoding = encoding
         if auto_read and self._file_path.exists():
             if self._file_path.is_file():
-              self.read()
+                self.read()
 
     def set_file_path(self, file_path):
         """Sets path to grid file.
