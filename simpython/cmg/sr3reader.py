@@ -590,3 +590,153 @@ class Sr3Reader:
             p['timesteps'].sort()
         self._grid_properties_adjustments(grid_property_list)
         return grid_property_list
+
+    def _concatenate_arrays(self, arr1, arr2):
+        if arr1.ndim == 1:
+            arr1 = arr1.reshape(-1,1)
+        if arr2.ndim == 1:
+            arr2 = arr2.reshape(-1,1)
+        return np.hstack((arr1, arr2))
+
+    def _data_unit_conversion(self, data, property_names, has_dates=True, is_1d=False):
+        if isinstance(property_names, str):
+            property_names = [property_names]
+
+        i_delta = 0 if has_dates else 1
+
+        n_data_columns = 1 if is_1d else data.shape[1]
+        n_properties = 1 if is_1d else len(property_names)
+        n_elements = int(n_data_columns / n_properties)
+        for i_property,p in enumerate(property_names):
+            gain, offset = self._master_property_list[p]['conversion']
+            if gain != 1.0 or offset != 0.0:
+                for i_element in range(n_elements):
+                    k = i_property + i_element * n_properties - i_delta
+                    if is_1d:
+                        data[:] = data[:] * gain + offset
+                    else:
+                        data[:,k] = data[:,k] * gain + offset
+
+    def _get_dataset_2d_data(self, dataset, param1, param2):
+        def _ordered_x(x):
+            if isinstance(x, list):
+                x_ordered = list(set(x)).copy()
+                x_ordered.sort()
+            return x_ordered
+        x1 = _ordered_x(param1)
+        x2 = _ordered_x(param2)
+
+        indexes = []
+        if len(x1) > len(x2):
+            data = dataset[:,x1,x2[0]]
+            indexes.extend([(xi,x2[0]) for xi in x1])
+            for x in x2[1:]:
+                data = self._concatenate_arrays(data, dataset[:,x1,x])
+                indexes.extend([(xi,x) for xi in x1])
+        else:
+            data = dataset[:,x1[0],x2]
+            indexes.extend([(x1[0],xi) for xi in x2])
+            for x in x1[1:]:
+                data = self._concatenate_arrays(data, dataset[:,x,x2])
+                indexes.extend([(x,xi) for xi in x2])
+
+        original_index = []
+        for p2 in param2:
+            for p1 in param1:
+                original_index.append((p1,p2))
+        order = [indexes.index(x) for x in original_index]
+
+        return data[:, order]
+
+    def _get_raw_data(self,
+                      f,
+                      element_type,
+                      property_names,
+                      element_names=None,
+                      index=None):
+        if element_names is None:
+            element_names=['']
+
+        def _get_indexes(name_list, index_dict):
+            if isinstance(name_list, list):
+                return [index_dict[name] for name in name_list]
+            return [index_dict[name_list]]
+
+        property_indexes = _get_indexes(property_names, self._get_properties(f, element_type))
+        element_indexes = _get_indexes(element_names, self._get_elements(f, element_type))
+
+        dataset = self._get_dataset(f=f, element_type=element_type, dataset_string='Data')
+
+        data = self._get_dataset_2d_data(dataset, property_indexes,element_indexes)
+        self._data_unit_conversion(data, property_names)
+
+        if index is None:
+            return data
+        if index == 'dates':
+            return self._concatenate_arrays(
+                self._get_dates(f=f, element_type=element_type), data)
+        if index == 'days':
+            return self._concatenate_arrays(
+                self._get_days(f=f, element_type=element_type), data)
+        if index == 'timesteps':
+            return self._concatenate_arrays(
+                self._get_timesteps(f=f, element_type=element_type), data)
+        raise ValueError(f'Invalid index: {index}.')
+
+    def _get_interp_data(self,
+                         f,
+                         days,
+                         element_type=None,
+                         property_names=None,
+                         element_names=None,
+                         raw_data=None):
+        if element_names is None:
+            element_names=['']
+        if raw_data is None:
+            raw_data = self._get_raw_data(f=f,
+                                          element_type=element_type,
+                                          property_names=property_names,
+                                          element_names=element_names,
+                                          index='days')
+        data = np.array(days)
+        for i in range(1, raw_data.shape[1]):
+            interp = interpolate.interp1d(raw_data[:,0], raw_data[:,i], kind = "linear")
+            y = interp(days)
+            data = self._concatenate_arrays(data, y)
+        return data
+
+    def get_data(self,
+                 f,
+                 days=None,
+                 element_type=None,
+                 property_names=None,
+                 element_names=None,
+                 raw_data=None):
+        if element_names is None:
+            element_names=['']
+        if raw_data is None:
+            raw_data = self._get_raw_data(
+                f=f,
+                element_type=element_type,
+                property_names=property_names,
+                element_names=element_names,
+                index='days')
+        if days is None:
+            data = raw_data
+        else:
+            data = self._get_interp_data(f=f, days=days, raw_data=raw_data)
+        return data
+
+    def get_series_order(self, property_names, element_names=None):
+        if element_names is None:
+            element_names=['']
+        if isinstance(property_names, str):
+            property_names = [property_names]
+        if isinstance(element_names, str):
+            element_names = [element_names]
+
+        original_index = []
+        for element in element_names:
+            for property_ in property_names:
+                original_index.append((element, property_))
+        return original_index
