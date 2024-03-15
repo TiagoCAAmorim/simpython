@@ -26,6 +26,8 @@ class Sr3Reader:
         List of wells found
     groups : [str]
         List of groups found
+    sector : [str]
+        List of sectors found
     layers : [str]
         List of layers found
 
@@ -35,6 +37,12 @@ class Sr3Reader:
         Reads the contents of the grid file.
     write(output_file_path):
         Writes data into a grid file.
+    get_elements(element_type):
+        Returns a list of the elements
+        associated to the element type.
+    get_properties(element_type):
+        Returns a list of the properties
+        associated to the element type.
     """
 
     def __init__(self, file_path, usual_units=True):
@@ -55,6 +63,7 @@ class Sr3Reader:
 
         self._f = None
         self._open_count = 0
+        self._open_calls = 0
         self._group_type = None
         self._dataset_type = None
 
@@ -64,6 +73,7 @@ class Sr3Reader:
         self._component_list = {}
         self._master_property_list = {}
 
+        self._element_types = ['well', 'group', 'sector', 'layer', 'special', 'grid']
         self._element = {'special':{'':0}, 'grid':{'MATRIX':0}}
         self._parent = {}
         self._connection = {}
@@ -87,19 +97,26 @@ class Sr3Reader:
                 self.add_new_unit(old, new, gain, offset)
             self.set_current_unit('pressure','kgf/cm2')
 
+    def _file_is_closed(self):
+        return self._f is None
+
+    def _file_is_open(self):
+        return not self._file_is_closed()
+
     def open(self):
         """Manually open sr3 file."""
-        if self._f is None:
+        if self._file_is_closed():
             self._f = h5py.File(self._file_path)
+            self._open_calls += 1
             self._open_count = 0
         self._open_count += 1
 
-    def close(self, force=False):
+    def close(self, force_close=False):
         """Manually close sr3 file."""
-        if self._f is None:
+        if self._file_is_closed():
             self._open_count = 0
         else:
-            if force:
+            if force_close:
                 self._open_count = 1
             if self._open_count == 1:
                 self._f.close()
@@ -115,11 +132,11 @@ class Sr3Reader:
         return wrapper
 
     @_need_read_file # type: ignore[arg-type]
-    def list_hdf(self):
+    def get_hdf_elements(self):
         """Returns dict with all groups and databases in file"""
-        sr3_elements = {}
+        sr3_elements = []
         def get_type(name):
-            sr3_elements[name] = type(self._f[name])
+            sr3_elements.append((name, type(self._f[name])))
         self._f.visit(get_type)
         return sr3_elements
 
@@ -137,19 +154,20 @@ class Sr3Reader:
         self._group_type = type(self._f['General'])
         self._dataset_type = type(self._f['General/HistoryTable'])
 
-        self._read_master_dates(self._f)
-        self._read_master_units(self._f)
-        self._read_master_component_table(self._f)
-        self._read_master_properties(self._f)
+        self._read_master_dates()
+        self._read_master_units()
+        self._read_master_component_table()
+        self._read_master_properties()
+        self._get_grid_sizes()
 
         if read_elements:
-            self._get_grid_sizes()
-            for _ in ['well', 'group', 'sector', 'layer', 'special', 'grid']:
+            for _ in self._element_types:
                 # elements, properties, dates, days
                 pass
 
-    def _read_master_dates(self, f):
-        dataset = f['General/MasterTimeTable']
+    @_need_read_file # type: ignore[arg-type]
+    def _read_master_dates(self):
+        dataset = self._f['General/MasterTimeTable']
         self._all_days = dict(zip(dataset['Index'], dataset['Offset in days']))
 
         def _parse_date(date):
@@ -161,12 +179,13 @@ class Sr3Reader:
             fraction_of_day = timedelta(days=decimal_part)
             return parsed_date + fraction_of_day
 
-        dataset = f['General/MasterTimeTable']
+        dataset = self._f['General/MasterTimeTable']
         self._all_dates = {number:_parse_date(date) for (number,date)
                            in zip(dataset['Index'], dataset['Date'])}
 
-    def _read_master_units(self, f):
-        dataset = f['General/UnitsTable']
+    @_need_read_file # type: ignore[arg-type]
+    def _read_master_units(self):
+        dataset = self._f['General/UnitsTable']
         columns = zip(dataset['Index'],
                       dataset['Dimensionality'],
                       dataset['Internal Unit'],
@@ -180,7 +199,7 @@ class Sr3Reader:
                 }
                   for (number,name,internal_name,output_name) in columns}
 
-        dataset = f['General/UnitConversionTable']
+        dataset = self._f['General/UnitConversionTable']
         columns = zip(dataset['Dimensionality'],
                       dataset['Unit Name'],
                       dataset['Gain'],
@@ -199,9 +218,10 @@ class Sr3Reader:
             if unit['internal'] not in unit['conversion']:
                 unit['conversion'][unit['internal']] = (1.,0.)
 
-    def _read_master_component_table(self, f):
-        if 'ComponentTable' in f['General']:
-            dataset = f['General/ComponentTable']
+    @_need_read_file # type: ignore[arg-type]
+    def _read_master_component_table(self):
+        if 'ComponentTable' in self._f['General']:
+            dataset = self._f['General/ComponentTable']
             self._component_list = {
                 (number+1):name[0].decode() for (number,name) in enumerate(dataset[:])}
         else:
@@ -214,8 +234,9 @@ class Sr3Reader:
             return f'({str(self._component_list.get(number, match.group(1)))})'
         return {pattern.sub(replace, k):v for k,v in property_list.items()}
 
-    def _read_master_properties(self, f):
-        dataset = f['General/NameRecordTable']
+    @_need_read_file # type: ignore[arg-type]
+    def _read_master_properties(self):
+        dataset = self._f['General/NameRecordTable']
         self._master_property_list = {}
         columns = zip(dataset['Keyword'],
                       dataset['Name'],
@@ -445,7 +466,19 @@ class Sr3Reader:
         msg = f'Dataset {dataset_string} not found for {element_type}. {s} does not exist.'
         raise ValueError(msg)
 
-    def _get_elements(self, element_type):
+    def get_elements(self, element_type):
+        """Get list of elements.
+
+        Parameters
+        ----------
+        element_type : str
+            Element type to be evaluated.
+
+        Raises
+        ------
+        ValueError
+            If an invalid path is provided.
+        """
         if element_type not in self._element:
             dataset = self._get_dataset(element_type=element_type, dataset_string='Origins')
             self._element[element_type] = {
@@ -507,7 +540,7 @@ class Sr3Reader:
                 in zip(dataset['Name'], dataset['Parent'])}
         else:
             self._parent[element_type] = {
-                name:'' for name in self._get_elements(element_type)}
+                name:'' for name in self.get_elements(element_type)}
 
     def _get_parent(self, element_type, element_name):
         if element_type not in self._parent:
@@ -528,7 +561,7 @@ class Sr3Reader:
                 in zip(dataset['Name'], dataset['Parent'], dataset['Connect To'])}
         else:
             self._connection[element_type] = {
-                name:'' for name in self._get_elements(element_type)}
+                name:'' for name in self.get_elements(element_type)}
 
     def _get_connection(self, element_type, element_name):
         if element_type not in self._connection:
@@ -687,7 +720,7 @@ class Sr3Reader:
             return [index_dict[name_list]]
 
         property_indexes = _get_indexes(property_names, self._get_properties(element_type))
-        element_indexes = _get_indexes(element_names, self._get_elements(element_type))
+        element_indexes = _get_indexes(element_names, self.get_elements(element_type))
 
         dataset = self._get_dataset(element_type=element_type, dataset_string='Data')
 
@@ -728,13 +761,45 @@ class Sr3Reader:
         return data
 
     def get_data(self,
+                  element_type,
+                  property_names,
+                  element_names=None,
+                  days=None):
+        """Returns data for the required element type properties
+
+        Parameters
+        ----------
+        element type : str
+            Element type to be evaluated.
+        property_names : [str]
+            Properties to be evaluated.
+        element_names : [str], optional
+            List of elements to be evaluated.
+            Returns all elements if None.
+            (default: None)
+        days : [float], optional
+            List of days to return data.
+            Returns all timesteps if None.
+            (default: None)
+
+        Raises
+        ------
+        ValueError
+            If property_name is not found.
+        """
+        return self._get_data(days=days,
+                              element_type=element_type,
+                              property_names=property_names,
+                              element_names=element_names)
+
+    def _get_data(self,
                  days=None,
                  element_type=None,
                  property_names=None,
                  element_names=None,
                  raw_data=None):
         if element_names is None:
-            element_names=['']
+            element_names=self.get_elements(element_type=element_type)
         if raw_data is None:
             raw_data = self._get_raw_data(
                 element_type=element_type,
@@ -748,6 +813,7 @@ class Sr3Reader:
         return data
 
     def get_series_order(self, property_names, element_names=None):
+        """Returns tuple with the order of the properties requested"""
         if element_names is None:
             element_names=['']
         if isinstance(property_names, str):
@@ -773,7 +839,7 @@ class Sr3Reader:
     def _get_single_grid_property(self, property_name, ts=None, element_names=None):
         if element_names is None:
             element_names=['MATRIX']
-        if 'FRACTURE' not in self._get_elements('grid') and 'FRACTURE' in element_names:
+        if 'FRACTURE' not in self.get_elements('grid') and 'FRACTURE' in element_names:
             raise ValueError('Current grid does not have fracture values.')
 
         if self._get_properties('grid')[property_name]['is_internal']:
@@ -797,14 +863,14 @@ class Sr3Reader:
         size = self._get_properties('grid')[property_name]['size']
         if size == ni*nj*nk:
             return data[:]
-        elif 'FRACTURE' not in self._get_elements('grid'):
+        elif 'FRACTURE' not in self.get_elements('grid'):
             return data[:]
         elif element_names == ['MATRIX','FRACTURE']:
             return data[:]
         elif element_names == ['MATRIX']:
-            return data[:self._get_elements('grid')['FRACTURE']]
+            return data[:self.get_elements('grid')['FRACTURE']]
         elif element_names == ['FRACTURE']:
-            return data[self._get_elements('grid')['FRACTURE']:]
+            return data[self.get_elements('grid')['FRACTURE']:]
         raise ValueError(f'Invalid option: {element_names}.')
 
     def _get_grid_data_to_complete(self, values, element_names=None, default=0):
@@ -909,6 +975,5 @@ class Sr3Reader:
         return data_a + alfa * (data_b - data_a)
 
     def get_grid_data(self):
-
+        """Returns grid data"""
         #_data_unit_conversion(data, property_names, has_dates=True)
-        pass
