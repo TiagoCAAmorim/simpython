@@ -20,23 +20,23 @@ class TemplateProcessor:
     Attributes
     ----------
     variables_raw : list
-        List of all varible-type definition found 
+        List of all variable-type definition found
         in template file.
     variables : dict
         dictionary with all data related to the
         variables: distribution, parameters, values
         (if Table type), default value, if is active.
-    experiments_table : dataframe
+    experiments_table : data-frame
         Table with all experiments.
 
     Methods
     -------
     list_valid_distributions()
-        Lists all valid distribuition and respective arguments.
+        Lists all valid distribution and respective arguments.
     set_output_file(output_file_path)
         Sets the output file path.
     set_encoding(encoding)
-        Sets the encoding used for reading and writting files.
+        Sets the encoding used for reading and writing files.
     set_n_samples(n_samples)
         Sets the number of samples to be generated.
     read_variables_table(variables_table_path)
@@ -61,7 +61,7 @@ class TemplateProcessor:
             Indicates if additional messages should be print.
             (default: False)
         output_file_path : str, optional
-            Path to the files to be writen.
+            Path to the files to be written.
             (default: None)
         variables_table_path : str, optional
             Path to csv file to be read with values of the
@@ -75,7 +75,7 @@ class TemplateProcessor:
             Number of samples to be generated.
             (default: 0)
         encoding : str, optional
-            Encoding used for reading and writting files.
+            Encoding used for reading and writing files.
             (default: 'utf-8')
         """
 
@@ -102,7 +102,7 @@ class TemplateProcessor:
                              'description': ('mean', 'std_var'),
                              'types': ['float']},
             'triangular':   {'parameters': 3,
-                             'description': ('minimum', 'maximum', 'most_likelly'),
+                             'description': ('minimum', 'maximum', 'most_likely'),
                              'types': ['float']},
             'constant':     {'parameters': 1,
                              'description': ('value',),
@@ -136,11 +136,10 @@ class TemplateProcessor:
         return str(self.variables)
 
     def list_valid_distributions(self):
-        """Lists all valid distribuition and respective arguments."""
+        """Lists all valid distribution and respective arguments."""
 
         for k, v in self._valid_distributions.items():
-            msg1 = f"{
-                k} distribution - parameters: {', '.join(v['description'])};"
+            msg1 = f"{k} distribution - parameters: {', '.join(v['description'])};"
             msg2 = f"valid type(s): {', '.join(v['types'])}"
             print(" ".join([msg1, msg2]))
 
@@ -218,8 +217,7 @@ class TemplateProcessor:
         parameters = parameters[1:]
         if len(parameters) != self._valid_distributions[distribution]['parameters']:
             expected = self._valid_distributions[distribution]['parameters']
-            msg1 = f"Invalid number of parameters for distribution '{
-                distribution}'."
+            msg1 = f"Invalid number of parameters for distribution '{distribution}'."
             msg2 = f" Expected {expected}, found {len(parameters)}."
             raise ValueError(" ".join([msg1, msg2]))
 
@@ -255,8 +253,7 @@ class TemplateProcessor:
         if distribution == 'categorical':
             param_list = parameters[1].lstrip('{').rstrip('}').split(',')
             if len(parameters[0]) != len(param_list):
-                msg1 = f"Inconsistent number of values in distribution '{
-                    distribution}'."
+                msg1 = f"Inconsistent number of values in distribution '{distribution}'."
                 msg2 = f"Values found: {len(parameters[0])},"
                 msg3 = f"associated probabilities: {len(param_list)}."
                 raise ValueError(" ".join([msg1, msg2, msg3]))
@@ -328,8 +325,9 @@ class TemplateProcessor:
             distribution_text = None
 
         if len(options) > 2:
-            raise ValueError(f"Bad options format in: '{
-                             options}'. Too many options.")
+            msg1 = f"Bad options format in: '{options}'."
+            msg2 = " Too many options."
+            raise ValueError(" ".join([msg1, msg2]))
         if len(options) > 0:
             if len(options) > 1 or options[0] != '':
                 default = options[-1].strip()
@@ -352,8 +350,7 @@ class TemplateProcessor:
         if var_type is None:
             msg1 = "Couldn't find the variable type based on provided data: "
             msg2 = f"'{text}'. Possible type(s) for {distribution} are:"
-            msg3 = f"{
-                ', '.join(self._valid_distributions[distribution]['types'])}."
+            msg3 = f"{', '.join(self._valid_distributions[distribution]['types'])}."
             raise ValueError(" ".join([msg1, msg2, msg3]))
 
         return {'active': True,
@@ -409,7 +406,7 @@ class TemplateProcessor:
         Parameters
         ----------
         output_file_path : str
-            Path to the files to be writen.
+            Path to the files to be written.
 
         Raises
         ------
@@ -424,16 +421,16 @@ class TemplateProcessor:
                 self._output_file_path = Path(output_file_path)
             except (ValueError, TypeError, NameError) as exc:
                 self._output_file_path = None
-                raise ValueError(f'Invalid file path: {
-                                 str(output_file_path)}') from exc
+                msg = f'Invalid file path: {str(output_file_path)}'
+                raise ValueError(msg) from exc
 
     def set_encoding(self, encoding):
-        """Sets the encoding used for reading and writting files.
+        """Sets the encoding used for reading and writing files.
 
         Parameters
         ----------
         encoding : str
-            Encoding used for reading and writting files.
+            Encoding used for reading and writing files.
 
         """
         self._encoding = encoding
@@ -471,18 +468,19 @@ class TemplateProcessor:
                 df = pd.read_csv(variables_table_path, skipinitialspace=True)
                 for key in df.columns:
                     if key not in self.variables:
-                        print(f"Variable '{
-                              key}' not found in template. Will ignore data.")
+                        msg1 = f"Variable '{key}' not found in template."
+                        msg2 = "Will ignore data."
+                        print(" ".join([msg1,msg2]))
                         continue
                     if self.variables[key]['distribution'] != 'table':
-                        print(f"Variable '{
-                              key}' already has a distribution. Will ignore data.")
+                        msg1 = f"Variable '{key}' already has a distribution."
+                        msg2 = "Will ignore data."
+                        print(" ".join([msg1,msg2]))
                         continue
                     self.variables[key]['values'] = list(df[key])
             except (ValueError, TypeError, NameError) as e:
-                msg = f'Error reading variables table file: {
-                    variables_table_path}'
-                raise ValueError(msg) from e
+                msg = 'Error reading variables table file:'
+                raise ValueError(" ".join([msg, variables_table_path])) from e
 
     def _check_generate_experiments(self, n_samples=0):
         tables_n_values = []
@@ -493,10 +491,10 @@ class TemplateProcessor:
         if len(tables_n_values) > 0:
             if not min(tables_n_values) == max(tables_n_values):
                 msg1 = "Number of entries in 'table' variables is inconsistent,"
-                msg2 = f"ranging from {min(tables_n_values)} to {
-                    max(tables_n_values)}."
-                msg3 = "Cannot continue."
-                print(" ".join([msg1, msg2, msg3]))
+                msg2 = f"ranging from {min(tables_n_values)}"
+                msg3 = f"to {max(tables_n_values)}."
+                msg4 = "Cannot continue."
+                print(" ".join([msg1, msg2, msg3, msg4]))
                 return None
             tables_n_values = tables_n_values[0]
             if tables_n_values == 0:
@@ -515,10 +513,10 @@ class TemplateProcessor:
             return None
         elif tables_n_values != n_samples:
             msg1 = f"Number of values in 'table' variables ({tables_n_values})"
-            msg2 = f"is different from the requested sample size ({
-                n_samples})."
-            msg3 = "Cannot continue."
-            print(" ".join([msg1, msg2, msg3]))
+            msg2 = "is different from the requested sample size"
+            msg3 = f"({n_samples})."
+            msg4 = "Cannot continue."
+            print(" ".join([msg1, msg2, msg3, msg4]))
             return None
 
         return n_samples
@@ -638,7 +636,7 @@ class TemplateProcessor:
         """
 
         if self._verbose:
-            print('Cheking parameters')
+            print('Checking parameters')
         n_samples = self._check_generate_experiments(n_samples=n_samples)
         if n_samples < 1:
             self.experiments_table = None
@@ -665,7 +663,7 @@ class TemplateProcessor:
         for column_index, var in enumerate(self.variables):
             data = self.variables[var]
             if self._verbose:
-                print(f'   {var}: {data['distribution']}')
+                print(f"   {var}: {data['distribution']}")
             if not data['active']:
                 df[var] = [data['default']] * n_samples
             elif data['distribution'] == 'table':
@@ -690,7 +688,7 @@ class TemplateProcessor:
         Parameters
         ----------
         output_file_path : str, optional
-            Path to the files to be writen. Uses value stored
+            Path to the files to be written. Uses value stored
             in output_file_path if None is provided.
             (default: None)
         """
@@ -711,7 +709,8 @@ class TemplateProcessor:
 
         self._output_file_path.parent.mkdir(parents=True, exist_ok=True)
         for index, row in self.experiments_table.iterrows():
-            file_name = f"{self._output_file_path.stem}_{
-                index}{self._output_file_path.suffix}"
+            file_path_ = self._output_file_path.stem
+            file_suffix_ = self._output_file_path.suffix
+            file_name = f"{file_path_}_{index}{file_suffix_}"
             new_file_path = self._output_file_path.with_name(file_name)
             self._create_new_file(new_file_path, row.to_dict(), text)
