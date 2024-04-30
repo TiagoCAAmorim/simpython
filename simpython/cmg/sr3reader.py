@@ -8,16 +8,19 @@ from collections import OrderedDict
 from pathlib import Path
 
 import numpy as np
-from scipy import interpolate # type: ignore
-import h5py # type: ignore
+from scipy import interpolate  # type: ignore
+import h5py  # type: ignore
+
 
 def _need_read_file(func):  # pylint: disable=no-self-argument
     def wrapper(self, *args, **kwargs):
         self.open()
-        result = func(self, *args, **kwargs) # pylint: disable=not-callable
+        result = func(self, *args, **kwargs)  # pylint: disable=not-callable
         self.close()
         return result
+
     return wrapper
+
 
 class Sr3Reader:
     """
@@ -66,7 +69,7 @@ class Sr3Reader:
 
         self._file_path = Path(file_path)
         if not self._file_path.is_file():
-            raise FileNotFoundError(f'File not found: {self._file_path}')
+            raise FileNotFoundError(f"File not found: {self._file_path}")
 
         self._f = None
         self._open_count = 0
@@ -80,8 +83,15 @@ class Sr3Reader:
         self._component_list = {}
         self._master_property_list = {}
 
-        self._element_types = ['well', 'group', 'sector', 'layer', 'special', 'grid']
-        self._element = {'special':{'':0}, 'grid':{'MATRIX':0}}
+        self._element_types = [
+            "well",
+            "group",
+            "sector",
+            "layer",
+            "special",
+            "grid"
+        ]
+        self._element = {"special": {"": 0}, "grid": {"MATRIX": 0}}
         self._parent = {}
         self._connection = {}
         self._property = {}
@@ -95,14 +105,14 @@ class Sr3Reader:
 
         if usual_units:
             additional_units = [
-                ('m3', 'MMm3', (1.e-6, 0.0)),
-                ('bbl', 'MMbbl', (1.e-6, 0.0)),
-                ('kg/cm2', 'kgf/cm2', (1., 0.0)),
+                ("m3", "MMm3", (1.0e-6, 0.0)),
+                ("bbl", "MMbbl", (1.0e-6, 0.0)),
+                ("kg/cm2", "kgf/cm2", (1.0, 0.0)),
             ]
 
             for old, new, (gain, offset) in additional_units:
                 self.add_new_unit(old, new, gain, offset)
-            self.set_current_unit('pressure','kgf/cm2')
+            self.set_current_unit("pressure", "kgf/cm2")
 
     def _file_is_closed(self):
         return self._f is None
@@ -130,16 +140,18 @@ class Sr3Reader:
                 self._f = None
             self._open_count -= 1
 
-    @_need_read_file # type: ignore[arg-type]
+    @_need_read_file  # type: ignore[arg-type]
     def get_hdf_elements(self):
         """Returns dict with all groups and databases in file"""
         sr3_elements = []
+
         def get_type(name):
             sr3_elements.append((name, type(self._f[name])))
+
         self._f.visit(get_type)
         return sr3_elements
 
-    @_need_read_file # type: ignore[arg-type]
+    @_need_read_file  # type: ignore[arg-type]
     def read(self, read_elements=True):
         """Reads general data
 
@@ -150,8 +162,8 @@ class Sr3Reader:
             should be read from sr3 file.
             (default: True)
         """
-        self._group_type = type(self._f['General'])
-        self._dataset_type = type(self._f['General/HistoryTable'])
+        self._group_type = type(self._f["General"])
+        self._dataset_type = type(self._f["General/HistoryTable"])
 
         self._read_master_dates()
         self._read_master_units()
@@ -169,146 +181,168 @@ class Sr3Reader:
                 _ = self.get_days(element)
                 _ = self.get_dates(element)
 
-    @_need_read_file # type: ignore[arg-type]
+    @_need_read_file  # type: ignore[arg-type]
     def _read_master_dates(self):
-        dataset = self._f['General/MasterTimeTable']
-        self._all_days = dict(zip(dataset['Index'], dataset['Offset in days']))
+        dataset = self._f["General/MasterTimeTable"]
+        self._all_days = dict(zip(dataset["Index"], dataset["Offset in days"]))
 
         def _parse_date(date):
             date_string = str(date)
-            integer_part = int(date_string.split('.', maxsplit=1)[0]) #date_string.split('.')[0])
-            decimal_part = float("0." + date_string.split('.')[1])
+            integer_part = int(
+                date_string.split(".", maxsplit=1)[0]
+            )  # date_string.split('.')[0])
+            decimal_part = float("0." + date_string.split(".")[1])
 
             parsed_date = datetime.strptime(str(integer_part), "%Y%m%d")
             fraction_of_day = timedelta(days=decimal_part)
             return parsed_date + fraction_of_day
 
-        dataset = self._f['General/MasterTimeTable']
-        self._all_dates = {number:_parse_date(date) for (number,date)
-                           in zip(dataset['Index'], dataset['Date'])}
+        dataset = self._f["General/MasterTimeTable"]
+        self._all_dates = {
+            number: _parse_date(date)
+            for (number, date) in zip(dataset["Index"], dataset["Date"])
+        }
 
-    @_need_read_file # type: ignore[arg-type]
+    @_need_read_file  # type: ignore[arg-type]
     def _read_master_units(self):
-        dataset = self._f['General/UnitsTable']
-        columns = zip(dataset['Index'],
-                      dataset['Dimensionality'],
-                      dataset['Internal Unit'],
-                      dataset['Output Unit'])
+        dataset = self._f["General/UnitsTable"]
+        columns = zip(
+            dataset["Index"],
+            dataset["Dimensionality"],
+            dataset["Internal Unit"],
+            dataset["Output Unit"],
+        )
         self._unit_list = {
-            number:{
-                'type':name.decode().lower(),
-                'internal':internal_name.decode(),
-                'current':output_name.decode(),
-                'conversion':{}
-                }
-                  for (number,name,internal_name,output_name) in columns}
+            number: {
+                "type": name.decode().lower(),
+                "internal": internal_name.decode(),
+                "current": output_name.decode(),
+                "conversion": {},
+            }
+            for (number, name, internal_name, output_name) in columns
+        }
 
-        dataset = self._f['General/UnitConversionTable']
-        columns = zip(dataset['Dimensionality'],
-                      dataset['Unit Name'],
-                      dataset['Gain'],
-                      dataset['Offset'])
-        for (number, name, gain, offset) in columns:
-            self._unit_list[number]['conversion'][name.decode()] = (1./gain, offset * (-1.))
+        dataset = self._f["General/UnitConversionTable"]
+        columns = zip(
+            dataset["Dimensionality"],
+            dataset["Unit Name"],
+            dataset["Gain"],
+            dataset["Offset"],
+        )
+        for number, name, gain, offset in columns:
+            self._unit_list[number]["conversion"][name.decode()] = (
+                1.0 / gain,
+                offset * (-1.0),
+            )
 
         for d in self._unit_list.values():
-            if d['internal'] != d['current']:
-                gain, offset = d['conversion'][d['internal']]
-                for k in d['conversion']:
-                    g, o = d['conversion'][k]
-                    d['conversion'][k] = (g / gain, o - offset)
+            if d["internal"] != d["current"]:
+                gain, offset = d["conversion"][d["internal"]]
+                for k in d["conversion"]:
+                    g, o = d["conversion"][k]
+                    d["conversion"][k] = (g / gain, o - offset)
 
         for unit in self._unit_list.values():
-            if unit['internal'] not in unit['conversion']:
-                unit['conversion'][unit['internal']] = (1.,0.)
+            if unit["internal"] not in unit["conversion"]:
+                unit["conversion"][unit["internal"]] = (1.0, 0.0)
 
-    @_need_read_file # type: ignore[arg-type]
+    @_need_read_file  # type: ignore[arg-type]
     def _read_master_component_table(self):
-        if 'ComponentTable' in self._f['General']:
-            dataset = self._f['General/ComponentTable']
+        if "ComponentTable" in self._f["General"]:
+            dataset = self._f["General/ComponentTable"]
             self._component_list = {
-                (number+1):name[0].decode() for (number,name) in enumerate(dataset[:]) if name[0].decode() != 'WATER'}
+                (number + 1): name[0].decode()
+                for (number, name) in enumerate(dataset[:])
+                if name[0].decode() != "WATER"
+            }
         else:
             self._component_list = {}
 
     def _replace_components_property_list(self, property_list):
-        pattern = re.compile(r'\((\d+)\)')
+        pattern = re.compile(r"\((\d+)\)")
+
         def replace(match):
             number = int(match.group(1))
-            return f'({str(self._component_list.get(number, match.group(1)))})'
-        return {pattern.sub(replace, k):v for k,v in property_list.items()}
+            return f"({str(self._component_list.get(number, match.group(1)))})"
 
-    @_need_read_file # type: ignore[arg-type]
+        return {pattern.sub(replace, k): v for k, v in property_list.items()}
+
+    @_need_read_file  # type: ignore[arg-type]
     def _read_master_properties(self):
-        dataset = self._f['General/NameRecordTable']
+        dataset = self._f["General/NameRecordTable"]
         self._master_property_list = {}
-        columns = zip(dataset['Keyword'],
-                      dataset['Name'],
-                      dataset['Long Name'],
-                      dataset['Dimensionality'])
-        for (keyword,name,long_name,dimensionality) in columns:
-            if keyword != '':
+        columns = zip(
+            dataset["Keyword"],
+            dataset["Name"],
+            dataset["Long Name"],
+            dataset["Dimensionality"],
+        )
+        for keyword, name, long_name, dimensionality in columns:
+            if keyword != "":
                 keyword = keyword.decode()
                 name = name.decode()
                 long_name = long_name.decode()
                 dimensionality = dimensionality.decode()
-                if keyword[-2:] == '$C':
+                if keyword[-2:] == "$C":
                     for c in self._component_list.values():
-                        new_keyword = f'{keyword[:-2]}({c})'
+                        new_keyword = f"{keyword[:-2]}({c})"
                         self._master_property_list[new_keyword] = {
-                            'name':name.replace('$C', f' ({c})'),
-                            'long name':long_name.replace('$C', f' ({c})'),
-                            'dimensionality_string':dimensionality}
+                            "name": name.replace("$C", f" ({c})"),
+                            "long name": long_name.replace("$C", f" ({c})"),
+                            "dimensionality_string": dimensionality,
+                        }
                 else:
                     self._master_property_list[keyword] = {
-                        'name':name,
-                        'long name':long_name,
-                        'dimensionality_string':dimensionality}
-        _ = self._master_property_list.pop('')
+                        "name": name,
+                        "long name": long_name,
+                        "dimensionality_string": dimensionality,
+                    }
+        _ = self._master_property_list.pop("")
 
     def _unit_from_dimensionality(self, dimensionality_string):
-        if dimensionality_string == '':
-            return ''
-        unit = ''
-        if dimensionality_string[0] == '-':
-            unit = '1'
-        d = ''
+        if dimensionality_string == "":
+            return ""
+        unit = ""
+        if dimensionality_string[0] == "-":
+            unit = "1"
+        d = ""
         for c in dimensionality_string:
-            if c == '|':
-                unit = unit + self._unit_list[int(d)]['current']
-                d = ''
-            elif c == '-':
-                unit = unit + '/'
+            if c == "|":
+                unit = unit + self._unit_list[int(d)]["current"]
+                d = ""
+            elif c == "-":
+                unit = unit + "/"
             else:
                 d = d + c
         return unit
 
-    def _unit_conversion_from_dimensionality(self,
-                                             dimensionality_string,
-                                             is_delta=False):
-        if dimensionality_string == '':
-            return (1., 0.)
-        gain = 1.
-        offset = 0.
+    def _unit_conversion_from_dimensionality(
+        self, dimensionality_string, is_delta=False
+    ):
+        if dimensionality_string == "":
+            return (1.0, 0.0)
+        gain = 1.0
+        offset = 0.0
         inverse = False
-        if dimensionality_string[0] == '-':
+        if dimensionality_string[0] == "-":
             inverse = True
-        d = ''
+        d = ""
         for c in dimensionality_string:
-            if c == '|':
-                unit = self._unit_list[int(d)]['current']
-                gain_new, offset_new = self._unit_list[int(d)]['conversion'][unit]
-                d = ''
+            if c == "|":
+                unit = self._unit_list[int(d)]["current"]
+                conversion_ = self._unit_list[int(d)]["conversion"]
+                gain_new, offset_new = conversion_[unit]
+                d = ""
                 if inverse:
                     gain = gain / gain_new
-                    offset = 0.
+                    offset = 0.0
                 else:
                     gain = gain * gain_new
                     if is_delta:
-                        offset = 0.
+                        offset = 0.0
                     else:
                         offset = offset * gain_new + offset_new
-            elif c == '-':
+            elif c == "-":
                 inverse = True
             else:
                 d = d + c
@@ -316,24 +350,30 @@ class Sr3Reader:
 
     def _update_properties_units(self):
         for p in self._master_property_list.values():
-            p['conversion'] = self._unit_conversion_from_dimensionality(
-                p['dimensionality_string'])
-            p['unit'] = self._unit_from_dimensionality(
-                p['dimensionality_string'])
+            p["conversion"] = self._unit_conversion_from_dimensionality(
+                p["dimensionality_string"]
+            )
+            dimen_ = p["dimensionality_string"]
+            p["unit"] = self._unit_from_dimensionality(dimen_)
 
     def _get_unit_type_number(self, dimensionality):
         if isinstance(dimensionality, str):
-            d = [d for d in self._unit_list
-                 if self._unit_list[d]['type'] == dimensionality.lower()]
+            d = [
+                d
+                for d in self._unit_list
+                if self._unit_list[d]["type"] == dimensionality.lower()
+            ]
             if len(d) == 0:
-                raise ValueError(f'{dimensionality} is not a valid unit type.')
+                raise ValueError(f"{dimensionality} is not a valid unit type.")
             if len(d) > 1:
-                raise ValueError(f'{dimensionality} found more than once. Check code!')
+                msg = f"{dimensionality} found more than once. Check code!"
+                raise ValueError(msg)
             return d[0]
         if isinstance(dimensionality, int):
             return dimensionality
-        msg = f'Valid types for dimensionality are str and int. Got {type(dimensionality)}.'
-        raise TypeError(msg)
+        msg1 = "Valid types for dimensionality are str and int. "
+        msg2 = f"Got {type(dimensionality)}."
+        raise TypeError(msg1+msg2)
 
     def set_current_unit(self, dimensionality, unit):
         """Sets the current unit for a given dimensionality.
@@ -356,10 +396,11 @@ class Sr3Reader:
             type is provided.
         """
         dimensionality = self._get_unit_type_number(dimensionality)
-        if unit not in self._unit_list[dimensionality]['conversion']:
-            msg = f'{unit} is not a valid unit for {self._unit_list[dimensionality]['type']}.'
-            raise ValueError(msg)
-        self._unit_list[dimensionality]['current'] = unit
+        if unit not in self._unit_list[dimensionality]["conversion"]:
+            msg1 = "{unit} is not a valid unit for "
+            msg2 = f"{self._unit_list[dimensionality]['type']}."
+            raise ValueError(msg1+msg2)
+        self._unit_list[dimensionality]["current"] = unit
         self._update_properties_units()
 
     def get_current_units(self):
@@ -376,7 +417,7 @@ class Sr3Reader:
     def _get_unit_numbers(self, unit):
         out = []
         for u in self._unit_list:
-            for c in self._unit_list[u]['conversion']:
+            for c in self._unit_list[u]["conversion"]:
                 if unit == c:
                     out.append(u)
         return out
@@ -404,11 +445,14 @@ class Sr3Reader:
         """
         unit_numbers = self._get_unit_numbers(old_unit)
         if len(unit_numbers) == 0:
-            raise ValueError(f'{old_unit} was not found in Master Units Table.')
+            msg = f"{old_unit} was not found in Master Units Table."
+            raise ValueError(msg)
 
         for u in unit_numbers:
-            g, o = self._unit_list[u]['conversion'][old_unit]
-            self._unit_list[u]['conversion'][new_unit] = (g * gain, o * gain + offset)
+            g, o = self._unit_list[u]["conversion"][old_unit]
+            new_gain = g * gain
+            new_offset = o * gain + offset
+            self._unit_list[u]["conversion"][new_unit] = (new_gain, new_offset)
 
     def get_property_description(self, property_name):
         """Returns dict with property atributes
@@ -424,12 +468,14 @@ class Sr3Reader:
             If property_name is not found.
         """
         if property_name not in self._master_property_list:
-            raise ValueError(f'{property_name} was not found in Master Property Table.')
+            msg = f"{property_name} was not found in Master Property Table."
+            raise ValueError(msg)
         p = self._master_property_list[property_name]
-        return {'description': p['name'],
-                'long description': p['long name'],
-                'unit': p['unit']
-                }
+        return {
+            "description": p["name"],
+            "long description": p["long name"],
+            "unit": p["unit"],
+        }
 
     def get_property_unit(self, property_name):
         """Returns property current unit
@@ -445,8 +491,9 @@ class Sr3Reader:
             If property_name is not found.
         """
         if property_name not in self._master_property_list:
-            raise ValueError(f'{property_name} was not found in Master Property Table.')
-        return self._master_property_list[property_name]['unit']
+            msg = f"{property_name} was not found in Master Property Table."
+            raise ValueError(msg)
+        return self._master_property_list[property_name]["unit"]
 
     def _remove_duplicates(self, input_list):
         unique_items = OrderedDict()
@@ -455,26 +502,32 @@ class Sr3Reader:
         return list(unique_items.keys())
 
     def _get_dataset(self, element_type, dataset_string):
-        if element_type == 'grid':
-            s = f'SpatialProperties/{dataset_string.upper()}'
+        if element_type == "grid":
+            s = f"SpatialProperties/{dataset_string.upper()}"
         else:
             el_type_string = element_type.upper()
-            if element_type == 'special':
-                el_type_string = el_type_string + ' HISTORY'
+            if element_type == "special":
+                el_type_string = el_type_string + " HISTORY"
             else:
-                el_type_string = el_type_string + 'S'
-            s = f'TimeSeries/{el_type_string}/{dataset_string}'
+                el_type_string = el_type_string + "S"
+            s = f"TimeSeries/{el_type_string}/{dataset_string}"
         if s in self._f:
             return self._f[s]
-        msg = f'Dataset {dataset_string} not found for {element_type}. {s} does not exist.'
-        raise ValueError(msg)
+        msg1 = f"Dataset {dataset_string} not found for "
+        msg2 = f"{element_type}. {s} does not exist."
+        raise ValueError(msg1+msg2)
 
-    @_need_read_file # type: ignore[arg-type]
+    @_need_read_file  # type: ignore[arg-type]
     def _get_elements(self, element_type):
-        dataset = self._get_dataset(element_type=element_type, dataset_string='Origins')
+        dataset = self._get_dataset(
+            element_type=element_type,
+            dataset_string="Origins"
+        )
         self._element[element_type] = {
-            name.decode():number for (number,name)
-            in enumerate(dataset[:]) if name.decode()!=''}
+            name.decode(): number
+            for (number, name) in enumerate(dataset[:])
+            if name.decode() != ""
+        }
 
     def get_elements(self, element_type):
         """Get list of elements.
@@ -496,19 +549,22 @@ class Sr3Reader:
             self._get_elements(element_type=element_type)
         return self._element[element_type]
 
-    @_need_read_file # type: ignore[arg-type]
+    @_need_read_file  # type: ignore[arg-type]
     def _get_properties(self, element_type):
-        if element_type == 'grid':
+        if element_type == "grid":
             self._property[element_type] = self._get_grid_properties()
         else:
-            dataset = self._get_dataset(
+            data = self._get_dataset(
                 element_type=element_type,
-                dataset_string='Variables')
+                dataset_string="Variables"
+            )
             self._property[element_type] = {
-                name.decode():number for (number,name)
-                in enumerate(dataset[:])}
-            self._property[element_type] = self._replace_components_property_list(
-                self._property[element_type])
+                name.decode(): number
+                for (number, name) in enumerate(data[:])
+            }
+        self._property[element_type] = self._replace_components_property_list(
+            self._property[element_type]
+        )
 
     def get_properties(self, element_type):
         """Get list of properties.
@@ -530,14 +586,14 @@ class Sr3Reader:
             self._get_properties(element_type=element_type)
         return self._property[element_type]
 
-    @_need_read_file # type: ignore[arg-type]
+    @_need_read_file  # type: ignore[arg-type]
     def _get_timesteps(self, element_type):
-        if element_type == 'grid':
+        if element_type == "grid":
             self._timestep[element_type] = self._get_grid_timesteps()
         else:
             dataset = self._get_dataset(
-                element_type=element_type,
-                dataset_string='Timesteps')
+                element_type=element_type, dataset_string="Timesteps"
+            )
             self._timestep[element_type] = dataset[:]
 
     def get_timesteps(self, element_type):
@@ -578,7 +634,10 @@ class Sr3Reader:
             raise ValueError(msg)
         if element_type not in self._day:
             timesteps = self.get_timesteps(element_type=element_type)
-            self._day[element_type] = np.vectorize(lambda x: self._all_days[x])(timesteps)
+            days = np.vectorize(lambda x: self._all_days[x])(
+                timesteps
+            )
+            self._day[element_type] = days
         return self._day[element_type]
 
     def get_dates(self, element_type):
@@ -599,27 +658,33 @@ class Sr3Reader:
             raise ValueError(msg)
         if element_type not in self._date:
             timesteps = self.get_timesteps(element_type=element_type)
-            self._date[element_type] = np.vectorize(lambda x: self._all_dates[x])(timesteps)
+            dates = np.vectorize(lambda x: self._all_dates[x])(
+                timesteps
+            )
+            self._date[element_type] = dates
         return self._date[element_type]
 
-    @_need_read_file # type: ignore[arg-type]
+    @_need_read_file  # type: ignore[arg-type]
     def _get_parents(self, element_type):
-        if element_type in ['well', 'group', 'layer']:
+        if element_type in ["well", "group", "layer"]:
             dataset = self._get_dataset(
                 element_type=element_type,
-                dataset_string=f'{element_type.capitalize()}Table')
+                dataset_string=f"{element_type.capitalize()}Table",
+            )
 
             def _name(name, parent):
-                if element_type == 'layer':
-                    return f'{parent.decode()}{{{name.decode()}}}'
+                if element_type == "layer":
+                    return f"{parent.decode()}{{{name.decode()}}}"
                 return name.decode()
 
             self._parent[element_type] = {
-                _name(name, parent):parent.decode() for (name,parent)
-                in zip(dataset['Name'], dataset['Parent'])}
+                _name(name, parent): parent.decode()
+                for (name, parent) in zip(dataset["Name"], dataset["Parent"])
+            }
         else:
             self._parent[element_type] = {
-                name:'' for name in self.get_elements(element_type)}
+                name: "" for name in self.get_elements(element_type)
+            }
 
     def get_parent(self, element_type, element_name):
         """Get parent of an element.
@@ -641,22 +706,27 @@ class Sr3Reader:
             self._get_parents(element_type)
         return self._parent[element_type][element_name]
 
-    @_need_read_file # type: ignore[arg-type]
+    @_need_read_file  # type: ignore[arg-type]
     def _get_connections(self, element_type):
-        if element_type == 'layer':
+        if element_type == "layer":
             dataset = self._get_dataset(
                 element_type=element_type,
-                dataset_string=f'{element_type.capitalize()}Table')
+                dataset_string=f"{element_type.capitalize()}Table",
+            )
 
             def _name(name, parent):
-                return f'{parent.decode()}{{{name.decode()}}}'
+                return f"{parent.decode()}{{{name.decode()}}}"
 
             self._connection[element_type] = {
-                _name(name, parent):connection for (name,parent,connection)
-                in zip(dataset['Name'], dataset['Parent'], dataset['Connect To'])}
+                _name(name, parent): connection
+                for (name, parent, connection) in zip(
+                    dataset["Name"], dataset["Parent"], dataset["Connect To"]
+                )
+            }
         else:
             self._connection[element_type] = {
-                name:'' for name in self.get_elements(element_type)}
+                name: "" for name in self.get_elements(element_type)
+            }
 
     def get_connection(self, element_type, element_name):
         """Get connection of an element.
@@ -678,23 +748,30 @@ class Sr3Reader:
             self._get_connections(element_type)
         return self._connection[element_type][element_name]
 
-    @_need_read_file # type: ignore[arg-type]
+    @_need_read_file  # type: ignore[arg-type]
     def _get_grid_sizes(self):
-        dataset = self._f['SpatialProperties/000000/GRID']
-        ni = dataset['IGNTID'][0]
-        nj = dataset['IGNTJD'][0]
-        nk = dataset['IGNTKD'][0]
-        n_cells = ni*nj*nk
-        n_active = dataset['IPSTCS'].size
-        if dataset['IPSTCS'][-1] > ni*nj*nk:
-            self._element['grid']['FRACTURE'] = np.where(
-                self._f['SpatialProperties/000000/GRID/IPSTCS'] > ni*nj*nk)[0][0]
-            n_cells = 2*n_cells
-        self._grid_size = {'ni': ni, 'nj': nj, 'nk': nk, 'n_active': n_active, 'n_cells': n_cells}
+        dataset = self._f["SpatialProperties/000000/GRID"]
+        ni = dataset["IGNTID"][0]
+        nj = dataset["IGNTJD"][0]
+        nk = dataset["IGNTKD"][0]
+        n_cells = ni * nj * nk
+        n_active = dataset["IPSTCS"].size
+        if dataset["IPSTCS"][-1] > ni * nj * nk:
+            self._element["grid"]["FRACTURE"] = np.where(
+                self._f["SpatialProperties/000000/GRID/IPSTCS"] > ni * nj * nk
+            )[0][0]
+            n_cells = 2 * n_cells
+        self._grid_size = {
+            "ni": ni,
+            "nj": nj,
+            "nk": nk,
+            "n_active": n_active,
+            "n_cells": n_cells,
+        }
 
-    @_need_read_file # type: ignore[arg-type]
+    @_need_read_file  # type: ignore[arg-type]
     def _get_grid_timesteps(self):
-        dataset = self._f['SpatialProperties']
+        dataset = self._f["SpatialProperties"]
         grid_timestep_list = []
         for key in dataset.keys():
             sub_dataset = self._f[f"SpatialProperties/{key}"]
@@ -703,70 +780,87 @@ class Sr3Reader:
         return np.array(grid_timestep_list)
 
     def _grid_properties_adjustments(self, grid_property_list):
+        # TO DO
         # for p,v in grid_property_list.items():
         #     if p in ['DIFRAC','DJFRAC','DKFRAC']:
         #         v['is_internal'] = True
         pass
 
-    @_need_read_file # type: ignore[arg-type]
+    @_need_read_file  # type: ignore[arg-type]
     def _get_grid_properties(self):
-        dataset = self._f['SpatialProperties/Statistics']
+        dataset = self._f["SpatialProperties/Statistics"]
         grid_property_list = {
-            name.decode():{
-                'min':min_,
-                'max':max_,
-                'timesteps':set(),
-                'is_internal':False,
-                'is_complete':False}
-                for name,min_,max_ in zip(dataset['Keyword'],dataset['Min'],dataset['Max'])}
+            name.decode(): {
+                "min": min_,
+                "max": max_,
+                "timesteps": set(),
+                "is_internal": False,
+                "is_complete": False,
+            }
+            for name, min_, max_ in zip(
+                dataset["Keyword"], dataset["Min"], dataset["Max"]
+            )
+        }
 
-        ni = self._grid_size['ni']
-        nj = self._grid_size['nj']
-        nk = self._grid_size['nk']
-        n_active = self._grid_size['n_active']
+        ni = self._grid_size["ni"]
+        nj = self._grid_size["nj"]
+        nk = self._grid_size["nk"]
+        n_active = self._grid_size["n_active"]
         n_cells = ni * nj * nk
+
         def _list_grid_properties(timestep, set_timestep=None):
-            dataset = self._f[f'SpatialProperties/{timestep}']
+            dataset = self._f[f"SpatialProperties/{timestep}"]
             for key in dataset.keys():
                 sub_dataset = self._f[f"SpatialProperties/{timestep}/{key}"]
                 if isinstance(sub_dataset, self._dataset_type):
-                    key = key.replace('%2F','/')
+                    key = key.replace("%2F", "/")
                     if key in grid_property_list:
                         size = sub_dataset.size
                         if size in [n_cells, n_active]:
-                            if 'size' in grid_property_list[key]:
-                                if grid_property_list[key]['size'] != sub_dataset.size:
-                                    raise ValueError(f'Inconsistent grid size for {key}.')
+                            if "size" in grid_property_list[key]:
+                                if grid_property_list[key]["size"] != size:
+                                    msg = f"Inconsistent grid size for {key}."
+                                    raise ValueError(msg)
                             else:
-                                grid_property_list[key]['size'] = sub_dataset.size
-                                grid_property_list[key]['is_complete'] = sub_dataset.size == n_cells
+                                grid_property_list[key]["size"] = size
+                                grid_property_list[key]["is_complete"] = (
+                                    sub_dataset.size == n_cells
+                                )
                             if set_timestep is None:
-                                grid_property_list[key]['timesteps'].add(int(timestep))
+                                grid_property_list[key]["timesteps"].add(
+                                    int(timestep)
+                                )
                             else:
-                                grid_property_list[key]['timesteps'].add(set_timestep)
-                                grid_property_list[key]['is_internal'] = True
+                                grid_property_list[key]["timesteps"].add(
+                                    set_timestep
+                                )
+                                grid_property_list[key]["is_internal"] = True
                         else:
                             _ = grid_property_list.pop(key)
                     else:
-                        raise ValueError(f'{key} not listed previously!')
+                        raise ValueError(f"{key} not listed previously!")
 
-        _list_grid_properties('000000/GRID', 0)
-        for ts in self.get_timesteps(element_type='grid'):
+        _list_grid_properties("000000/GRID", 0)
+        for ts in self.get_timesteps(element_type="grid"):
             _list_grid_properties(str(ts).zfill(6))
         for p in grid_property_list.values():
-            p['timesteps'] = list(p['timesteps'])
-            p['timesteps'].sort()
+            p["timesteps"] = list(p["timesteps"])
+            p["timesteps"].sort()
         self._grid_properties_adjustments(grid_property_list)
         return grid_property_list
 
     def _concatenate_arrays(self, arr1, arr2):
         if arr1.ndim == 1:
-            arr1 = arr1.reshape(-1,1)
+            arr1 = arr1.reshape(-1, 1)
         if arr2.ndim == 1:
-            arr2 = arr2.reshape(-1,1)
+            arr2 = arr2.reshape(-1, 1)
         return np.hstack((arr1, arr2))
 
-    def _data_unit_conversion(self, data, property_names, has_dates=True, is_1d=False):
+    def _data_unit_conversion(self,
+                              data,
+                              property_names,
+                              has_dates=True,
+                              is_1d=False):
         if isinstance(property_names, str):
             property_names = [property_names]
 
@@ -775,15 +869,15 @@ class Sr3Reader:
         n_data_columns = 1 if is_1d else data.shape[1]
         n_properties = 1 if is_1d else len(property_names)
         n_elements = int(n_data_columns / n_properties)
-        for i_property,p in enumerate(property_names):
-            gain, offset = self._master_property_list[p]['conversion']
+        for i_property, p in enumerate(property_names):
+            gain, offset = self._master_property_list[p]["conversion"]
             if gain != 1.0 or offset != 0.0:
                 for i_element in range(n_elements):
                     k = i_property + i_element * n_properties - i_delta
                     if is_1d:
                         data[:] = data[:] * gain + offset
                     else:
-                        data[:,k] = data[:,k] * gain + offset
+                        data[:, k] = data[:, k] * gain + offset
 
     def _get_dataset_2d_data(self, dataset, param1, param2):
         def _ordered_x(x):
@@ -791,100 +885,124 @@ class Sr3Reader:
                 x_ordered = list(set(x)).copy()
                 x_ordered.sort()
             return x_ordered
+
         x1 = _ordered_x(param1)
         x2 = _ordered_x(param2)
 
         indexes = []
         if len(x1) > len(x2):
-            data = dataset[:,x1,x2[0]]
-            indexes.extend([(xi,x2[0]) for xi in x1])
+            data = dataset[:, x1, x2[0]]
+            indexes.extend([(xi, x2[0]) for xi in x1])
             for x in x2[1:]:
-                data = self._concatenate_arrays(data, dataset[:,x1,x])
-                indexes.extend([(xi,x) for xi in x1])
+                data = self._concatenate_arrays(data, dataset[:, x1, x])
+                indexes.extend([(xi, x) for xi in x1])
         else:
-            data = dataset[:,x1[0],x2]
-            indexes.extend([(x1[0],xi) for xi in x2])
+            data = dataset[:, x1[0], x2]
+            indexes.extend([(x1[0], xi) for xi in x2])
             for x in x1[1:]:
-                data = self._concatenate_arrays(data, dataset[:,x,x2])
-                indexes.extend([(x,xi) for xi in x2])
+                data = self._concatenate_arrays(data, dataset[:, x, x2])
+                indexes.extend([(x, xi) for xi in x2])
 
         original_index = []
         for p2 in param2:
             for p1 in param1:
-                original_index.append((p1,p2))
+                original_index.append((p1, p2))
         order = [indexes.index(x) for x in original_index]
 
         return data[:, order]
 
-    @_need_read_file # type: ignore[arg-type]
-    def _get_raw_data(self,
-                      element_type,
-                      property_names,
-                      element_names=None,
-                      index=None):
+    @_need_read_file  # type: ignore[arg-type]
+    def _get_raw_data(
+        self, element_type, property_names, element_names=None, index=None
+    ):
         if element_names is None:
-            element_names=['']
+            element_names = [""]
 
         def _get_indexes(name_list, index_dict):
             if isinstance(name_list, list):
                 return [index_dict[name] for name in name_list]
             return [index_dict[name_list]]
 
-        property_indexes = _get_indexes(property_names, self.get_properties(element_type))
-        element_indexes = _get_indexes(element_names, self.get_elements(element_type))
+        property_indexes = _get_indexes(
+            property_names, self.get_properties(element_type)
+        )
+        element_indexes = _get_indexes(
+            name_list=element_names,
+            index_dict=self.get_elements(element_type)
+        )
+        dataset = self._get_dataset(
+            element_type=element_type,
+            dataset_string="Data"
+        )
 
-        dataset = self._get_dataset(element_type=element_type, dataset_string='Data')
-
-        data = self._get_dataset_2d_data(dataset, property_indexes,element_indexes)
+        data = self._get_dataset_2d_data(
+            dataset=dataset,
+            param1=property_indexes,
+            param2=element_indexes
+        )
         self._data_unit_conversion(data, property_names)
 
         if index is None:
             return data
-        if index == 'dates':
+        if index == "dates":
             return self._concatenate_arrays(
-                self.get_dates(element_type=element_type), data)
-        if index == 'days':
+                self.get_dates(element_type=element_type), data
+            )
+        if index == "days":
             return self._concatenate_arrays(
-                self.get_days(element_type=element_type), data)
-        if index == 'timesteps':
+                self.get_days(element_type=element_type), data
+            )
+        if index == "timesteps":
             return self._concatenate_arrays(
-                self.get_timesteps(element_type=element_type), data)
-        raise ValueError(f'Invalid index: {index}.')
+                self.get_timesteps(element_type=element_type), data
+            )
+        raise ValueError(f"Invalid index: {index}.")
 
-    def _get_interp_data(self,
-                         days,
-                         element_type=None,
-                         property_names=None,
-                         element_names=None,
-                         raw_data=None):
+    def _get_interp_data(
+        self,
+        days,
+        element_type=None,
+        property_names=None,
+        element_names=None,
+        raw_data=None,
+    ):
         if element_names is None:
-            element_names=['']
-        if raw_data is None:
-            raw_data = self._get_raw_data(element_type=element_type,
-                                          property_names=property_names,
-                                          element_names=element_names,
-                                          index='days')
-        data = np.array(days)
-        for i in range(1, raw_data.shape[1]):
-            interp = interpolate.interp1d(raw_data[:,0], raw_data[:,i], kind = "linear")
-            y = interp(days)
-            data = self._concatenate_arrays(data, y)
-        return data
-
-    def _get_data(self,
-                 days=None,
-                 element_type=None,
-                 property_names=None,
-                 element_names=None,
-                 raw_data=None):
-        if element_names is None:
-            element_names=self.get_elements(element_type=element_type)
+            element_names = [""]
         if raw_data is None:
             raw_data = self._get_raw_data(
                 element_type=element_type,
                 property_names=property_names,
                 element_names=element_names,
-                index='days')
+                index="days",
+            )
+        data = np.array(days)
+        for i in range(1, raw_data.shape[1]):
+            interp = interpolate.interp1d(
+                raw_data[:, 0],
+                raw_data[:, i],
+                kind="linear"
+            )
+            y = interp(days)
+            data = self._concatenate_arrays(data, y)
+        return data
+
+    def _get_data(
+        self,
+        days=None,
+        element_type=None,
+        property_names=None,
+        element_names=None,
+        raw_data=None,
+    ):
+        if element_names is None:
+            element_names = self.get_elements(element_type=element_type)
+        if raw_data is None:
+            raw_data = self._get_raw_data(
+                element_type=element_type,
+                property_names=property_names,
+                element_names=element_names,
+                index="days",
+            )
         if days is None:
             data = raw_data
         else:
@@ -892,10 +1010,10 @@ class Sr3Reader:
         return data
 
     def get_data(self,
-                  element_type,
-                  property_names,
-                  element_names=None,
-                  days=None):
+                 element_type,
+                 property_names,
+                 element_names=None,
+                 days=None):
         """Returns data for the required element type properties
 
         Parameters
@@ -918,15 +1036,17 @@ class Sr3Reader:
         ValueError
             If property_name is not found.
         """
-        return self._get_data(days=days,
-                              element_type=element_type,
-                              property_names=property_names,
-                              element_names=element_names)
+        return self._get_data(
+            days=days,
+            element_type=element_type,
+            property_names=property_names,
+            element_names=element_names,
+        )
 
     def get_series_order(self, property_names, element_names=None):
         """Returns tuple with the order of the properties requested"""
         if element_names is None:
-            element_names=['']
+            element_names = [""]
         if isinstance(property_names, str):
             property_names = [property_names]
         if isinstance(element_names, str):
@@ -941,150 +1061,172 @@ class Sr3Reader:
     def _cannot_interpolate_grid_data(self, property_names, ts):
         problem = []
         for p in property_names:
-            if not self.get_properties('grid')[p]['is_internal']:
-                if ts not in self.get_properties('grid')[p]['timesteps']:
+            if not self.get_properties("grid")[p]["is_internal"]:
+                if ts not in self.get_properties("grid")[p]["timesteps"]:
                     problem.append(p)
         return problem
 
-    @_need_read_file # type: ignore[arg-type]
+    @_need_read_file  # type: ignore[arg-type]
     def _get_single_grid_property(self, property_name, ts=None, element_names=None):
         if element_names is None:
-            element_names=['MATRIX']
-        if 'FRACTURE' not in self.get_elements('grid') and 'FRACTURE' in element_names:
-            raise ValueError('Current grid does not have fracture values.')
+            element_names = ["MATRIX"]
+        if "FRACTURE" not in self.get_elements("grid"):
+            if "FRACTURE" in element_names:
+                msg = "Current grid does not have fracture values."
+                raise ValueError(msg)
 
-        if self.get_properties('grid')[property_name]['is_internal']:
-            ts = '000000/GRID'
+        if self.get_properties("grid")[property_name]["is_internal"]:
+            ts = "000000/GRID"
         else:
             if ts is None:
                 ts = 0
-            if ts not in self.get_properties('grid')[property_name]['timesteps']:
-                msg = f'Grid property {property_name} does not have values for timestep {ts}.'
-                raise ValueError(msg)
+            properties_ = self.get_properties("grid")
+            timesteps_ = properties_[property_name]["timesteps"]
+            if ts not in timesteps_:
+                msg1 = f"Grid property {property_name} does not "
+                msg2 = f"have values for timestep {ts}."
+                raise ValueError(msg1+msg2)
             ts = str(ts).zfill(6)
 
+        p_name_ = property_name.replace("/", "%2F")
         data = self._get_dataset(
-            element_type='grid',
-            dataset_string=f'{ts}/{property_name.replace('/','%2F')}')[:]
-        self._data_unit_conversion(data, [property_name], has_dates=False, is_1d=True)
+            element_type="grid",
+            dataset_string=f"{ts}/{p_name_}",
+        )[:]
+        self._data_unit_conversion(data=data,
+                                   property_names=[property_name],
+                                   has_dates=False,
+                                   is_1d=True)
 
-        ni = self._grid_size['ni']
-        nj = self._grid_size['nj']
-        nk = self._grid_size['nk']
-        size = self.get_properties('grid')[property_name]['size']
-        if size == ni*nj*nk:
+        ni = self._grid_size["ni"]
+        nj = self._grid_size["nj"]
+        nk = self._grid_size["nk"]
+        size = self.get_properties("grid")[property_name]["size"]
+        if size == ni * nj * nk:
             return data[:]
-        elif 'FRACTURE' not in self.get_elements('grid'):
+        if "FRACTURE" not in self.get_elements("grid"):
             return data[:]
-        elif element_names == ['MATRIX','FRACTURE']:
+        if element_names == ["MATRIX", "FRACTURE"]:
             return data[:]
-        elif element_names == ['MATRIX']:
-            return data[:self.get_elements('grid')['FRACTURE']]
-        elif element_names == ['FRACTURE']:
-            return data[self.get_elements('grid')['FRACTURE']:]
-        raise ValueError(f'Invalid option: {element_names}.')
+        if element_names == ["MATRIX"]:
+            return data[: self.get_elements("grid")["FRACTURE"]]
+        if element_names == ["FRACTURE"]:
+            return data[self.get_elements("grid")["FRACTURE"]:]
+        raise ValueError(f"Invalid option: {element_names}.")
 
-    def _get_grid_data_to_complete(self, values, element_names=None, default=0):
+    def _get_grid_data_to_complete(self,
+                                   values,
+                                   element_names=None,
+                                   default=0):
         if element_names is None:
-            element_names=['MATRIX']
-        ni = self._grid_size['ni']
-        nj = self._grid_size['nj']
-        nk = self._grid_size['nk']
+            element_names = ["MATRIX"]
+        ni = self._grid_size["ni"]
+        nj = self._grid_size["nj"]
+        nk = self._grid_size["nk"]
 
         dtype = values.dtype
         default = np.array(default).astype(dtype)
-        new_array = np.full((ni*nj*nk*2,), default)
+        new_array = np.full((ni * nj * nk * 2,), default)
 
         indexes = self._get_single_grid_property(
-            property_name='IPSTCS',
-            ts=0,
-            element_names=element_names)
-        new_array[indexes-1] = values
+            property_name="IPSTCS", ts=0, element_names=element_names
+        )
+        new_array[indexes - 1] = values
 
-        if element_names == ['MATRIX']:
-            return new_array[:ni*nj*nk]
-        if element_names == ['FRACTURE']:
-            return new_array[ni*nj*nk:]
-        if element_names == ['MATRIX','FRACTURE']:
+        if element_names == ["MATRIX"]:
+            return new_array[:ni * nj * nk]
+        if element_names == ["FRACTURE"]:
+            return new_array[ni * nj * nk:]
+        if element_names == ["MATRIX", "FRACTURE"]:
             return new_array
         raise ValueError(f'Invalid elements: {", ".join(element_names)}')
 
-    @_need_read_file # type: ignore[arg-type]
-    def _get_multiple_grid_properties(self, property_names, ts=None, element_names=None):
+    @_need_read_file  # type: ignore[arg-type]
+    def _get_multiple_grid_properties(self,
+                                      property_names,
+                                      ts=None,
+                                      element_names=None):
         if element_names is None:
-            element_names=['MATRIX']
+            element_names = ["MATRIX"]
         if isinstance(property_names, str):
             property_names = [property_names]
-        is_complete = {p:self.get_properties('grid')[p]['is_complete'] for p in property_names}
+        properties = self.get_properties("grid")
+        is_complete = {
+            p: properties[p]["is_complete"] for p in property_names
+        }
         any_complete = any(v for v in is_complete.values())
         data = self._get_single_grid_property(
-            property_name=property_names[0],
-            ts=ts,
-            element_names=element_names)
+            property_name=property_names[0], ts=ts, element_names=element_names
+        )
         if any_complete and not is_complete[property_names[0]]:
-            data = self._get_grid_data_to_complete(values=data, element_names=element_names)
-        data = data.reshape(-1,1)
+            data = self._get_grid_data_to_complete(
+                values=data, element_names=element_names
+            )
+        data = data.reshape(-1, 1)
         for p in property_names[1:]:
             data_new = self._get_single_grid_property(
-                property_name=p,
-                ts=ts,
-                element_names=element_names)
+                property_name=p, ts=ts, element_names=element_names
+            )
             if any_complete and not is_complete[p]:
                 data_new = self._get_grid_data_to_complete(
-                    values=data_new,
-                    element_names=element_names)
+                    values=data_new, element_names=element_names
+                )
             data = self._concatenate_arrays(data, data_new)
         return data
 
-    @_need_read_file # type: ignore[arg-type]
-    def _get_grid_data_interpolated(self, property_names, day=None, element_names=None):
+    @_need_read_file  # type: ignore[arg-type]
+    def _get_grid_data_interpolated(self,
+                                    property_names,
+                                    day=None,
+                                    element_names=None):
         if element_names is None:
-            element_names=['MATRIX']
+            element_names = ["MATRIX"]
         if day is None:
             day = 0
         elif day < 0:
-            raise ValueError('Negative days are not valid.')
-        elif day > self.get_days('grid')[-1]:
-            msg = f'No data beyond {self.get_days('grid')[-1]} days. {day} days is not valid.'
-            raise ValueError(msg)
+            raise ValueError("Negative days are not valid.")
+        elif day > self.get_days("grid")[-1]:
+            msg1 = f"No data beyond {self.get_days('grid')[-1]} days. "
+            msg2 = f"{day} days is not valid."
+            raise ValueError(msg1+msg2)
 
         if isinstance(property_names, str):
             property_names = [property_names]
 
-        ts_index = np.where(self.get_days('grid') == day)[0]
+        ts_index = np.where(self.get_days("grid") == day)[0]
         if len(ts_index) > 0:
-            ts = self.get_timesteps('grid')[ts_index[0]]
+            ts = self.get_timesteps("grid")[ts_index[0]]
             return self._get_multiple_grid_properties(
                 property_names=property_names,
                 ts=ts,
                 element_names=element_names)
 
-        ts_index = np.where(self.get_days('grid') > day)[0][0]
-        ts_a = self.get_timesteps('grid')[ts_index - 1]
-        ts_b = self.get_timesteps('grid')[ts_index]
+        ts_index = np.where(self.get_days("grid") > day)[0][0]
+        ts_a = self.get_timesteps("grid")[ts_index - 1]
+        ts_b = self.get_timesteps("grid")[ts_index]
         cannot_interpolate = self._remove_duplicates(
-            self._cannot_interpolate_grid_data(property_names, ts_a) +
-            self._cannot_interpolate_grid_data(property_names, ts_b))
+            self._cannot_interpolate_grid_data(property_names, ts_a)
+            + self._cannot_interpolate_grid_data(property_names, ts_b)
+        )
         if len(cannot_interpolate) > 0:
-            msg = f'Cannot interpolate the following properties at {day} days: '
-            msg = msg + f'{', '.join(cannot_interpolate)}.'
-            raise ValueError(msg)
+            msg1 = "Cannot interpolate the following "
+            msg2 = f"properties at {day} days: "
+            msg3 = f"{', '.join(cannot_interpolate)}."
+            raise ValueError(msg1+msg2+msg3)
 
         data_a = self._get_multiple_grid_properties(
-            property_names=property_names,
-            ts=ts_a,
-            element_names=element_names)
+            property_names=property_names, ts=ts_a, element_names=element_names
+        )
         data_b = self._get_multiple_grid_properties(
-            property_names=property_names,
-            ts=ts_b,
-            element_names=element_names)
+            property_names=property_names, ts=ts_b, element_names=element_names
+        )
 
-        day_a = self.get_days('grid')[ts_index - 1]
-        day_b = self.get_days('grid')[ts_index]
+        day_a = self.get_days("grid")[ts_index - 1]
+        day_b = self.get_days("grid")[ts_index]
 
         alfa = (day - day_a) / (day_b - day_a)
         return data_a + alfa * (data_b - data_a)
 
     def get_grid_data(self):
         """Returns grid data"""
-        #_data_unit_conversion(data, property_names, has_dates=True)
+        # _data_unit_conversion(data, property_names, has_dates=True)
