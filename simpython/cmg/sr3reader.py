@@ -190,7 +190,7 @@ class Sr3Reader:
             date_string = str(date)
             integer_part = int(
                 date_string.split(".", maxsplit=1)[0]
-            )  # date_string.split('.')[0])
+            )
             decimal_part = float("0." + date_string.split(".")[1])
 
             parsed_date = datetime.strptime(str(integer_part), "%Y%m%d")
@@ -780,7 +780,7 @@ class Sr3Reader:
         return np.array(grid_timestep_list)
 
     def _grid_properties_adjustments(self, grid_property_list):
-        # TO DO
+        # TODO
         # for p,v in grid_property_list.items():
         #     if p in ['DIFRAC','DJFRAC','DKFRAC']:
         #         v['is_internal'] = True
@@ -1067,7 +1067,10 @@ class Sr3Reader:
         return problem
 
     @_need_read_file  # type: ignore[arg-type]
-    def _get_single_grid_property(self, property_name, ts=None, element_names=None):
+    def _get_single_grid_property(self,
+                                  property_name,
+                                  ts=None,
+                                  element_names=None):
         if element_names is None:
             element_names = ["MATRIX"]
         if "FRACTURE" not in self.get_elements("grid"):
