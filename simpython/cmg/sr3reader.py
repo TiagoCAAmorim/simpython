@@ -796,6 +796,7 @@ class Sr3Reader:
                 "timesteps": set(),
                 "is_internal": False,
                 "is_complete": False,
+                "original_name": name.decode()
             }
             for name, min_, max_ in zip(
                 dataset["Keyword"], dataset["Min"], dataset["Max"]
@@ -812,33 +813,33 @@ class Sr3Reader:
             dataset = self._f[f"SpatialProperties/{timestep}"]
             for key in dataset.keys():
                 sub_dataset = self._f[f"SpatialProperties/{timestep}/{key}"]
-                if isinstance(sub_dataset, self._dataset_type):
-                    key = key.replace("%2F", "/")
-                    if key in grid_property_list:
-                        size = sub_dataset.size
-                        if size in [n_cells, n_active]:
-                            if "size" in grid_property_list[key]:
-                                if grid_property_list[key]["size"] != size:
-                                    msg = f"Inconsistent grid size for {key}."
-                                    raise ValueError(msg)
-                            else:
-                                grid_property_list[key]["size"] = size
-                                grid_property_list[key]["is_complete"] = (
-                                    sub_dataset.size == n_cells
-                                )
-                            if set_timestep is None:
-                                grid_property_list[key]["timesteps"].add(
-                                    int(timestep)
-                                )
-                            else:
-                                grid_property_list[key]["timesteps"].add(
-                                    set_timestep
-                                )
-                                grid_property_list[key]["is_internal"] = True
-                        else:
-                            _ = grid_property_list.pop(key)
-                    else:
-                        raise ValueError(f"{key} not listed previously!")
+                if not isinstance(sub_dataset, self._dataset_type):
+                    continue
+                key = key.replace("%2F", "/")
+                if key not in grid_property_list:
+                    raise ValueError(f"{key} not listed previously!")
+                size = sub_dataset.size
+                if size not in [n_cells, n_active]:
+                    _ = grid_property_list.pop(key)
+                    continue
+                if "size" in grid_property_list[key]:
+                    if grid_property_list[key]["size"] != size:
+                        msg = f"Inconsistent grid size for {key}."
+                        raise ValueError(msg)
+                else:
+                    grid_property_list[key]["size"] = size
+                    grid_property_list[key]["is_complete"] = (
+                        sub_dataset.size == n_cells
+                    )
+                if set_timestep is None:
+                    grid_property_list[key]["timesteps"].add(
+                        int(timestep)
+                    )
+                else:
+                    grid_property_list[key]["timesteps"].add(
+                        set_timestep
+                    )
+                    grid_property_list[key]["is_internal"] = True
 
         _list_grid_properties("000000/GRID", 0)
         for ts in self.get_timesteps(element_type="grid"):
@@ -1078,12 +1079,12 @@ class Sr3Reader:
                 msg = "Current grid does not have fracture values."
                 raise ValueError(msg)
 
-        if self.get_properties("grid")[property_name]["is_internal"]:
+        properties_ = self.get_properties("grid")
+        if properties_[property_name]["is_internal"]:
             ts = "000000/GRID"
         else:
             if ts is None:
                 ts = 0
-            properties_ = self.get_properties("grid")
             timesteps_ = properties_[property_name]["timesteps"]
             if ts not in timesteps_:
                 msg1 = f"Grid property {property_name} does not "
@@ -1091,7 +1092,8 @@ class Sr3Reader:
                 raise ValueError(msg1+msg2)
             ts = str(ts).zfill(6)
 
-        p_name_ = property_name.replace("/", "%2F")
+        # p_name_ = property_name.replace("/", "%2F")
+        p_name_ = properties_[property_name]["original_name"]
         data = self._get_dataset(
             element_type="grid",
             dataset_string=f"{ts}/{p_name_}",
