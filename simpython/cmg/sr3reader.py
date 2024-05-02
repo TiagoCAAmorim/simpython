@@ -265,10 +265,10 @@ class Sr3Reader:
             number = int(match.group(1))
             return f'({str(self._component_list.get(number, match.group(1)))})'
         if isinstance(property_list, dict):
-            return {pattern.sub(replace, k):v for k,v in property_list.items()}
+            return {pattern.sub(replace, k): v
+                    for k, v in property_list.items()}
         return [pattern.sub(replace, k) for k in property_list]
 
-        return {pattern.sub(replace, k): v for k, v in property_list.items()}
 
     @_need_read_file  # type: ignore[arg-type]
     def _read_master_properties(self):
