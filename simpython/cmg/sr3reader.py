@@ -253,7 +253,7 @@ class Sr3Reader:
             self._component_list = {
                 (number + 1): name[0].decode()
                 for (number, name) in enumerate(dataset[:])
-                if name[0].decode() != "WATER"
+                # if name[0].decode() != "WATER"
             }
         else:
             self._component_list = {}
@@ -263,7 +263,10 @@ class Sr3Reader:
 
         def replace(match):
             number = int(match.group(1))
-            return f"({str(self._component_list.get(number, match.group(1)))})"
+            return f'({str(self._component_list.get(number, match.group(1)))})'
+        if isinstance(property_list, dict):
+            return {pattern.sub(replace, k):v for k,v in property_list.items()}
+        return [pattern.sub(replace, k) for k in property_list]
 
         return {pattern.sub(replace, k): v for k, v in property_list.items()}
 
@@ -413,6 +416,7 @@ class Sr3Reader:
         current_units = {}
         for d in self._unit_list.values():
             current_units[d["type"]] = d["current"]
+        return current_units
 
     def _get_unit_numbers(self, unit):
         out = []
