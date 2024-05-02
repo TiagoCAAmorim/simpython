@@ -132,11 +132,9 @@ class TestSr3Reader(unittest.TestCase):
             "C29toC63",
             "WATER"
         ]
-        file_read = (
-            sr3_file._component_list.values()  # pylint: disable=protected-access
-        )
+        c_ = sr3_file._component_list  # pylint: disable=protected-access
+        file_read = c_.values()
         _test_equal_lists(self, true_result, file_read)
-
 
     def test_read_properties(self):
         """Tests reading the properties of a file"""

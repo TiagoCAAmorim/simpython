@@ -261,14 +261,13 @@ class Sr3Reader:
     def _replace_components_property_list(self, property_list):
         pattern = re.compile(r"\((\d+)\)")
 
-        def replace(match):
+        def _replace(match):
             number = int(match.group(1))
             return f'({str(self._component_list.get(number, match.group(1)))})'
         if isinstance(property_list, dict):
-            return {pattern.sub(replace, k): v
+            return {pattern.sub(_replace, k): v
                     for k, v in property_list.items()}
-        return [pattern.sub(replace, k) for k in property_list]
-
+        return [pattern.sub(_replace, k) for k in property_list]
 
     @_need_read_file  # type: ignore[arg-type]
     def _read_master_properties(self):
@@ -600,19 +599,22 @@ class Sr3Reader:
             )
             self._timestep[element_type] = dataset[:]
 
-    def get_timesteps(self, element_type):
+    def get_timesteps(self, element_type=None):
         """Get list of time-steps.
 
         Parameters
         ----------
-        element_type : str
+        element_type : str, optional
             Element type to be evaluated.
+            (default: all simulation timesteps)
 
         Raises
         ------
         ValueError
             If an invalid element type is provided.
         """
+        if element_type is None:
+            return list(range(1, len(self._all_days)+1))
         if element_type not in self._element_types:
             msg = f'Valid element type: {", ".join(self._element_types)}'
             raise ValueError(msg)
@@ -620,19 +622,22 @@ class Sr3Reader:
             self._get_timesteps(element_type)
         return self._timestep[element_type]
 
-    def get_days(self, element_type):
+    def get_days(self, element_type=None):
         """Get list of days.
 
         Parameters
         ----------
-        element_type : str
+        element_type : str, optional
             Element type to be evaluated.
+            (default: all simulation days)
 
         Raises
         ------
         ValueError
             If an invalid element type is provided.
         """
+        if element_type is None:
+            return self._all_days
         if element_type not in self._element_types:
             msg = f'Valid element type: {", ".join(self._element_types)}'
             raise ValueError(msg)
@@ -644,19 +649,22 @@ class Sr3Reader:
             self._day[element_type] = days
         return self._day[element_type]
 
-    def get_dates(self, element_type):
+    def get_dates(self, element_type=None):
         """Get list of dates.
 
         Parameters
         ----------
-        element_type : str
+        element_type : str, optional
             Element type to be evaluated.
+            (default: all simulation dates)
 
         Raises
         ------
         ValueError
             If an invalid element type is provided.
         """
+        if element_type is None:
+            return self._all_dates
         if element_type not in self._element_types:
             msg = f'Valid element type: {", ".join(self._element_types)}'
             raise ValueError(msg)
@@ -1063,14 +1071,6 @@ class Sr3Reader:
                 original_index.append((element, property_))
         return original_index
 
-    def _cannot_interpolate_grid_data(self, property_names, ts):
-        problem = []
-        for p in property_names:
-            if not self.get_properties("grid")[p]["is_internal"]:
-                if ts not in self.get_properties("grid")[p]["timesteps"]:
-                    problem.append(p)
-        return problem
-
     @_need_read_file  # type: ignore[arg-type]
     def _get_single_grid_property(self,
                                   property_name,
@@ -1096,12 +1096,12 @@ class Sr3Reader:
                 raise ValueError(msg1+msg2)
             ts = str(ts).zfill(6)
 
-        # p_name_ = property_name.replace("/", "%2F")
         p_name_ = properties_[property_name]["original_name"]
         data = self._get_dataset(
             element_type="grid",
             dataset_string=f"{ts}/{p_name_}",
-        )[:]
+        )
+        data = data[:]
         self._data_unit_conversion(data=data,
                                    property_names=[property_name],
                                    has_dates=False,
@@ -1202,20 +1202,34 @@ class Sr3Reader:
         if isinstance(property_names, str):
             property_names = [property_names]
 
-        ts_index = np.where(self.get_days("grid") == day)[0]
-        if len(ts_index) > 0:
-            ts = self.get_timesteps("grid")[ts_index[0]]
-            return self._get_multiple_grid_properties(
-                property_names=property_names,
-                ts=ts,
-                element_names=element_names)
+        def _get_timesteps_for_interpolation(day):
+            ts_index = np.where(self.get_days("grid") == day)[0]
+            if len(ts_index) > 0:
+                ts = self.get_timesteps("grid")[ts_index[0]]
+                return ts_index, ts, ts
+            ts_index = np.where(self.get_days("grid") > day)[0][0]
+            ts_a = self.get_timesteps("grid")[ts_index - 1]
+            ts_b = self.get_timesteps("grid")[ts_index]
+            return ts_index, ts_a, ts_b
+        ts_index, ts_a, ts_b = _get_timesteps_for_interpolation(day)
 
-        ts_index = np.where(self.get_days("grid") > day)[0][0]
-        ts_a = self.get_timesteps("grid")[ts_index - 1]
-        ts_b = self.get_timesteps("grid")[ts_index]
+        def _cannot_interpolate_grid_data(property_names, ts):
+            if isinstance(property_names, str):
+                property_ = self.get_properties("grid")[property_names]
+                if property_["is_internal"]:
+                    return False
+                if ts in property_["timesteps"]:
+                    return False
+                return True
+            not_ok_list = []
+            for p in property_names:
+                if _cannot_interpolate_grid_data(p, ts):
+                    not_ok_list.append(p)
+            return not_ok_list
+
         cannot_interpolate = self._remove_duplicates(
-            self._cannot_interpolate_grid_data(property_names, ts_a)
-            + self._cannot_interpolate_grid_data(property_names, ts_b)
+            _cannot_interpolate_grid_data(property_names, ts_a)
+            + _cannot_interpolate_grid_data(property_names, ts_b)
         )
         if len(cannot_interpolate) > 0:
             msg1 = "Cannot interpolate the following "
@@ -1223,12 +1237,20 @@ class Sr3Reader:
             msg3 = f"{', '.join(cannot_interpolate)}."
             raise ValueError(msg1+msg2+msg3)
 
+        if ts_a == ts_b:
+            return self._get_multiple_grid_properties(
+                    property_names=property_names,
+                    ts=ts_a,
+                    element_names=element_names)
+
         data_a = self._get_multiple_grid_properties(
-            property_names=property_names, ts=ts_a, element_names=element_names
-        )
+            property_names=property_names,
+            ts=ts_a,
+            element_names=element_names)
         data_b = self._get_multiple_grid_properties(
-            property_names=property_names, ts=ts_b, element_names=element_names
-        )
+            property_names=property_names,
+            ts=ts_b,
+            element_names=element_names)
 
         day_a = self.get_days("grid")[ts_index - 1]
         day_b = self.get_days("grid")[ts_index]
@@ -1236,6 +1258,31 @@ class Sr3Reader:
         alfa = (day - day_a) / (day_b - day_a)
         return data_a + alfa * (data_b - data_a)
 
-    def get_grid_data(self):
-        """Returns grid data"""
-        # _data_unit_conversion(data, property_names, has_dates=True)
+    def get_grid_data(self,
+                      property_names,
+                      day=None,
+                      element_names=None):
+        """Returns grid data
+
+        Parameters
+        ----------
+        property_names : [str]
+            Properties to be evaluated.
+        element_names : [str], optional
+            List of elements to be evaluated.
+            Returns all elements if None.
+            (default: None)
+        days : [float], optional
+            List of days to return data.
+            Returns all timesteps if None.
+            (default: None)
+
+        Raises
+        ------
+        ValueError
+            If property_name is not found.
+        """
+        return self._get_grid_data_interpolated(
+            property_names=property_names,
+            day=day,
+            element_names=element_names)
