@@ -227,7 +227,7 @@ class Sr3Reader:
         if 'ComponentTable' in self._f['General']:
             dataset = self._f['General/ComponentTable']
             self._component_list = {
-                (number+1):name[0].decode() for (number,name) in enumerate(dataset[:]) if name[0].decode() != 'WATER'}
+                (number+1):name[0].decode() for (number,name) in enumerate(dataset[:])}
         else:
             self._component_list = {}
 
@@ -236,7 +236,9 @@ class Sr3Reader:
         def replace(match):
             number = int(match.group(1))
             return f'({str(self._component_list.get(number, match.group(1)))})'
-        return {pattern.sub(replace, k):v for k,v in property_list.items()}
+        if isinstance(property_list, dict):
+            return {pattern.sub(replace, k):v for k,v in property_list.items()}
+        return [pattern.sub(replace, k) for k in property_list]
 
     @_need_read_file # type: ignore[arg-type]
     def _read_master_properties(self):
@@ -357,7 +359,7 @@ class Sr3Reader:
         """
         dimensionality = self._get_unit_type_number(dimensionality)
         if unit not in self._unit_list[dimensionality]['conversion']:
-            msg = f'{unit} is not a valid unit for {self._unit_list[dimensionality]['type']}.'
+            msg = f'{unit} is not a valid unit for {self._unit_list[dimensionality]["type"]}.'
             raise ValueError(msg)
         self._unit_list[dimensionality]['current'] = unit
         self._update_properties_units()
@@ -372,6 +374,7 @@ class Sr3Reader:
         current_units = {}
         for d in self._unit_list.values():
             current_units[d["type"]] = d["current"]
+        return current_units
 
     def _get_unit_numbers(self, unit):
         out = []
@@ -507,8 +510,8 @@ class Sr3Reader:
             self._property[element_type] = {
                 name.decode():number for (number,name)
                 in enumerate(dataset[:])}
-            self._property[element_type] = self._replace_components_property_list(
-                self._property[element_type])
+        self._property[element_type] = self._replace_components_property_list(
+            self._property[element_type])
 
     def get_properties(self, element_type):
         """Get list of properties.
@@ -965,7 +968,7 @@ class Sr3Reader:
 
         data = self._get_dataset(
             element_type='grid',
-            dataset_string=f'{ts}/{property_name.replace('/','%2F')}')[:]
+            dataset_string=f'{ts}/{property_name.replace("/",r"%2F")}')[:]
         self._data_unit_conversion(data, [property_name], has_dates=False, is_1d=True)
 
         ni = self._grid_size['ni']
@@ -1045,7 +1048,7 @@ class Sr3Reader:
         elif day < 0:
             raise ValueError('Negative days are not valid.')
         elif day > self.get_days('grid')[-1]:
-            msg = f'No data beyond {self.get_days('grid')[-1]} days. {day} days is not valid.'
+            msg = f'No data beyond {self.get_days("grid")[-1]} days. {day} days is not valid.'
             raise ValueError(msg)
 
         if isinstance(property_names, str):
@@ -1067,7 +1070,7 @@ class Sr3Reader:
             self._cannot_interpolate_grid_data(property_names, ts_b))
         if len(cannot_interpolate) > 0:
             msg = f'Cannot interpolate the following properties at {day} days: '
-            msg = msg + f'{', '.join(cannot_interpolate)}.'
+            msg = msg + f'{", ".join(cannot_interpolate)}.'
             raise ValueError(msg)
 
         data_a = self._get_multiple_grid_properties(
