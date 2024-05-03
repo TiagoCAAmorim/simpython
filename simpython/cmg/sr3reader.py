@@ -181,6 +181,34 @@ class Sr3Reader:
                 _ = self.get_days(element)
                 _ = self.get_dates(element)
 
+            alias = {"OILRATSC": "QO",
+                     "GASRATSC": "QG",
+                     "WATRATSC": "QW",
+                     "LIQRATSC": "QL",
+
+                     "OILVOLSC": "NP",
+                     "GASVOLSC": "GP",
+                     "WATVOLSC": "WP",
+                     "LIQVOLSC": "LP",
+
+                     "OILRATRC": "QO_RC",
+                     "GASRATRC": "QG_RC",
+                     "WATRATRC": "QW_RC",
+                    #  "LIQRATRC": "QL_RC",
+
+                     "OILSECSU": "VOIP",
+                     "ONFRAC": "UPTIME",
+
+                     "ELTSCUM": "ELAPSED",
+                     "TSCUTCUM": "TS_CUTS",
+                     "DELTIME": "TS_SIZE",
+
+                     }
+            for k,v in alias.items():
+                self.set_alias(previous_property=k,
+                            new_property=v,
+                            check_exists=True)
+
     @_need_read_file  # type: ignore[arg-type]
     def _read_master_dates(self):
         dataset = self._f["General/MasterTimeTable"]
@@ -458,7 +486,7 @@ class Sr3Reader:
             self._unit_list[u]["conversion"][new_unit] = (new_gain, new_offset)
 
     def get_property_description(self, property_name):
-        """Returns dict with property atributes
+        """Returns dict with property attributes
 
         Parameters
         ----------
@@ -589,6 +617,42 @@ class Sr3Reader:
             self._get_properties(element_type=element_type)
         return self._property[element_type]
 
+    def set_alias(self, previous_property, new_property, check_exists=True):
+        """Sets an alias for an existing property.
+
+        Parameters
+        ----------
+        previous_property : str
+            Original property.
+        new_property : str
+            New property alias.
+        check_exists : bool, optional
+            Checks if new property already exists
+            (default: True)
+
+        Raises
+        ------
+        ValueError
+            If previous property is not found.
+        ValueError
+            If new property already exists and check_exists=True.
+        """
+        if check_exists:
+            for element in self._element_types:
+                if new_property in self.get_properties(element):
+                    msg = f'Property already exists: {new_property}'
+                    raise ValueError(msg)
+
+        ok = False
+        for element in self._element_types:
+            if previous_property in self.get_properties(element):
+                self._property[element][new_property] = self._property[element][previous_property]
+                self._master_property_list[new_property] = self._master_property_list[previous_property]
+                ok = True
+        if not ok:
+            msg = f'Property not found: {previous_property}'
+            raise ValueError(msg)
+
     @_need_read_file  # type: ignore[arg-type]
     def _get_timesteps(self, element_type):
         if element_type == "grid":
@@ -614,7 +678,7 @@ class Sr3Reader:
             If an invalid element type is provided.
         """
         if element_type is None:
-            return list(range(1, len(self._all_days)+1))
+            return list(range(len(self._all_days)))
         if element_type not in self._element_types:
             msg = f'Valid element type: {", ".join(self._element_types)}'
             raise ValueError(msg)
@@ -780,6 +844,27 @@ class Sr3Reader:
             "n_active": n_active,
             "n_cells": n_cells,
         }
+
+    def get_grid_size(self):
+        """Get grid sizes.
+
+        Parameters
+        ----------
+            None
+        """
+        ni = self._grid_size["ni"]
+        nj = self._grid_size["nj"]
+        nk = self._grid_size["nk"]
+        return ni, nj, nk
+
+    def get_active_cells(self):
+        """Get number of active cells.
+
+        Parameters
+        ----------
+            None
+        """
+        return self._grid_size["n_active"]
 
     @_need_read_file  # type: ignore[arg-type]
     def _get_grid_timesteps(self):
@@ -1007,6 +1092,9 @@ class Sr3Reader:
         element_names=None,
         raw_data=None,
     ):
+        if element_type == "grid":
+            msg = "To get grid data use 'get_grid_data'."
+            raise ValueError(msg)
         if element_names is None:
             element_names = self.get_elements(element_type=element_type)
         if raw_data is None:
