@@ -893,7 +893,7 @@ class Sr3Reader:
                 "timesteps": set(),
                 "is_internal": False,
                 "is_complete": False,
-                "original_name": name.decode()
+                "original_name": name.decode().replace("/","%2F")
             }
             for name, min_, max_ in zip(
                 dataset["Keyword"], dataset["Min"], dataset["Max"]

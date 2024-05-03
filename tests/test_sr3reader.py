@@ -764,6 +764,13 @@ class TestSr3Reader(unittest.TestCase):
         sr3_file = sr3reader.Sr3Reader(test_file)
 
         file_read = sr3_file.get_grid_data(
+            property_names="NET/GROSS",
+            element_names="MATRIX",
+            day=0.)
+        for i in range(sr3_file.get_active_cells()):
+            self.assertTrue(file_read[i] - 1 < 0.00001)
+
+        file_read = sr3_file.get_grid_data(
             property_names="PRES",
             element_names="MATRIX",
             day=30.)
