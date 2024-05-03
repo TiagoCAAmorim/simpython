@@ -26,10 +26,10 @@ def _test_equal_lists(self, true_result, file_read, partial_true_result=False):
     surplus = only_in_first(file_read, true_result)
     error_list = []
     if len(missing) > 0:
-        error_list.append(f"Missing: {','.join([str(a) for a in missing])}")
+        error_list.append(f"\n  Missing: {', '.join([str(a) for a in missing])}")
     if len(surplus) > 0:
-        error_list.append(f"Surplus: {','.join([str(a) for a in surplus])}")
-    error_msg = " ".join(error_list)
+        error_list.append(f"\n  Surplus: {', '.join([str(a) for a in surplus])}")
+    error_msg = "".join(error_list)
 
     if partial_true_result:
         self.assertEqual(missing, [], error_msg)
@@ -767,6 +767,7 @@ class TestSr3Reader(unittest.TestCase):
             property_names="PRES",
             element_names="MATRIX",
             day=30.)
+        file_read_list = list(file_read[:10,0])
         true_result = [
             63489.766,
             63396.96,
@@ -780,7 +781,28 @@ class TestSr3Reader(unittest.TestCase):
             64793.88,
         ]
         true_result = [t / 98.0665 for t in true_result]
-        _test_equal_lists(self, true_result, list(file_read[:10]))
+        for i in range(10):
+            self.assertTrue(abs(round(true_result[i], 2) - round(file_read_list[i],2)) < 0.01)
+
+        file_read = sr3_file.get_grid_data(
+            property_names=["SO","PRES","VISO","Z(CO2)"],
+            element_names="MATRIX",
+            day=30.)
+        file_read_list = list(file_read[:10,2])
+        true_result = [
+            0.38856095,
+            0.3883772,
+            0.3886714,
+            0.3882356,
+            0.38858983,
+            0.38904962,
+            0.38795048,
+            0.38824606,
+            0.38867596,
+            0.39111543,
+        ]
+        for i in range(10):
+            self.assertTrue(abs(round(true_result[i], 4) - round(file_read_list[i],4)) < 1E-4)
 
 if __name__ == "__main__":
     unittest.main()

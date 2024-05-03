@@ -1294,7 +1294,7 @@ class Sr3Reader:
             ts_index = np.where(self.get_days("grid") == day)[0]
             if len(ts_index) > 0:
                 ts = self.get_timesteps("grid")[ts_index[0]]
-                return ts_index, ts, ts
+                return ts_index[0], ts, ts
             ts_index = np.where(self.get_days("grid") > day)[0][0]
             ts_a = self.get_timesteps("grid")[ts_index - 1]
             ts_b = self.get_timesteps("grid")[ts_index]
