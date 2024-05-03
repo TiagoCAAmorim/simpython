@@ -784,25 +784,47 @@ class TestSr3Reader(unittest.TestCase):
         for i in range(10):
             self.assertTrue(abs(round(true_result[i], 2) - round(file_read_list[i],2)) < 0.01)
 
+        file_read = sr3_file.get_data(
+            element_type="grid",
+            property_names=["PRES","SO"],
+            element_names="MATRIX",
+            days=30.)
+        file_read_list = list(file_read[:10,0])
+        for i in range(10):
+            self.assertTrue(abs(round(true_result[i], 2) - round(file_read_list[i],2)) < 0.01)
+
+
         file_read = sr3_file.get_grid_data(
             property_names=["SO","PRES","VISO","Z(CO2)"],
             element_names="MATRIX",
-            day=30.)
+            day=10.)
         file_read_list = list(file_read[:10,2])
         true_result = [
-            0.38856095,
-            0.3883772,
-            0.3886714,
-            0.3882356,
-            0.38858983,
-            0.38904962,
-            0.38795048,
-            0.38824606,
-            0.38867596,
-            0.39111543,
+            (2 * 0.38856095 + 0.38856095) / 3,
+            (2 * 0.3883772 + 0.3883772) / 3,
+            (2 * 0.3886714 + 0.3886714) / 3,
+            (2 * 0.3882356 + 0.3882356) / 3,
+            (2 * 0.38858983 + 0.38858983) / 3,
+            (2 * 0.38904962 + 0.38904962) / 3,
+            (2 * 0.38795048 + 0.38795048) / 3,
+            (2 * 0.38824606 + 0.38824606) / 3,
+            (2 * 0.38867596 + 0.38867596) / 3,
+            (2 * 0.39111543 + 0.39111543) / 3,
         ]
         for i in range(10):
             self.assertTrue(abs(round(true_result[i], 4) - round(file_read_list[i],4)) < 1E-4)
+
+
+
+
+
+
+
+
+
+
+
+
 
 if __name__ == "__main__":
     unittest.main()

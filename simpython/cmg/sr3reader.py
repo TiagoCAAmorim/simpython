@@ -1136,13 +1136,29 @@ class Sr3Reader:
         ------
         ValueError
             If property_name is not found.
+        ValueError
+            If element_type is grid and
+            day is not a single number.
         """
+        if element_type == "grid":
+            if days is None:
+                msg = "day must be set for 'grid'."
+                raise ValueError(msg)
+            if isinstance(days, list):
+                if len(days) > 1:
+                    msg = "Only a single day must be set for 'grid'."
+                    raise ValueError(msg)
+                days = days[0]
+            return self.get_grid_data(
+                property_names=property_names,
+                day=days,
+                element_names=element_names)
+
         return self._get_data(
             days=days,
             element_type=element_type,
             property_names=property_names,
-            element_names=element_names,
-        )
+            element_names=element_names)
 
     def get_series_order(self, property_names, element_names=None):
         """Returns tuple with the order of the properties requested"""
