@@ -700,9 +700,7 @@ class Sr3Reader:
         ValueError
             If an invalid element type is provided.
         """
-        if element_type is None:
-            return self._all_days
-        if element_type not in self._element_types:
+        if element_type not in self._element_types+[None]:
             msg = f'Valid element type: {", ".join(self._element_types)}'
             raise ValueError(msg)
         if element_type not in self._day:
@@ -727,9 +725,7 @@ class Sr3Reader:
         ValueError
             If an invalid element type is provided.
         """
-        if element_type is None:
-            return self._all_dates
-        if element_type not in self._element_types:
+        if element_type not in self._element_types+[None]:
             msg = f'Valid element type: {", ".join(self._element_types)}'
             raise ValueError(msg)
         if element_type not in self._date:
@@ -739,6 +735,49 @@ class Sr3Reader:
             )
             self._date[element_type] = dates
         return self._date[element_type]
+
+    def day2date(self, day):
+        """Returns date associated to day
+
+        Parameters
+        ----------
+        days : str or [str]
+            Day or list of days to be evaluated.
+        """
+        dates = [t.timestamp() for t in self.get_dates()]
+
+        interp_day2date = interpolate.interp1d(
+                self.get_days(),
+                dates,
+                kind="linear"
+            )
+
+        if isinstance(day, list):
+            return [datetime.fromtimestamp(int(x)) for x in interp_day2date(day)]
+        return datetime.fromtimestamp(int(interp_day2date(day)))
+
+    def date2day(self, date):
+        """Returns day associated to date
+
+        Parameters
+        ----------
+        date : datetime.datetime or [datetime.datetime]
+            Date or list of dates to be evaluated.
+        """
+        dates = [t.timestamp() for t in self.get_dates()]
+
+        if isinstance(date, list):
+          date = [t.timestamp() for t in date]
+        else:
+          date = date.timestamp()
+
+        interp_date2day = interpolate.interp1d(
+                dates,
+                self.get_days(),
+                kind="linear"
+            )
+        return interp_date2day(date)
+
 
     @_need_read_file  # type: ignore[arg-type]
     def _get_parents(self, element_type):

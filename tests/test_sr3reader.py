@@ -658,6 +658,22 @@ class TestSr3Reader(unittest.TestCase):
         true_result = [0., 30.]
         _test_equal_lists(self, true_result, file_read)
 
+        file_read = sr3_file.day2date(day=735.)
+        true_result = datetime.strptime("20200906", "%Y%m%d")
+        self.assertEqual(true_result, file_read)
+
+        file_read = sr3_file.day2date(day=[735.])
+        true_result = [datetime.strptime("20200906", "%Y%m%d")]
+        _test_equal_lists(self, true_result, file_read)
+
+        file_read = sr3_file.date2day(date=datetime.strptime("20200906", "%Y%m%d"))
+        true_result = 735.
+        self.assertEqual(true_result, file_read)
+
+        file_read = sr3_file.date2day(date=[datetime.strptime("20200906", "%Y%m%d")])
+        true_result = [735.]
+        _test_equal_lists(self, true_result, file_read)
+
     def test_read_element_hierarchy(self):
         """Tests reading element hierarchy"""
 
