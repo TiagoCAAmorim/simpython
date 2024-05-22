@@ -708,9 +708,10 @@ class TemplateProcessor:
             text = f.read()
 
         self._output_file_path.parent.mkdir(parents=True, exist_ok=True)
-        for index, row in self.experiments_table.iterrows():
-            file_path_ = self._output_file_path.stem
-            file_suffix_ = self._output_file_path.suffix
+        file_path_ = self._output_file_path.stem
+        file_suffix_ = self._output_file_path.suffix
+        for index in self.experiments_table.index:
             file_name = f"{file_path_}_{index}{file_suffix_}"
             new_file_path = self._output_file_path.with_name(file_name)
-            self._create_new_file(new_file_path, row.to_dict(), text)
+            row = {k:self.experiments_table[k][index] for k in self.experiments_table.columns}
+            self._create_new_file(new_file_path, row, text)
