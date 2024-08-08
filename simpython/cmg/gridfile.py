@@ -174,7 +174,7 @@ class GridFile:
             Parameters
             ----------
             n : int
-                Cell number, from 1 to number of values.
+                Cell number, from 0 to number of values-1.
 
             Raises
             ------
@@ -183,8 +183,8 @@ class GridFile:
             ValueError
                 If shape is not defined.
         """
-        if n < 1:
-            msg = "Cells number must be greater than or equal to 1."
+        if n < 0:
+            msg = "Cells number must be greater than or equal to 0."
             raise ValueError(msg)
 
         if self.shape is None:
@@ -193,7 +193,7 @@ class GridFile:
         ni, nj, nk = self.shape
 
         if n > ni*nj*nk:
-            msg = "Cells number must be smaller than or equal to number of values."
+            msg = "Cells number must be smaller than number of values."
             raise ValueError(msg)
 
         k = int(n/(ni*nj)) + 1
