@@ -3,18 +3,24 @@ Implements the class TemplateProcessor
 """
 from pathlib import Path
 import re
-from pyDOE import lhs  # type: ignore
+import itertools
+
+from pyDOE import lhs  # type: ignore # pylint: disable=import-error,wrong-import-position
 from scipy import stats  # type: ignore
 
 import numpy as np  # type: ignore # noqa: F401
 import pandas as pd  # type: ignore # noqa: F401
 
+from simpython.common import file_utils  # type: ignore # pylint: disable=import-error,wrong-import-position
+
 
 class TemplateProcessor:
-
     """
     Class that represents a project to generate files based on a template
 
+    General search pattern:
+      <\\var>variable_name[type, default_value, (distribution, par1, par2)]<var>
+    All properties, except variable_name, are optional.
     ...
 
     Attributes
@@ -26,8 +32,10 @@ class TemplateProcessor:
         dictionary with all data related to the
         variables: distribution, parameters, values
         (if Table type), default value, if is active.
-    experiments_table : data-frame
+    experiments_table : pandas.DataFrame
         Table with all experiments.
+    files : list
+        List with path of file created.
 
     Methods
     -------
@@ -47,6 +55,11 @@ class TemplateProcessor:
         Generates a table (experiments_table) with all experiments.
     create_new_files(output_file_path=None):
         Creates files based on samples.
+    build_all_combinations(variable_dict, csv_file_name=None,
+                           clear_folder=False, zip_file_name=None, verbose=False):
+        Creates files based on all combination of values.
+
+
     """
 
     def __init__(self, template_path, verbose=False, output_file_path=None,
@@ -127,10 +140,13 @@ class TemplateProcessor:
         self.experiments_table = None
         self._current_distribution = None
         self._n_samples = n_samples
+        self.files = []
         if output_file_path is not None:
             self.set_output_file(output_file_path)
-            self.generate_experiments(n_samples=self._n_samples)
-            self.create_new_files()
+            if self._n_samples > 0:
+                self.generate_experiments(n_samples=self._n_samples)
+                if self.experiments_table is not None:
+                    self.create_new_files()
 
     def __str__(self):
         return str(self.variables)
@@ -208,7 +224,7 @@ class TemplateProcessor:
         if text is None:
             if self._verbose:
                 print("  No distribution provided. Will assume 'table'.")
-            return 'table', list()
+            return 'table', []
 
         parameters = self._custom_split(text)
         distribution = parameters[0].lower()
@@ -466,6 +482,8 @@ class TemplateProcessor:
         else:
             try:
                 df = pd.read_csv(variables_table_path, skipinitialspace=True)
+                if (df.columns[0] is None) or ('index' in df.columns and df.columns[0] == 'index'):
+                    df.drop(columns=df.columns[0], axis=1, inplace=True)
                 for key in df.columns:
                     if key not in self.variables:
                         msg1 = f"Variable '{key}' not found in template."
@@ -495,11 +513,11 @@ class TemplateProcessor:
                 msg3 = f"to {max(tables_n_values)}."
                 msg4 = "Cannot continue."
                 print(" ".join([msg1, msg2, msg3, msg4]))
-                return None
+                return 0
             tables_n_values = tables_n_values[0]
             if tables_n_values == 0:
                 print("No values found for 'table' variables. Cannot continue.")
-                return None
+                return 0
         else:
             tables_n_values = n_samples
 
@@ -510,14 +528,14 @@ class TemplateProcessor:
             msg2 = "is smaller than minimum (1)."
             msg3 = "Cannot continue."
             print(" ".join([msg1, msg2, msg3]))
-            return None
+            return 0
         elif tables_n_values != n_samples:
             msg1 = f"Number of values in 'table' variables ({tables_n_values})"
             msg2 = "is different from the requested sample size"
             msg3 = f"({n_samples})."
             msg4 = "Cannot continue."
             print(" ".join([msg1, msg2, msg3, msg4]))
-            return None
+            return 0
 
         return n_samples
 
@@ -683,7 +701,7 @@ class TemplateProcessor:
             f.write(new_text)
 
     def create_new_files(self, output_file_path=None):
-        """Creates files based on samples.
+        """Creates files based on samples and returns list of file paths.
 
         Parameters
         ----------
@@ -710,8 +728,86 @@ class TemplateProcessor:
         self._output_file_path.parent.mkdir(parents=True, exist_ok=True)
         file_path_ = self._output_file_path.stem
         file_suffix_ = self._output_file_path.suffix
+        self.files = []
         for index in self.experiments_table.index:
             file_name = f"{file_path_}_{index}{file_suffix_}"
             new_file_path = self._output_file_path.with_name(file_name)
             row = {k:self.experiments_table[k][index] for k in self.experiments_table.columns}
             self._create_new_file(new_file_path, row, text)
+            self.files.append(new_file_path)
+
+
+    def build_all_combinations(self, variable_dict,
+                               csv_file_name = None,
+                               clear_folder=False,
+                               zip_file_name=None,
+                               verbose=False):
+        """Creates files based on all combination of values.
+
+        Parameters
+        ----------
+        variable_dict: dict of lists
+            Dictionary with variables names as keys and lists
+            of possible values as items.
+        csv_file_name : str, optional
+            Name of the csv file with all combinations.
+            (default: var_table.csv)
+        clear_folder : boolean, optional
+            Delete .dat or .csv files found in folder_path
+            (default: True)
+        zip_file_name : boolean, optional
+            Zip all dat files created. If None is provided
+            nothing is done.
+            (default: None)
+        verbose : boolean, optional
+            Print intermediary results.
+            (default: False)
+        """
+        files_path = Path(self._output_file_path)
+        files_path.parent.mkdir(parents=True, exist_ok=True)
+        if csv_file_name is None:
+            csv_file_name = 'var_table.csv'
+        csv_file_path = files_path.parent / csv_file_name
+
+        if verbose:
+            print(f'Working folder: {files_path.parent}')
+        if clear_folder:
+            files_deleted = file_utils.delete_files(
+                folder_path=files_path.parent,
+                extensions=['.dat','.csv'],
+                return_list=True)
+            if verbose and len(files_deleted) > 0:
+                print(f'Files deleted: {len(files_deleted)}')
+
+        if verbose:
+            print('Variables')
+            for k,v in variable_dict.items():
+                print(f'  {k}: {len(v)} values')
+        all_combinations = list(itertools.product(*variable_dict.values()))
+        if verbose:
+            print(f'Number of combinations: {len(all_combinations)}')
+
+        file_utils.save_to_csv(
+            values=all_combinations,
+            output_file_path=csv_file_path,
+            header=variable_dict.keys())
+        if verbose:
+            print(f'Experiments table: {csv_file_path}')
+
+        self.read_variables_table(csv_file_path)
+
+        if verbose:
+            print('Creating files...')
+        self.create_new_files()
+
+        if zip_file_name is not None:
+            if verbose:
+                print(f'Zipping {len(self.files)} files to {files_path / zip_file_name}...')
+            file_utils.zip_files(
+                folder_path=files_path.parent,
+                file_name=zip_file_name,
+                file_list=self.files,
+                delete_original=True)
+
+        if verbose:
+            print('Done')
