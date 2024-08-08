@@ -16,8 +16,8 @@ class TestGridFile(unittest.TestCase):
     def test_read_file(self):
         """Reads data from files"""
 
-        test_file_float = Path(r'.\tests\gridfiles\PERMK.geo').resolve()
-        test_file_int = Path(r'.\tests\gridfiles\RTYPE.geo').resolve()
+        test_file_float = Path('tests/gridfiles/PERMK.geo').resolve()
+        test_file_int = Path('tests/gridfiles/RTYPE.geo').resolve()
 
         data_float = gridfile.GridFile(file_path=test_file_float)
         data_int = gridfile.GridFile(file_path=test_file_int)
@@ -46,12 +46,12 @@ class TestGridFile(unittest.TestCase):
     def test_write_file(self):
         """Rewrite file"""
 
-        test_file = Path(r'.\tests\gridfiles\PERMK.geo').resolve()
+        test_file = Path('tests/gridfiles/PERMK.geo').resolve()
         data = gridfile.GridFile(file_path=test_file)
 
         try:
             with tempfile.NamedTemporaryFile(suffix='.geo', delete=False) as temp_file:
-                data.write(output_file_path=temp_file.name)
+                data.write(file_path=temp_file.name)
                 data_new = gridfile.GridFile(file_path=temp_file.name)
 
                 self.assertEqual(data_new.get_number_values(),
@@ -63,18 +63,18 @@ class TestGridFile(unittest.TestCase):
     def test_read_file_error(self):
         """Reading files with errors"""
 
-        test_file = Path(r'.\tests\gridfiles\RTYPE_not_exist.geo').resolve()
+        test_file = Path('tests/gridfiles/RTYPE_not_exist.geo').resolve()
         msg = 'Could not catch the "file not found" error.'
         with self.assertRaises(FileNotFoundError, msg=msg):
             data = gridfile.GridFile(file_path=test_file)
             data.read()
 
-        test_file = Path(r'.\tests\gridfiles\RTYPE_error.geo').resolve()
+        test_file = Path('tests/gridfiles/RTYPE_error.geo').resolve()
         msg = 'Could not catch the "more than one keyword" error.'
         with self.assertRaises(ValueError, msg=msg):
             _ = gridfile.GridFile(file_path=test_file)
 
-        test_file = Path(r'.\tests\gridfiles\RTYPE_error2.geo').resolve()
+        test_file = Path('tests/gridfiles/RTYPE_error2.geo').resolve()
         msg = 'Could not catch the "no data" error.'
         with self.assertRaises(ValueError, msg=msg):
             _ = gridfile.GridFile(file_path=test_file)
@@ -82,7 +82,7 @@ class TestGridFile(unittest.TestCase):
     def test_transform_all_files(self):
         """Rewrites all grid files in a given folder."""
         temp_dir = Path(tempfile.mkdtemp())
-        src_dir = Path(r'.\tests\gridfiles').resolve()
+        src_dir = Path('tests/gridfiles').resolve()
         for file_path in src_dir.iterdir():
             if file_path.is_file():
                 shutil.copy(file_path, temp_dir)

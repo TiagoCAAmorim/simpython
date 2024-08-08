@@ -455,7 +455,7 @@ class GridFile:
                 If an invalid path is provided.
         """
 
-        lines = [comments]
+        lines = comments
         lines.append(keyword)
 
         current_line = ''
@@ -507,8 +507,8 @@ class GridFile:
                 (default: None)
             coord_range : tuple of 2-element tuples, optional
                 Coordinates ranges of a subgrid. Expected
-                format: ((i1, i2), (j1,j2), (k1,k2))
-                If None is provided the full grid is returned
+                format: ((i1, i2), (j1,j2), (k1,k2)).
+                If None is provided the full grid is returned.
                 (default: None)
             keyword : str, optional
                 Keyword to be used. If None is provided the
@@ -586,7 +586,8 @@ class GridFile:
                                      encoding=self._encoding, auto_read=True)
                 ok = True
             except ValueError:
-                print(f'{file_path.name} is not a valid grid file.')
+                if verbose:
+                    print(f'{file_path.name} is not a valid grid file.')
                 ok = False
             if ok:
                 if new_suffix is None:
