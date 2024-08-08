@@ -544,9 +544,10 @@ class Sr3Reader:
             s = f"TimeSeries/{el_type_string}/{dataset_string}"
         if s in self._f:
             return self._f[s]
-        msg1 = f"Dataset {dataset_string} not found for "
-        msg2 = f"{element_type}. {s} does not exist."
-        raise ValueError(msg1+msg2)
+        return []
+        # msg1 = f"Dataset {dataset_string} not found for "
+        # msg2 = f"{element_type}. {s} does not exist."
+        # raise ValueError(msg1+msg2)
 
     @_need_read_file  # type: ignore[arg-type]
     def _get_elements(self, element_type):
@@ -643,15 +644,16 @@ class Sr3Reader:
                     msg = f'Property already exists: {new_property}'
                     raise ValueError(msg)
 
-        ok = False
+        # ok = False
         for element in self._element_types:
             if previous_property in self.get_properties(element):
                 self._property[element][new_property] = self._property[element][previous_property]
                 self._master_property_list[new_property] = self._master_property_list[previous_property]
-                ok = True
-        if not ok:
-            msg = f'Property not found: {previous_property}'
-            raise ValueError(msg)
+                # ok = True
+        # if not ok:
+            # msg = f'Property not found: {previous_property}'
+            # print(msg)
+            # raise ValueError(msg)
 
     @_need_read_file  # type: ignore[arg-type]
     def _get_timesteps(self, element_type):
@@ -705,10 +707,13 @@ class Sr3Reader:
             raise ValueError(msg)
         if element_type not in self._day:
             timesteps = self.get_timesteps(element_type=element_type)
-            days = np.vectorize(lambda x: self._all_days[x])(
-                timesteps
-            )
-            self._day[element_type] = days
+            if len(timesteps) > 0:
+                days = np.vectorize(lambda x: self._all_days[x])(
+                    timesteps
+                )
+                self._day[element_type] = days
+            else:
+                self._day[element_type] = []
         return self._day[element_type]
 
     def get_dates(self, element_type=None):
@@ -730,10 +735,13 @@ class Sr3Reader:
             raise ValueError(msg)
         if element_type not in self._date:
             timesteps = self.get_timesteps(element_type=element_type)
-            dates = np.vectorize(lambda x: self._all_dates[x])(
-                timesteps
-            )
-            self._date[element_type] = dates
+            if len(timesteps) > 0:
+                dates = np.vectorize(lambda x: self._all_dates[x])(
+                    timesteps
+                )
+                self._date[element_type] = dates
+            else:
+                self._date[element_type] = []
         return self._date[element_type]
 
     def day2date(self, day):
@@ -1283,7 +1291,7 @@ class Sr3Reader:
         indexes = self._get_single_grid_property(
             property_name="IPSTCS", ts=0, element_names=element_names
         )
-        new_array[indexes - 1] = values
+        new_array[indexes - 1] = values.reshape(-1)
 
         if element_names == ["MATRIX"]:
             return new_array[:ni * nj * nk]
@@ -1404,7 +1412,9 @@ class Sr3Reader:
     def get_grid_data(self,
                       property_names,
                       day=None,
-                      element_names=None):
+                      element_names=None,
+                      return_complete=False,
+                      default=0):
         """Returns grid data
 
         Parameters
@@ -1419,13 +1429,27 @@ class Sr3Reader:
             List of days to return data.
             Returns all timesteps if None.
             (default: None)
+        return_complete: [bool], optional
+            Returns array with values for
+            all cells.
+            (default: False)
+        default: [int/float], optional
+            Value to be used in the inactive
+            cells.
+            (default: 0)
 
         Raises
         ------
         ValueError
             If property_name is not found.
         """
-        return self._get_grid_data_interpolated(
+        data= self._get_grid_data_interpolated(
             property_names=property_names,
             day=day,
             element_names=element_names)
+        if return_complete:
+            return self._get_grid_data_to_complete(
+                data,
+                element_names=element_names,
+                default=default)
+        return data
