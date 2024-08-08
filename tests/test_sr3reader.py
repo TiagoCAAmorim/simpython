@@ -43,7 +43,7 @@ class TestSr3Reader(unittest.TestCase):
     def test_read_elements(self):
         """Tests reading the elements of a file"""
 
-        test_file = Path(r".\tests\sr3\base_case_3a.sr3").resolve()
+        test_file = Path("tests/sr3/base_case_3a.sr3").resolve()
         sr3_file = sr3reader.Sr3Reader(test_file)
 
         true_result = [
@@ -140,7 +140,7 @@ class TestSr3Reader(unittest.TestCase):
     def test_read_properties(self):
         """Tests reading the properties of a file"""
 
-        test_file = Path(r".\tests\sr3\base_case_3a.sr3").resolve()
+        test_file = Path("tests/sr3/base_case_3a.sr3").resolve()
         sr3_file = sr3reader.Sr3Reader(test_file)
 
         true_result = [
@@ -576,7 +576,7 @@ class TestSr3Reader(unittest.TestCase):
     def test_read_units(self):
         """Tests reading the units"""
 
-        test_file = Path(r".\tests\sr3\base_case_3a.sr3").resolve()
+        test_file = Path("tests/sr3/base_case_3a.sr3").resolve()
         sr3_file = sr3reader.Sr3Reader(test_file)
 
         true_result = {
@@ -629,13 +629,11 @@ class TestSr3Reader(unittest.TestCase):
         with self.assertRaises(ValueError):
             sr3_file.set_alias(previous_property="OILRATSC", new_property="OILRATRC")
 
-        with self.assertRaises(ValueError):
-            sr3_file.set_alias(previous_property="NOTVALID", new_property="SOMETHING")
 
     def test_read_times(self):
         """Tests reading times and dates"""
 
-        test_file = Path(r".\tests\sr3\base_case_3a.sr3").resolve()
+        test_file = Path("tests/sr3/base_case_3a.sr3").resolve()
         sr3_file = sr3reader.Sr3Reader(test_file)
 
         file_read = sr3_file.get_timesteps()
@@ -677,7 +675,7 @@ class TestSr3Reader(unittest.TestCase):
     def test_read_element_hierarchy(self):
         """Tests reading element hierarchy"""
 
-        test_file = Path(r".\tests\sr3\base_case_3a.sr3").resolve()
+        test_file = Path("tests/sr3/base_case_3a.sr3").resolve()
         sr3_file = sr3reader.Sr3Reader(test_file)
 
         file_read = sr3_file.get_parent(element_type="group", element_name="I-PLAT1-PRO")
@@ -699,7 +697,7 @@ class TestSr3Reader(unittest.TestCase):
     def test_read_grid_size(self):
         """Tests reading grid sizes"""
 
-        test_file = Path(r".\tests\sr3\base_case_3a.sr3").resolve()
+        test_file = Path("tests/sr3/base_case_3a.sr3").resolve()
         sr3_file = sr3reader.Sr3Reader(test_file)
 
         file_read = sr3_file.get_grid_size()
@@ -713,7 +711,7 @@ class TestSr3Reader(unittest.TestCase):
     def test_read_timeseries(self):
         """Tests reading timeseries"""
 
-        test_file = Path(r".\tests\sr3\base_case_3a.sr3").resolve()
+        test_file = Path("tests/sr3/base_case_3a.sr3").resolve()
         sr3_file = sr3reader.Sr3Reader(test_file)
 
         file_read = sr3_file.get_data(element_type="well",
@@ -776,7 +774,7 @@ class TestSr3Reader(unittest.TestCase):
     def test_read_gridmaps(self):
         """Tests reading grid properties"""
 
-        test_file = Path(r".\tests\sr3\base_case_3a.sr3").resolve()
+        test_file = Path("tests/sr3/base_case_3a.sr3").resolve()
         sr3_file = sr3reader.Sr3Reader(test_file)
 
         file_read = sr3_file.get_grid_data(
@@ -836,17 +834,6 @@ class TestSr3Reader(unittest.TestCase):
         ]
         for i in range(10):
             self.assertTrue(abs(round(true_result[i], 4) - round(file_read_list[i],4)) < 1E-4)
-
-
-
-
-
-
-
-
-
-
-
 
 
 if __name__ == "__main__":

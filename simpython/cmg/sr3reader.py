@@ -628,13 +628,11 @@ class Sr3Reader:
         new_property : str
             New property alias.
         check_exists : bool, optional
-            Checks if new property already exists
+            Checks if new property already exists.
             (default: True)
 
         Raises
         ------
-        ValueError
-            If previous property is not found.
         ValueError
             If new property already exists and check_exists=True.
         """
@@ -644,16 +642,11 @@ class Sr3Reader:
                     msg = f'Property already exists: {new_property}'
                     raise ValueError(msg)
 
-        # ok = False
         for element in self._element_types:
             if previous_property in self.get_properties(element):
                 self._property[element][new_property] = self._property[element][previous_property]
                 self._master_property_list[new_property] = self._master_property_list[previous_property]
-                # ok = True
-        # if not ok:
-            # msg = f'Property not found: {previous_property}'
-            # print(msg)
-            # raise ValueError(msg)
+
 
     @_need_read_file  # type: ignore[arg-type]
     def _get_timesteps(self, element_type):
