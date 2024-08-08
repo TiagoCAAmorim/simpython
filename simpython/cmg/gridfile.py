@@ -275,8 +275,8 @@ class GridFile:
         try:
             output_file_path.write_text(content, encoding=self._encoding)
         except (ValueError, TypeError, NameError) as e:
-            msg = f'Could not write file: {
-                output_file_path}'
+            msg = "Could not write file: "
+            msg += output_file_path
             raise ValueError(msg) from e
 
     def rewrite_all_grid_files(self, folder_path=None, new_suffix=None, verbose=False):
@@ -329,6 +329,6 @@ class GridFile:
                 try:
                     grid_file.write(out_file_path)
                 except ValueError as e:
-                    msg = f'Could not rewrite file: {
-                        out_file_path}'
+                    msg = 'Could not rewrite file: '
+                    msg += out_file_path
                     raise ValueError(msg) from e
