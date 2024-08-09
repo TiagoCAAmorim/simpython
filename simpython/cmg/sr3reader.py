@@ -644,8 +644,10 @@ class Sr3Reader:
 
         for element in self._element_types:
             if previous_property in self.get_properties(element):
-                self._property[element][new_property] = self._property[element][previous_property]
-                self._master_property_list[new_property] = self._master_property_list[previous_property]
+                p = self._property[element][previous_property]
+                self._property[element][new_property] = p
+                p = self._master_property_list[previous_property]
+                self._master_property_list[new_property] = p
 
 
     @_need_read_file  # type: ignore[arg-type]
@@ -768,9 +770,9 @@ class Sr3Reader:
         dates = [t.timestamp() for t in self.get_dates()]
 
         if isinstance(date, list):
-          date = [t.timestamp() for t in date]
+            date = [t.timestamp() for t in date]
         else:
-          date = date.timestamp()
+            date = date.timestamp()
 
         interp_date2day = interpolate.interp1d(
                 dates,
