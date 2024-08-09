@@ -605,15 +605,15 @@ class TestSr3Reader(unittest.TestCase):
             "concentration": "kg/m3",
             "molar concentration": "gmole/m3",
         }
-        file_read = sr3_file.get_current_units()
+        file_read = sr3_file.units.get_current()
         _test_equal_lists(self, true_result.keys(), file_read.keys())
         _test_equal_lists(self, true_result.values(), file_read.values())
 
         sr3_file.set_current_unit(dimensionality="mass",unit="g")
-        file_read = sr3_file.get_current_units()
+        file_read = sr3_file.units.get_current()
         self.assertEqual("g", file_read["mass"])
 
-        sr3_file.add_new_unit(old_unit="m", new_unit="dm", gain=0.1, offset=0.0)
+        sr3_file.units.add(old="m", new="dm", gain=0.1, offset=0.0)
         file_read = sr3_file.get_property_unit(property_name="OILRATSC")
         self.assertEqual("m3/day", file_read)
 
@@ -752,14 +752,14 @@ class TestSr3Reader(unittest.TestCase):
                                       element_names=["PLAT1-PRO"],
                                       days=[(2.*1001.0+1008.99)/3.])
         true_result = (2.*166546.69278864737+241094.6563692809)/3.
-        self.assertEqual(round(true_result,2), round(list(file_read[:,1])[0],2))
+        self.assertAlmostEqual(true_result, float(list(file_read[:,1])[0]))
 
         sr3_file.set_current_unit(dimensionality="well liquid volume", unit="MMbbl")
         file_read = sr3_file.get_data(element_type="group",
                                       property_names=["NP"],
                                       element_names=["PLAT1-PRO"],
                                       days=[(2.*1001.0+1008.99)/3.])
-        self.assertEqual(round(true_result * 6.2898108E-6,2), round(list(file_read[:,1])[0],2))
+        self.assertAlmostEqual(true_result * 6.2898108E-6, float(list(file_read[:,1])[0]))
 
         file_read = sr3_file.get_series_order(property_names=["QO","BHP"],
                                       element_names=["P14","P11"])

@@ -11,6 +11,9 @@ import numpy as np
 from scipy import interpolate  # type: ignore
 import h5py  # type: ignore
 
+from .units import UnitHandler
+# from .elements.py import ElementHandler
+
 
 def _need_read_file(func):  # pylint: disable=no-self-argument
     def wrapper(self, *args, **kwargs):
@@ -55,6 +58,7 @@ class Sr3Reader:
         associated to the element type.
     """
 
+
     def __init__(self, file_path, usual_units=True):
         """
         Parameters
@@ -79,7 +83,8 @@ class Sr3Reader:
 
         self._all_days = {}
         self._all_dates = {}
-        self._unit_list = {}
+        # self._unit_list = {}
+        self.units = UnitHandler()
         self._component_list = {}
         self._master_property_list = {}
 
@@ -111,14 +116,41 @@ class Sr3Reader:
             ]
 
             for old, new, (gain, offset) in additional_units:
-                self.add_new_unit(old, new, gain, offset)
+                self.units.add(old, new, gain, offset)
             self.set_current_unit("pressure", "kgf/cm2")
+
+
+    def set_current_unit(self, dimensionality, unit):
+        """Sets the current unit for a given dimensionality.
+
+        Parameters
+        ----------
+        dimensionality : str or int
+            Dimensionality to modify.
+        unit : str
+            New unit for the given dimensionality.
+
+        Raises
+        ------
+        ValueError
+            If an invalid dimensionality is provided.
+        ValueError
+            If an invalid unit is provided.
+        TypeError
+            If an invalid dimensionality variable
+            type is provided.
+        """
+        self.units._set_current(dimensionality, unit)
+        self._update_properties_units()
+
 
     def _file_is_closed(self):
         return self._f is None
 
+
     def _file_is_open(self):
         return not self._file_is_closed()
+
 
     def open(self):
         """Manually open sr3 file."""
@@ -127,6 +159,7 @@ class Sr3Reader:
             self._open_calls += 1
             self._open_count = 0
         self._open_count += 1
+
 
     def close(self, force_close=False):
         """Manually close sr3 file."""
@@ -140,6 +173,7 @@ class Sr3Reader:
                 self._f = None
             self._open_count -= 1
 
+
     @_need_read_file  # type: ignore[arg-type]
     def get_hdf_elements(self):
         """Returns dict with all groups and databases in file"""
@@ -150,6 +184,7 @@ class Sr3Reader:
 
         self._f.visit(get_type)
         return sr3_elements
+
 
     @_need_read_file  # type: ignore[arg-type]
     def read(self, read_elements=True):
@@ -166,7 +201,9 @@ class Sr3Reader:
         self._dataset_type = type(self._f["General/HistoryTable"])
 
         self._read_master_dates()
-        self._read_master_units()
+        self.units._read_master_units(
+            units_table=self._f["General/UnitsTable"],
+            conversion_table=self._f["General/UnitConversionTable"])
         self._read_master_component_table()
         self._read_master_properties()
         self._get_grid_sizes()
@@ -209,6 +246,7 @@ class Sr3Reader:
                             new_property=v,
                             check_exists=True)
 
+
     @_need_read_file  # type: ignore[arg-type]
     def _read_master_dates(self):
         dataset = self._f["General/MasterTimeTable"]
@@ -231,48 +269,6 @@ class Sr3Reader:
             for (number, date) in zip(dataset["Index"], dataset["Date"])
         }
 
-    @_need_read_file  # type: ignore[arg-type]
-    def _read_master_units(self):
-        dataset = self._f["General/UnitsTable"]
-        columns = zip(
-            dataset["Index"],
-            dataset["Dimensionality"],
-            dataset["Internal Unit"],
-            dataset["Output Unit"],
-        )
-        self._unit_list = {
-            number: {
-                "type": name.decode().lower(),
-                "internal": internal_name.decode(),
-                "current": output_name.decode(),
-                "conversion": {},
-            }
-            for (number, name, internal_name, output_name) in columns
-        }
-
-        dataset = self._f["General/UnitConversionTable"]
-        columns = zip(
-            dataset["Dimensionality"],
-            dataset["Unit Name"],
-            dataset["Gain"],
-            dataset["Offset"],
-        )
-        for number, name, gain, offset in columns:
-            self._unit_list[number]["conversion"][name.decode()] = (
-                1.0 / gain,
-                offset * (-1.0),
-            )
-
-        for d in self._unit_list.values():
-            if d["internal"] != d["current"]:
-                gain, offset = d["conversion"][d["internal"]]
-                for k in d["conversion"]:
-                    g, o = d["conversion"][k]
-                    d["conversion"][k] = (g / gain, o - offset)
-
-        for unit in self._unit_list.values():
-            if unit["internal"] not in unit["conversion"]:
-                unit["conversion"][unit["internal"]] = (1.0, 0.0)
 
     @_need_read_file  # type: ignore[arg-type]
     def _read_master_component_table(self):
@@ -286,6 +282,7 @@ class Sr3Reader:
         else:
             self._component_list = {}
 
+
     def _replace_components_property_list(self, property_list):
         pattern = re.compile(r"\((\d+)\)")
 
@@ -296,6 +293,7 @@ class Sr3Reader:
             return {pattern.sub(_replace, k): v
                     for k, v in property_list.items()}
         return [pattern.sub(_replace, k) for k in property_list]
+
 
     @_need_read_file  # type: ignore[arg-type]
     def _read_master_properties(self):
@@ -329,161 +327,15 @@ class Sr3Reader:
                     }
         _ = self._master_property_list.pop("")
 
-    def _unit_from_dimensionality(self, dimensionality_string):
-        if dimensionality_string == "":
-            return ""
-        unit = ""
-        if dimensionality_string[0] == "-":
-            unit = "1"
-        d = ""
-        for c in dimensionality_string:
-            if c == "|":
-                unit = unit + self._unit_list[int(d)]["current"]
-                d = ""
-            elif c == "-":
-                unit = unit + "/"
-            else:
-                d = d + c
-        return unit
-
-    def _unit_conversion_from_dimensionality(
-        self, dimensionality_string, is_delta=False
-    ):
-        if dimensionality_string == "":
-            return (1.0, 0.0)
-        gain = 1.0
-        offset = 0.0
-        inverse = False
-        if dimensionality_string[0] == "-":
-            inverse = True
-        d = ""
-        for c in dimensionality_string:
-            if c == "|":
-                unit = self._unit_list[int(d)]["current"]
-                conversion_ = self._unit_list[int(d)]["conversion"]
-                gain_new, offset_new = conversion_[unit]
-                d = ""
-                if inverse:
-                    gain = gain / gain_new
-                    offset = 0.0
-                else:
-                    gain = gain * gain_new
-                    if is_delta:
-                        offset = 0.0
-                    else:
-                        offset = offset * gain_new + offset_new
-            elif c == "-":
-                inverse = True
-            else:
-                d = d + c
-        return (gain, offset)
 
     def _update_properties_units(self):
         for p in self._master_property_list.values():
-            p["conversion"] = self._unit_conversion_from_dimensionality(
+            p["conversion"] = self.units._unit_conversion_from_dimensionality(
                 p["dimensionality_string"]
             )
             dimen_ = p["dimensionality_string"]
-            p["unit"] = self._unit_from_dimensionality(dimen_)
+            p["unit"] = self.units._unit_from_dimensionality(dimen_)
 
-    def _get_unit_type_number(self, dimensionality):
-        if isinstance(dimensionality, str):
-            d = [
-                d
-                for d in self._unit_list
-                if self._unit_list[d]["type"] == dimensionality.lower()
-            ]
-            if len(d) == 0:
-                raise ValueError(f"{dimensionality} is not a valid unit type.")
-            if len(d) > 1:
-                msg = f"{dimensionality} found more than once. Check code!"
-                raise ValueError(msg)
-            return d[0]
-        if isinstance(dimensionality, int):
-            return dimensionality
-        msg1 = "Valid types for dimensionality are str and int. "
-        msg2 = f"Got {type(dimensionality)}."
-        raise TypeError(msg1+msg2)
-
-    def set_current_unit(self, dimensionality, unit):
-        """Sets the current unit for a given dimensionality.
-
-        Parameters
-        ----------
-        dimensionality : str or int
-            Dimensionality to modify.
-        unit : str
-            New unit for the given dimensionality.
-
-        Raises
-        ------
-        ValueError
-            If an invalid dimensionality is provided.
-        ValueError
-            If an invalid unit is provided.
-        TypeError
-            If an invalid dimensionality variable
-            type is provided.
-        """
-        dimensionality = self._get_unit_type_number(dimensionality)
-        if unit not in self._unit_list[dimensionality]["conversion"]:
-            msg1 = "{unit} is not a valid unit for "
-            msg2 = f"{self._unit_list[dimensionality]['type']}."
-            raise ValueError(msg1+msg2)
-        self._unit_list[dimensionality]["current"] = unit
-        self._update_properties_units()
-
-    def get_current_units(self):
-        """Returns dict with current units.
-
-        Parameters
-        ----------
-        None
-        """
-        current_units = {}
-        for d in self._unit_list.values():
-            current_units[d["type"]] = d["current"]
-        return current_units
-
-    def _get_unit_numbers(self, unit):
-        out = []
-        for u in self._unit_list:
-            for c in self._unit_list[u]["conversion"]:
-                if unit == c:
-                    out.append(u)
-        return out
-
-    def add_new_unit(self, old_unit, new_unit, gain, offset):
-        """Adds a new unit in the form:
-        [new_unit] = [old_unit] * gain + offset
-        Existing units will be overwritten.
-
-        Parameters
-        ----------
-        old_unit : str
-            Existing unit.
-        new_unit : str
-            New unit.
-        gain : float
-            Ratio between old and new units.
-        offset : float
-            Offset between old and new units.
-
-        Raises
-        ------
-        ValueError
-            If old_unit is not found.
-        """
-        unit_numbers = self._get_unit_numbers(old_unit)
-        if len(unit_numbers) == 0:
-            msg = f"{old_unit} was not found in Master Units Table."
-            raise ValueError(msg)
-
-        for u in unit_numbers:
-            g, o = self._unit_list[u]["conversion"][old_unit]
-            new_gain = g * gain
-            new_offset = o * gain + offset
-            self._unit_list[u]["conversion"][new_unit] = (new_gain, new_offset)
 
     def get_property_description(self, property_name):
         """Returns dict with property attributes
@@ -508,6 +360,7 @@ class Sr3Reader:
             "unit": p["unit"],
         }
 
+
     def get_property_unit(self, property_name):
         """Returns property current unit
 
@@ -526,11 +379,13 @@ class Sr3Reader:
             raise ValueError(msg)
         return self._master_property_list[property_name]["unit"]
 
+
     def _remove_duplicates(self, input_list):
         unique_items = OrderedDict()
         for item in input_list:
             unique_items[item] = None
         return list(unique_items.keys())
+
 
     def _get_dataset(self, element_type, dataset_string):
         if element_type == "grid":
@@ -549,6 +404,7 @@ class Sr3Reader:
         # msg2 = f"{element_type}. {s} does not exist."
         # raise ValueError(msg1+msg2)
 
+
     @_need_read_file  # type: ignore[arg-type]
     def _get_elements(self, element_type):
         dataset = self._get_dataset(
@@ -560,6 +416,7 @@ class Sr3Reader:
             for (number, name) in enumerate(dataset[:])
             if name.decode() != ""
         }
+
 
     def get_elements(self, element_type):
         """Get list of elements.
@@ -581,6 +438,7 @@ class Sr3Reader:
             self._get_elements(element_type=element_type)
         return self._element[element_type]
 
+
     @_need_read_file  # type: ignore[arg-type]
     def _get_properties(self, element_type):
         if element_type == "grid":
@@ -597,6 +455,7 @@ class Sr3Reader:
         self._property[element_type] = self._replace_components_property_list(
             self._property[element_type]
         )
+
 
     def get_properties(self, element_type):
         """Get list of properties.
@@ -617,6 +476,7 @@ class Sr3Reader:
         if element_type not in self._property:
             self._get_properties(element_type=element_type)
         return self._property[element_type]
+
 
     def set_alias(self, previous_property, new_property, check_exists=True):
         """Sets an alias for an existing property.
@@ -660,6 +520,7 @@ class Sr3Reader:
             )
             self._timestep[element_type] = dataset[:]
 
+
     def get_timesteps(self, element_type=None):
         """Get list of time-steps.
 
@@ -682,6 +543,7 @@ class Sr3Reader:
         if element_type not in self._timestep:
             self._get_timesteps(element_type)
         return self._timestep[element_type]
+
 
     def get_days(self, element_type=None):
         """Get list of days.
@@ -711,6 +573,7 @@ class Sr3Reader:
                 self._day[element_type] = []
         return self._day[element_type]
 
+
     def get_dates(self, element_type=None):
         """Get list of dates.
 
@@ -739,6 +602,7 @@ class Sr3Reader:
                 self._date[element_type] = []
         return self._date[element_type]
 
+
     def day2date(self, day):
         """Returns date associated to day
 
@@ -758,6 +622,7 @@ class Sr3Reader:
         if isinstance(day, list):
             return [datetime.fromtimestamp(int(x)) for x in interp_day2date(day)]
         return datetime.fromtimestamp(int(interp_day2date(day)))
+
 
     def date2day(self, date):
         """Returns day associated to date
@@ -804,6 +669,7 @@ class Sr3Reader:
                 name: "" for name in self.get_elements(element_type)
             }
 
+
     def get_parent(self, element_type, element_name):
         """Get parent of an element.
 
@@ -823,6 +689,7 @@ class Sr3Reader:
         if element_type not in self._parent:
             self._get_parents(element_type)
         return self._parent[element_type][element_name]
+
 
     @_need_read_file  # type: ignore[arg-type]
     def _get_connections(self, element_type):
@@ -846,6 +713,7 @@ class Sr3Reader:
                 name: "" for name in self.get_elements(element_type)
             }
 
+
     def get_connection(self, element_type, element_name):
         """Get connection of an element.
 
@@ -865,6 +733,7 @@ class Sr3Reader:
         if element_type not in self._connection:
             self._get_connections(element_type)
         return self._connection[element_type][element_name]
+
 
     @_need_read_file  # type: ignore[arg-type]
     def _get_grid_sizes(self):
@@ -887,6 +756,7 @@ class Sr3Reader:
             "n_cells": n_cells,
         }
 
+
     def get_grid_size(self):
         """Get grid sizes.
 
@@ -899,6 +769,7 @@ class Sr3Reader:
         nk = self._grid_size["nk"]
         return ni, nj, nk
 
+
     def get_active_cells(self):
         """Get number of active cells.
 
@@ -907,6 +778,7 @@ class Sr3Reader:
             None
         """
         return self._grid_size["n_active"]
+
 
     @_need_read_file  # type: ignore[arg-type]
     def _get_grid_timesteps(self):
@@ -918,12 +790,14 @@ class Sr3Reader:
                 grid_timestep_list.append(int(key))
         return np.array(grid_timestep_list)
 
+
     def _grid_properties_adjustments(self, grid_property_list):
         # TODO
         # for p,v in grid_property_list.items():
         #     if p in ['DIFRAC','DJFRAC','DKFRAC']:
         #         v['is_internal'] = True
         pass
+
 
     @_need_read_file  # type: ignore[arg-type]
     def _get_grid_properties(self):
@@ -989,12 +863,14 @@ class Sr3Reader:
         self._grid_properties_adjustments(grid_property_list)
         return grid_property_list
 
+
     def _concatenate_arrays(self, arr1, arr2):
         if arr1.ndim == 1:
             arr1 = arr1.reshape(-1, 1)
         if arr2.ndim == 1:
             arr2 = arr2.reshape(-1, 1)
         return np.hstack((arr1, arr2))
+
 
     def _data_unit_conversion(self,
                               data,
@@ -1018,6 +894,7 @@ class Sr3Reader:
                         data[:] = data[:] * gain + offset
                     else:
                         data[:, k] = data[:, k] * gain + offset
+
 
     def _get_dataset_2d_data(self, dataset, param1, param2):
         def _ordered_x(x):
@@ -1050,6 +927,7 @@ class Sr3Reader:
         order = [indexes.index(x) for x in original_index]
 
         return data[:, order]
+
 
     @_need_read_file  # type: ignore[arg-type]
     def _get_raw_data(
@@ -1098,6 +976,7 @@ class Sr3Reader:
             )
         raise ValueError(f"Invalid index: {index}.")
 
+
     def _get_interp_data(
         self,
         days,
@@ -1126,6 +1005,7 @@ class Sr3Reader:
             data = self._concatenate_arrays(data, y)
         return data
 
+
     def _get_data(
         self,
         days=None,
@@ -1151,6 +1031,7 @@ class Sr3Reader:
         else:
             data = self._get_interp_data(days=days, raw_data=raw_data)
         return data
+
 
     def get_data(self,
                  element_type,
@@ -1202,6 +1083,7 @@ class Sr3Reader:
             property_names=property_names,
             element_names=element_names)
 
+
     def get_series_order(self, property_names, element_names=None):
         """Returns tuple with the order of the properties requested"""
         if element_names is None:
@@ -1216,6 +1098,7 @@ class Sr3Reader:
             for property_ in property_names:
                 original_index.append((element, property_))
         return original_index
+
 
     @_need_read_file  # type: ignore[arg-type]
     def _get_single_grid_property(self,
@@ -1269,6 +1152,7 @@ class Sr3Reader:
             return data[self.get_elements("grid")["FRACTURE"]:]
         raise ValueError(f"Invalid option: {element_names}.")
 
+
     def _get_grid_data_to_complete(self,
                                    values,
                                    element_names=None,
@@ -1295,6 +1179,7 @@ class Sr3Reader:
         if element_names == ["MATRIX", "FRACTURE"]:
             return new_array
         raise ValueError(f'Invalid elements: {", ".join(element_names)}')
+
 
     @_need_read_file  # type: ignore[arg-type]
     def _get_multiple_grid_properties(self,
@@ -1328,6 +1213,7 @@ class Sr3Reader:
                 )
             data = self._concatenate_arrays(data, data_new)
         return data
+
 
     @_need_read_file  # type: ignore[arg-type]
     def _get_grid_data_interpolated(self,
@@ -1403,6 +1289,7 @@ class Sr3Reader:
 
         alfa = (day - day_a) / (day_b - day_a)
         return data_a + alfa * (data_b - data_a)
+
 
     def get_grid_data(self,
                       property_names,
