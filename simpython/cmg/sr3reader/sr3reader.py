@@ -22,7 +22,6 @@ def _need_read_file(func):  # pylint: disable=no-self-argument
         result = func(self, *args, **kwargs)  # pylint: disable=not-callable
         self.close()
         return result
-
     return wrapper
 
 
@@ -90,8 +89,6 @@ class Sr3Reader:
         self._all_days = {}
         self._all_dates = {}
         self.units = UnitHandler()
-        # self._component_list = {}
-        # self._master_property_list = {}
         self.properties = PropertyHandler()
 
         self._element_types = [
@@ -395,8 +392,6 @@ class Sr3Reader:
             if old in self.get_properties(element):
                 p = self._property[element][old]
                 self._property[element][new] = p
-                # p = self._master_property_list[previous_property]
-                # self._master_property_list[new_property] = p
         self.properties.set_alias(old, new)
 
 

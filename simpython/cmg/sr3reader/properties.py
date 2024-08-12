@@ -12,8 +12,7 @@ PropertyHandler
 Usage Example:
 --------------
 property_handler = PropertyHandler()
-unit_handler.add("m", "cm", 100, 0)
-unit_handler.set_current("length", "cm")
+description("OILRATSC")
 """
 
 import re
@@ -30,6 +29,22 @@ class PropertyHandler:
 
     Methods
     -------
+    set_units(units):
+        Sets the unit handler for the property handler.
+    extract(property_table, components_table=None):
+        Extracts property information from the given table.
+    replace_components(property_list):
+        Returns list or dict that replaces components numbers to names.
+    description(property_name):
+        Returns dict with property attributes.
+    dimensionality(self, property_name):
+        Returns property dimensionality.
+    unit(self, property_name):
+        Returns property current unit.
+    conversion(self, property_name):
+        Returns property current unit conversion.
+    set_alias(self, old, new):
+        Sets an alias for an existing property.
     """
 
 
@@ -97,13 +112,11 @@ class PropertyHandler:
                     }
         _ = self._properties.pop("")
 
-    def _extract_components_table(self, dataset):
-        # if "ComponentTable" in self._f["General"]:
-            # dataset = self._f["General/ComponentTable"]
+    def _extract_components_table(self, dataset, ignore_water=False):
         self._component_list = {
             (number + 1): name[0].decode()
             for (number, name) in enumerate(dataset[:])
-            # if name[0].decode() != "WATER"
+            if name[0].decode() != "WATER" and ignore_water
         }
 
 
@@ -127,7 +140,7 @@ class PropertyHandler:
 
 
     def description(self, property_name):
-        """Returns dict with property attributes
+        """Returns dict with property attributes.
 
         Parameters
         ----------
@@ -151,7 +164,7 @@ class PropertyHandler:
 
 
     def dimensionality(self, property_name):
-        """Returns property dimensionality
+        """Returns property dimensionality.
 
         Parameters
         ----------
@@ -171,7 +184,7 @@ class PropertyHandler:
 
 
     def unit(self, property_name):
-        """Returns property current unit
+        """Returns property current unit.
 
         Parameters
         ----------
@@ -188,7 +201,7 @@ class PropertyHandler:
 
 
     def conversion(self, property_name):
-        """Returns property current unit conversion
+        """Returns property current unit conversion.
 
         Parameters
         ----------
