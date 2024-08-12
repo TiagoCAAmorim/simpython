@@ -133,7 +133,7 @@ class TestSr3Reader(unittest.TestCase):
             "C29toC63",
             "WATER"
         ]
-        c_ = sr3_file._component_list  # pylint: disable=protected-access
+        c_ = sr3_file.properties._component_list  # pylint: disable=protected-access
         file_read = c_.values()
         _test_equal_lists(self, true_result, file_read)
 
@@ -614,20 +614,20 @@ class TestSr3Reader(unittest.TestCase):
         self.assertEqual("g", file_read["mass"])
 
         sr3_file.units.add(old="m", new="dm", gain=0.1, offset=0.0)
-        file_read = sr3_file.get_property_unit(property_name="OILRATSC")
+        file_read = sr3_file.properties.unit(property_name="OILRATSC")
         self.assertEqual("m3/day", file_read)
 
-        sr3_file.set_alias(previous_property="OILRATSC",
-                           new_property="QO",
+        sr3_file.set_alias(old="OILRATSC",
+                           new="QO",
                            check_exists=False)
-        file_read = sr3_file.get_property_unit(property_name="QO")
+        file_read = sr3_file.properties.unit(property_name="QO")
         self.assertEqual("m3/day", file_read)
 
         with self.assertRaises(ValueError):
-            sr3_file.set_alias(previous_property="OILRATSC", new_property="QO")
+            sr3_file.set_alias(old="OILRATSC", new="QO")
 
         with self.assertRaises(ValueError):
-            sr3_file.set_alias(previous_property="OILRATSC", new_property="OILRATRC")
+            sr3_file.set_alias(old="OILRATSC", new="OILRATRC")
 
 
     def test_read_times(self):
@@ -723,8 +723,8 @@ class TestSr3Reader(unittest.TestCase):
                        52595.77029111726 / 98.0665]
         _test_equal_lists(self, true_result, list(file_read[:,1]))
 
-        sr3_file.set_alias(previous_property="OILRATSC",
-                           new_property="QO",
+        sr3_file.set_alias(old="OILRATSC",
+                           new="QO",
                            check_exists=False)
         file_read = sr3_file.get_data(element_type="well",
                                       property_names=["QO","BHP"],

@@ -3,7 +3,7 @@ Implements class Sr3Reader
 """
 
 from datetime import datetime, timedelta
-import re
+# import re
 from collections import OrderedDict
 from pathlib import Path
 
@@ -12,6 +12,7 @@ from scipy import interpolate  # type: ignore
 import h5py  # type: ignore
 
 from .units import UnitHandler
+from .properties import PropertyHandler
 # from .elements import ElementHandler
 
 
@@ -69,6 +70,11 @@ class Sr3Reader:
             Adds some extra units
             and changes current units.
             (default: True)
+
+        Raises
+        ------
+        FileNotFoundError
+            If file is not found.
         """
 
         self._file_path = Path(file_path)
@@ -84,8 +90,9 @@ class Sr3Reader:
         self._all_days = {}
         self._all_dates = {}
         self.units = UnitHandler()
-        self._component_list = {}
-        self._master_property_list = {}
+        # self._component_list = {}
+        # self._master_property_list = {}
+        self.properties = PropertyHandler()
 
         self._element_types = [
             "well",
@@ -155,10 +162,24 @@ class Sr3Reader:
         sr3_elements = []
 
         def get_type(name):
-            sr3_elements.append((name, type(self._f[name])))
+            sr3_elements.append((name, type(self.get_table(name))))
 
         self._f.visit(get_type)
         return sr3_elements
+
+
+    def get_table(self, table_name):
+        """Returns table from sr3 file
+
+        Parameters
+        ----------
+        table_name : str
+            Table to be evaluated.
+            Returns None if table is not found.
+        """
+        if table_name in self._f:
+            return self._f[table_name]
+        return None
 
 
     @_need_read_file  # type: ignore[arg-type]
@@ -172,15 +193,20 @@ class Sr3Reader:
             should be read from sr3 file.
             (default: True)
         """
-        self._group_type = type(self._f["General"])
-        self._dataset_type = type(self._f["General/HistoryTable"])
+        self._group_type = type(self.get_table("General"))
+        self._dataset_type = type(self.get_table("General/HistoryTable"))
 
         self._read_master_dates()
+
         self.units.extract(
-            units_table=self._f["General/UnitsTable"],
-            conversion_table=self._f["General/UnitConversionTable"])
-        self._read_master_component_table()
-        self._read_master_properties()
+            units_table=self.get_table("General/UnitsTable"),
+            conversion_table=self.get_table("General/UnitConversionTable"))
+
+        self.properties.set_units(self.units)
+        self.properties.extract(
+            property_table=self.get_table("General/NameRecordTable"),
+            components_table=self.get_table("General/ComponentTable"))
+
         self._get_grid_sizes()
 
         if read_elements:
@@ -206,7 +232,7 @@ class Sr3Reader:
                      "OILRATRC": "QO_RC",
                      "GASRATRC": "QG_RC",
                      "WATRATRC": "QW_RC",
-                    #  "LIQRATRC": "QL_RC",
+                     "LIQRATRC": "QL_RC",
 
                      "OILSECSU": "VOIP",
                      "ONFRAC": "UPTIME",
@@ -217,14 +243,15 @@ class Sr3Reader:
 
                      }
             for k,v in alias.items():
-                self.set_alias(previous_property=k,
-                            new_property=v,
-                            check_exists=True)
+                self.set_alias(
+                    old=k,
+                    new=v,
+                    check_exists=True)
 
 
     @_need_read_file  # type: ignore[arg-type]
     def _read_master_dates(self):
-        dataset = self._f["General/MasterTimeTable"]
+        dataset = self.get_table("General/MasterTimeTable")
         self._all_days = dict(zip(dataset["Index"], dataset["Offset in days"]))
 
         def _parse_date(date):
@@ -238,122 +265,11 @@ class Sr3Reader:
             fraction_of_day = timedelta(days=decimal_part)
             return parsed_date + fraction_of_day
 
-        dataset = self._f["General/MasterTimeTable"]
+        dataset = self.get_table("General/MasterTimeTable")
         self._all_dates = {
             number: _parse_date(date)
             for (number, date) in zip(dataset["Index"], dataset["Date"])
         }
-
-
-    @_need_read_file  # type: ignore[arg-type]
-    def _read_master_component_table(self):
-        if "ComponentTable" in self._f["General"]:
-            dataset = self._f["General/ComponentTable"]
-            self._component_list = {
-                (number + 1): name[0].decode()
-                for (number, name) in enumerate(dataset[:])
-                # if name[0].decode() != "WATER"
-            }
-        else:
-            self._component_list = {}
-
-
-    def _replace_components_property_list(self, property_list):
-        pattern = re.compile(r"\((\d+)\)")
-
-        def _replace(match):
-            number = int(match.group(1))
-            return f'({str(self._component_list.get(number, match.group(1)))})'
-        if isinstance(property_list, dict):
-            return {pattern.sub(_replace, k): v
-                    for k, v in property_list.items()}
-        return [pattern.sub(_replace, k) for k in property_list]
-
-
-    @_need_read_file  # type: ignore[arg-type]
-    def _read_master_properties(self):
-        dataset = self._f["General/NameRecordTable"]
-        self._master_property_list = {}
-        columns = zip(
-            dataset["Keyword"],
-            dataset["Name"],
-            dataset["Long Name"],
-            dataset["Dimensionality"],
-        )
-        for keyword, name, long_name, dimensionality in columns:
-            if keyword != "":
-                keyword = keyword.decode()
-                name = name.decode()
-                long_name = long_name.decode()
-                dimensionality = dimensionality.decode()
-                if keyword[-2:] == "$C":
-                    for c in self._component_list.values():
-                        new_keyword = f"{keyword[:-2]}({c})"
-                        self._master_property_list[new_keyword] = {
-                            "name": name.replace("$C", f" ({c})"),
-                            "long name": long_name.replace("$C", f" ({c})"),
-                            "dimensionality": dimensionality,
-                        }
-                else:
-                    self._master_property_list[keyword] = {
-                        "name": name,
-                        "long name": long_name,
-                        "dimensionality": dimensionality,
-                    }
-        _ = self._master_property_list.pop("")
-
-
-    # def _update_properties_units(self):
-    #     for p in self._master_property_list.values():
-    #         p["conversion"] = self.units.conversion(
-    #             p["dimensionality_string"]
-    #         )
-    #         dimen_ = p["dimensionality_string"]
-    #         p["unit"] = self.units._get_current(dimen_)
-
-
-    def get_property_description(self, property_name):
-        """Returns dict with property attributes
-
-        Parameters
-        ----------
-        property_name : str
-            Property to be evaluated.
-
-        Raises
-        ------
-        ValueError
-            If property_name is not found.
-        """
-        if property_name not in self._master_property_list:
-            msg = f"{property_name} was not found in Master Property Table."
-            raise ValueError(msg)
-        p = self._master_property_list[property_name]
-        return {
-            "description": p["name"],
-            "long description": p["long name"],
-            "unit": self.units.get_current(p["dimensionality"]),
-        }
-
-
-    def get_property_unit(self, property_name):
-        """Returns property current unit
-
-        Parameters
-        ----------
-        property_name : str
-            Property to be evaluated.
-
-        Raises
-        ------
-        ValueError
-            If property_name is not found.
-        """
-        if property_name not in self._master_property_list:
-            msg = f"{property_name} was not found in Master Property Table."
-            raise ValueError(msg)
-        d = self._master_property_list[property_name]["dimensionality"]
-        return self.units.get_current(d)
 
 
     def _remove_duplicates(self, input_list):
@@ -374,11 +290,8 @@ class Sr3Reader:
                 el_type_string = el_type_string + "S"
             s = f"TimeSeries/{el_type_string}/{dataset_string}"
         if s in self._f:
-            return self._f[s]
+            return self.get_table(s)
         return []
-        # msg1 = f"Dataset {dataset_string} not found for "
-        # msg2 = f"{element_type}. {s} does not exist."
-        # raise ValueError(msg1+msg2)
 
 
     @_need_read_file  # type: ignore[arg-type]
@@ -428,7 +341,7 @@ class Sr3Reader:
                 name.decode(): number
                 for (number, name) in enumerate(data[:])
             }
-        self._property[element_type] = self._replace_components_property_list(
+        self._property[element_type] = self.properties.replace_components(
             self._property[element_type]
         )
 
@@ -447,21 +360,21 @@ class Sr3Reader:
             If an invalid element type is provided.
         """
         if element_type not in self._element_types:
-            msg = f'Valid element type: {", ".join(self._element_types)}'
+            msg = f'Valid element types: {", ".join(self._element_types)}'
             raise ValueError(msg)
         if element_type not in self._property:
             self._get_properties(element_type=element_type)
         return self._property[element_type]
 
 
-    def set_alias(self, previous_property, new_property, check_exists=True):
+    def set_alias(self, old, new, check_exists=True):
         """Sets an alias for an existing property.
 
         Parameters
         ----------
-        previous_property : str
+        old : str
             Original property.
-        new_property : str
+        new : str
             New property alias.
         check_exists : bool, optional
             Checks if new property already exists.
@@ -474,16 +387,17 @@ class Sr3Reader:
         """
         if check_exists:
             for element in self._element_types:
-                if new_property in self.get_properties(element):
-                    msg = f'Property already exists: {new_property}'
+                if new in self.get_properties(element):
+                    msg = f'Property already exists: {new}'
                     raise ValueError(msg)
 
         for element in self._element_types:
-            if previous_property in self.get_properties(element):
-                p = self._property[element][previous_property]
-                self._property[element][new_property] = p
-                p = self._master_property_list[previous_property]
-                self._master_property_list[new_property] = p
+            if old in self.get_properties(element):
+                p = self._property[element][old]
+                self._property[element][new] = p
+                # p = self._master_property_list[previous_property]
+                # self._master_property_list[new_property] = p
+        self.properties.set_alias(old, new)
 
 
     @_need_read_file  # type: ignore[arg-type]
@@ -713,7 +627,7 @@ class Sr3Reader:
 
     @_need_read_file  # type: ignore[arg-type]
     def _get_grid_sizes(self):
-        dataset = self._f["SpatialProperties/000000/GRID"]
+        dataset = self.get_table("SpatialProperties/000000/GRID")
         ni = dataset["IGNTID"][0]
         nj = dataset["IGNTJD"][0]
         nk = dataset["IGNTKD"][0]
@@ -721,7 +635,7 @@ class Sr3Reader:
         n_active = dataset["IPSTCS"].size
         if dataset["IPSTCS"][-1] > ni * nj * nk:
             self._element["grid"]["FRACTURE"] = np.where(
-                self._f["SpatialProperties/000000/GRID/IPSTCS"] > ni * nj * nk
+                self.get_table("SpatialProperties/000000/GRID/IPSTCS") > ni * nj * nk
             )[0][0]
             n_cells = 2 * n_cells
         self._grid_size = {
@@ -758,10 +672,10 @@ class Sr3Reader:
 
     @_need_read_file  # type: ignore[arg-type]
     def _get_grid_timesteps(self):
-        dataset = self._f["SpatialProperties"]
+        dataset = self.get_table("SpatialProperties")
         grid_timestep_list = []
         for key in dataset.keys():
-            sub_dataset = self._f[f"SpatialProperties/{key}"]
+            sub_dataset = self.get_table(f"SpatialProperties/{key}")
             if isinstance(sub_dataset, self._group_type):
                 grid_timestep_list.append(int(key))
         return np.array(grid_timestep_list)
@@ -777,7 +691,7 @@ class Sr3Reader:
 
     @_need_read_file  # type: ignore[arg-type]
     def _get_grid_properties(self):
-        dataset = self._f["SpatialProperties/Statistics"]
+        dataset = self.get_table("SpatialProperties/Statistics")
         grid_property_list = {
             name.decode(): {
                 "min": min_,
@@ -799,9 +713,9 @@ class Sr3Reader:
         n_cells = ni * nj * nk
 
         def _list_grid_properties(timestep, set_timestep=None):
-            dataset = self._f[f"SpatialProperties/{timestep}"]
+            dataset = self.get_table(f"SpatialProperties/{timestep}")
             for key in dataset.keys():
-                sub_dataset = self._f[f"SpatialProperties/{timestep}/{key}"]
+                sub_dataset = self.get_table(f"SpatialProperties/{timestep}/{key}")
                 if not isinstance(sub_dataset, self._dataset_type):
                     continue
                 key = key.replace("%2F", "/")
@@ -862,9 +776,8 @@ class Sr3Reader:
         n_properties = 1 if is_1d else len(property_names)
         n_elements = int(n_data_columns / n_properties)
         for i_property, p in enumerate(property_names):
-            # gain, offset = self._master_property_list[p]["conversion"]
-            d = self._master_property_list[p]["dimensionality"]
-            gain, offset = self.units.conversion(d)
+            # d = self._master_property_list[p]["dimensionality"]
+            gain, offset = self.properties.conversion(p)
             if gain != 1.0 or offset != 0.0:
                 for i_element in range(n_elements):
                     k = i_property + i_element * n_properties - i_delta
