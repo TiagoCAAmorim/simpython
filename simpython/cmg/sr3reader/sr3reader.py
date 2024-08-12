@@ -12,7 +12,7 @@ from scipy import interpolate  # type: ignore
 import h5py  # type: ignore
 
 from .units import UnitHandler
-# from .elements.py import ElementHandler
+# from .elements import ElementHandler
 
 
 def _need_read_file(func):  # pylint: disable=no-self-argument
@@ -83,7 +83,6 @@ class Sr3Reader:
 
         self._all_days = {}
         self._all_dates = {}
-        # self._unit_list = {}
         self.units = UnitHandler()
         self._component_list = {}
         self._master_property_list = {}
@@ -117,31 +116,7 @@ class Sr3Reader:
 
             for old, new, (gain, offset) in additional_units:
                 self.units.add(old, new, gain, offset)
-            self.set_current_unit("pressure", "kgf/cm2")
-
-
-    def set_current_unit(self, dimensionality, unit):
-        """Sets the current unit for a given dimensionality.
-
-        Parameters
-        ----------
-        dimensionality : str or int
-            Dimensionality to modify.
-        unit : str
-            New unit for the given dimensionality.
-
-        Raises
-        ------
-        ValueError
-            If an invalid dimensionality is provided.
-        ValueError
-            If an invalid unit is provided.
-        TypeError
-            If an invalid dimensionality variable
-            type is provided.
-        """
-        self.units._set_current(dimensionality, unit)
-        self._update_properties_units()
+            self.units.set_current("pressure", "kgf/cm2")
 
 
     def _file_is_closed(self):
@@ -201,7 +176,7 @@ class Sr3Reader:
         self._dataset_type = type(self._f["General/HistoryTable"])
 
         self._read_master_dates()
-        self.units._read_master_units(
+        self.units.extract(
             units_table=self._f["General/UnitsTable"],
             conversion_table=self._f["General/UnitConversionTable"])
         self._read_master_component_table()
@@ -317,24 +292,24 @@ class Sr3Reader:
                         self._master_property_list[new_keyword] = {
                             "name": name.replace("$C", f" ({c})"),
                             "long name": long_name.replace("$C", f" ({c})"),
-                            "dimensionality_string": dimensionality,
+                            "dimensionality": dimensionality,
                         }
                 else:
                     self._master_property_list[keyword] = {
                         "name": name,
                         "long name": long_name,
-                        "dimensionality_string": dimensionality,
+                        "dimensionality": dimensionality,
                     }
         _ = self._master_property_list.pop("")
 
 
-    def _update_properties_units(self):
-        for p in self._master_property_list.values():
-            p["conversion"] = self.units._unit_conversion_from_dimensionality(
-                p["dimensionality_string"]
-            )
-            dimen_ = p["dimensionality_string"]
-            p["unit"] = self.units._unit_from_dimensionality(dimen_)
+    # def _update_properties_units(self):
+    #     for p in self._master_property_list.values():
+    #         p["conversion"] = self.units.conversion(
+    #             p["dimensionality_string"]
+    #         )
+    #         dimen_ = p["dimensionality_string"]
+    #         p["unit"] = self.units._get_current(dimen_)
 
 
     def get_property_description(self, property_name):
@@ -357,7 +332,7 @@ class Sr3Reader:
         return {
             "description": p["name"],
             "long description": p["long name"],
-            "unit": p["unit"],
+            "unit": self.units.get_current(p["dimensionality"]),
         }
 
 
@@ -377,7 +352,8 @@ class Sr3Reader:
         if property_name not in self._master_property_list:
             msg = f"{property_name} was not found in Master Property Table."
             raise ValueError(msg)
-        return self._master_property_list[property_name]["unit"]
+        d = self._master_property_list[property_name]["dimensionality"]
+        return self.units.get_current(d)
 
 
     def _remove_duplicates(self, input_list):
@@ -886,7 +862,9 @@ class Sr3Reader:
         n_properties = 1 if is_1d else len(property_names)
         n_elements = int(n_data_columns / n_properties)
         for i_property, p in enumerate(property_names):
-            gain, offset = self._master_property_list[p]["conversion"]
+            # gain, offset = self._master_property_list[p]["conversion"]
+            d = self._master_property_list[p]["dimensionality"]
+            gain, offset = self.units.conversion(d)
             if gain != 1.0 or offset != 0.0:
                 for i_element in range(n_elements):
                     k = i_property + i_element * n_properties - i_delta

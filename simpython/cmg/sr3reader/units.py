@@ -29,13 +29,23 @@ class UnitHandler:
     -------
     add(old, new, gain, offset)
         Adds a new unit conversion to the unit list.
-    set_current(property_name, unit_name)
-        Sets the current unit for a given property.
+    set_current(dimensionality, unit):
+        Sets the current unit for a given dimensionality.
+    get_current(dimensionality):
+        Gets the current unit for a given dimensionality string.
+    get_all_current():
+        Returns dict with all current units.
+    conversion(dimensionality, is_delta=False):
+        Get unit conversion factors for a given dimensionality string.
+    extract(units_table, conversion_table):
+        Extracts unit information from the given tables.
     """
 
 
-    def __init__(self):
+    def __init__(self, units_table=None, conversion_table=None):
         self._unit_list = {}
+        if units_table is not None and conversion_table is not None:
+            self.extract(units_table, conversion_table)
 
 
     def add(self, old, new, gain, offset):
@@ -71,7 +81,7 @@ class UnitHandler:
             self._unit_list[u]["conversion"][new] = (new_gain, new_offset)
 
 
-    def _set_current(self, dimensionality, unit):
+    def set_current(self, dimensionality, unit):
         """Sets the current unit for a given dimensionality.
 
         Parameters
@@ -91,26 +101,12 @@ class UnitHandler:
             If an invalid dimensionality variable
             type is provided.
         """
-        dimensionality = self._get_unit_type_number(dimensionality)
+        dimensionality = self._dimensionality_number(dimensionality)
         if unit not in self._unit_list[dimensionality]["conversion"]:
-            msg1 = "{unit} is not a valid unit for "
-            msg2 = f"{self._unit_list[dimensionality]['type']}."
-            raise ValueError(msg1+msg2)
+            msg = "{unit} is not a valid unit for "
+            msg += f"{self._unit_list[dimensionality]['type']}."
+            raise ValueError(msg)
         self._unit_list[dimensionality]["current"] = unit
-        # self._update_properties_units()
-
-
-    def get_current(self):
-        """Returns dict with current units.
-
-        Parameters
-        ----------
-        None
-        """
-        current_units = {}
-        for d in self._unit_list.values():
-            current_units[d["type"]] = d["current"]
-        return current_units
 
 
     def _get_unit_numbers(self, unit):
@@ -122,7 +118,9 @@ class UnitHandler:
         return out
 
 
-    def _get_unit_type_number(self, dimensionality):
+    def _dimensionality_number(self, dimensionality):
+        if isinstance(dimensionality, int):
+            return dimensionality
         if isinstance(dimensionality, str):
             d = [
                 d
@@ -135,53 +133,77 @@ class UnitHandler:
                 msg = f"{dimensionality} found more than once. Check code!"
                 raise ValueError(msg)
             return d[0]
-        if isinstance(dimensionality, int):
-            return dimensionality
-        msg1 = "Valid types for dimensionality are str and int. "
-        msg2 = f"Got {type(dimensionality)}."
-        raise TypeError(msg1+msg2)
+        msg = "Valid types for dimensionality are str and int. "
+        msg += f"Got {type(dimensionality)}."
+        raise TypeError(msg)
 
 
-    def _unit_from_dimensionality(self, dimensionality_string):
-        if dimensionality_string == "":
+    def get_current(self, dimensionality):
+        """Gets the current unit for a given dimensionality string.
+
+        Parameters
+        ----------
+        dimensionality : str
+            Dimensionality to evaluate.
+        """
+        if dimensionality == "":
             return ""
         unit = ""
-        if dimensionality_string[0] == "-":
+        if dimensionality[0] == "-":
             unit = "1"
         d = ""
-        for c in dimensionality_string:
+        for c in dimensionality:
             if c == "|":
                 unit = unit + self._unit_list[int(d)]["current"]
                 d = ""
             elif c == "-":
-                unit = unit + "/"
+                unit += "/"
             else:
                 d = d + c
         return unit
 
 
-    def _unit_conversion_from_dimensionality(
-        self, dimensionality_string, is_delta=False
-    ):
-        if dimensionality_string == "":
+    def get_all_current(self):
+        """Returns dict with all current units.
+
+        Parameters
+        ----------
+        None
+        """
+        current_units = {}
+        for d in self._unit_list.values():
+            current_units[d["type"]] = d["current"]
+        return current_units
+
+
+    def conversion(self, dimensionality, is_delta=False):
+        """Get unit conversion factors for a given dimensionality string.
+
+        Parameters
+        ----------
+        dimensionality : str
+            Dimensionality to evaluate.
+        is_delat : bool, optional
+            If True, the offset is ignored.
+            (default: False)
+        """
+        if dimensionality == "":
             return (1.0, 0.0)
         gain = 1.0
         offset = 0.0
         inverse = False
-        if dimensionality_string[0] == "-":
-            inverse = True
         d = ""
-        for c in dimensionality_string:
+        for c in dimensionality:
             if c == "|":
                 unit = self._unit_list[int(d)]["current"]
                 conversion_ = self._unit_list[int(d)]["conversion"]
                 gain_new, offset_new = conversion_[unit]
                 d = ""
                 if inverse:
-                    gain = gain / gain_new
+                    gain /= gain_new
                     offset = 0.0
                 else:
-                    gain = gain * gain_new
+                    gain *= gain_new
                     if is_delta:
                         offset = 0.0
                     else:
@@ -193,9 +215,18 @@ class UnitHandler:
         return (gain, offset)
 
 
-    # @_need_read_file  # type: ignore-arg-type]
-    def _read_master_units(self, units_table, conversion_table):
-        # units_table = self._f["General/UnitsTable"]
+    def extract(self, units_table, conversion_table):
+        """Extracts unit information from the given tables.
+
+        Parameters
+        ----------
+        units_table : h5py.Dataset
+            Units table from the SR3 file.
+            Usually "General/UnitsTable".
+        conversion_table : h5py.Dataset
+            Conversion table from the SR3 file.
+            Usually "General/UnitConversionTable".
+        """
         columns = zip(
             units_table["Index"],
             units_table["Dimensionality"],
@@ -212,7 +243,6 @@ class UnitHandler:
             for (number, name, internal_name, output_name) in columns
         }
 
-        # conversion_table = self._f["General/UnitConversionTable"]
         columns = zip(
             conversion_table["Dimensionality"],
             conversion_table["Unit Name"],

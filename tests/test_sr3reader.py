@@ -605,12 +605,12 @@ class TestSr3Reader(unittest.TestCase):
             "concentration": "kg/m3",
             "molar concentration": "gmole/m3",
         }
-        file_read = sr3_file.units.get_current()
+        file_read = sr3_file.units.get_all_current()
         _test_equal_lists(self, true_result.keys(), file_read.keys())
         _test_equal_lists(self, true_result.values(), file_read.values())
 
-        sr3_file.set_current_unit(dimensionality="mass",unit="g")
-        file_read = sr3_file.units.get_current()
+        sr3_file.units.set_current(dimensionality="mass",unit="g")
+        file_read = sr3_file.units.get_all_current()
         self.assertEqual("g", file_read["mass"])
 
         sr3_file.units.add(old="m", new="dm", gain=0.1, offset=0.0)
@@ -754,7 +754,7 @@ class TestSr3Reader(unittest.TestCase):
         true_result = (2.*166546.69278864737+241094.6563692809)/3.
         self.assertAlmostEqual(true_result, float(list(file_read[:,1])[0]))
 
-        sr3_file.set_current_unit(dimensionality="well liquid volume", unit="MMbbl")
+        sr3_file.units.set_current(dimensionality="well liquid volume", unit="MMbbl")
         file_read = sr3_file.get_data(element_type="group",
                                       property_names=["NP"],
                                       element_names=["PLAT1-PRO"],
