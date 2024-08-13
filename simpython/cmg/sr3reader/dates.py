@@ -18,7 +18,6 @@ from datetime import datetime, timedelta
 import numpy as np
 from scipy import interpolate  # type: ignore
 
-# from attrdict import AttrDict
 from .elements import ElementHandler
 
 class DateHandler:
@@ -39,7 +38,12 @@ class DateHandler:
         self._dates['all'] = np.array([])
         self._timesteps = {k:np.array([]) for k in ElementHandler.valid_elements()}
         self._timesteps['all'] = np.array([])
+
         self.file = sr3_file
+        self.extract()
+
+        v_timestamp = np.vectorize(lambda t: t.timestamp())
+        self._dates['timestamp'] = v_timestamp(self._dates['all'])
 
 
     def extract(self):
@@ -96,35 +100,18 @@ class DateHandler:
     def _get_days(self, element_type):
         timesteps = self._timesteps[element_type]
         self._days[element_type] = self._days['all'][timesteps]
-        # if len(timesteps) > 0:
-        #     days = np.vectorize(lambda x: self._days['all'][x])(
-        #         timesteps
-        #     )
-        #     self._days[element_type] = days
-        # else:
-        #     self._days[element_type] = []
 
 
     def _get_dates(self, element_type):
         timesteps = self._timesteps[element_type]
         self._dates[element_type] = self._dates['all'][timesteps]
-        # timesteps = self._timesteps[element_type]
-        # if len(timesteps) > 0:
-        #     dates = np.vectorize(lambda x: self._dates['all'][x])(
-        #         timesteps
-        #     )
-        #     self._dates[element_type] = dates
-        # else:
-        #     self._dates[element_type] = []
 
 
     def _get_times(self, time_dict, element_type=None):
         if element_type is None or element_type == 'all':
             return time_dict['all']
-        if ElementHandler.is_valid(element_type):
-            return time_dict[element_type]
-        msg = f'Valid element types: {", ".join(ElementHandler.valid_elements())}'
-        raise ValueError(msg)
+        ElementHandler.is_valid(element_type, throw_error=True)
+        return time_dict[element_type]
 
 
     def get_timesteps(self, element_type=None):
@@ -168,7 +155,7 @@ class DateHandler:
         ----------
         element_type : str, optional
             Element type to be evaluated.
-            (default: all simulation timesteps)
+            (default: all simulation dates)
 
         Raises
         ------
@@ -186,17 +173,16 @@ class DateHandler:
         days : str or [str]
             Day or list of days to be evaluated.
         """
-        dates = [t.timestamp() for t in self._dates['all']]
-
         interp_day2date = interpolate.interp1d(
                 self._days['all'],
-                dates,
+                self._dates['timestamp'],
                 kind="linear"
             )
 
         if isinstance(day, list):
-            return [datetime.fromtimestamp(int(x)) for x in interp_day2date(day)]
-        return datetime.fromtimestamp(int(interp_day2date(day)))
+            vectorized_datetime = np.vectorize(datetime.fromtimestamp)
+            return vectorized_datetime(interp_day2date(day))
+        return datetime.fromtimestamp(float(interp_day2date(day)))
 
 
     def date2day(self, date):
@@ -207,15 +193,14 @@ class DateHandler:
         date : datetime.datetime or [datetime.datetime]
             Date or list of dates to be evaluated.
         """
-        dates = [t.timestamp() for t in self._dates['all']]
-
         if isinstance(date, list):
-            date = [t.timestamp() for t in date]
+            v_timestamp = np.vectorize(lambda t: t.timestamp())
+            date = v_timestamp(date)
         else:
             date = date.timestamp()
 
         interp_date2day = interpolate.interp1d(
-                dates,
+                self._dates['timestamp'],
                 self._days['all'],
                 kind="linear"
             )

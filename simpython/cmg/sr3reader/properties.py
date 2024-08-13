@@ -48,10 +48,12 @@ class PropertyHandler:
     """
 
 
-    def __init__(self):
+    def __init__(self, sr3_file, units):
         self._properties = {}
         self._component_list = {}
-        self._units = None
+        self._units = units
+        self.file = sr3_file
+        self.extract()
 
 
     def set_units(self, units):
@@ -65,7 +67,7 @@ class PropertyHandler:
         self._units = units
 
 
-    def extract(self, property_table, components_table=None):
+    def extract(self):
         """Extracts property information from the given table.
 
         Parameters
@@ -77,6 +79,9 @@ class PropertyHandler:
             Components table from the SR3 file.
             Usually "General/ComponentTable".
         """
+        property_table = self.file.get_table("General/NameRecordTable")
+        components_table = self.file.get_table("General/ComponentTable")
+
         if components_table is not None:
             self._extract_components_table(components_table)
         self._extract_property_table(property_table)

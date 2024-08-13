@@ -48,34 +48,19 @@ class ElementHandler:
 
 
     @staticmethod
-    def is_valid(element_type):
+    def is_valid(element_type, throw_error=False):
         """Checks if element type is valid.
 
         Parameters
         ----------
         element_type : str
             Element type.
+        throw_error : bool, optional
+            Whether to throw an error if element type is invalid.
         """
-        return element_type in ElementHandler.valid_elements()
-
-
-    # def get_table(self, element_type, dataset_string):
-    #     """Returns table from sr3 file.
-
-    #     Parameters
-    #     ----------
-    #     element_type : str
-    #         Element type.
-    #     dataset_string : str
-    #         Dataset string.
-    #     """
-    #     if element_type == "grid":
-    #         s = f"SpatialProperties/{dataset_string.upper()}"
-    #     else:
-    #         el_type_string = element_type.upper()
-    #         if element_type == "special":
-    #             el_type_string = el_type_string + " HISTORY"
-    #         else:
-    #             el_type_string = el_type_string + "S"
-    #         s = f"TimeSeries/{el_type_string}/{dataset_string}"
-    #     return self.file.get_table(s)
+        result = element_type in ElementHandler.valid_elements()
+        if not result and throw_error:
+            msg = f"Invalid element type: {element_type}. "
+            msg += f"Expected one of: {', '.join(ElementHandler.valid_elements())}"
+            raise ValueError(msg)
+        return result

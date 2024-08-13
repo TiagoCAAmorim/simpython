@@ -2,7 +2,6 @@
 Implements class Sr3Reader
 """
 
-from datetime import datetime, timedelta
 from collections import OrderedDict
 
 import numpy as np
@@ -68,25 +67,17 @@ class Sr3Reader:
 
         self.file = Sr3Handler(file_path)
 
-        # self._group_type = None
         self._dataset_type = None
 
-        # self._all_days = {}
-        # self._all_dates = {}
         self.dates = DateHandler(self.file)
-        self.units = UnitHandler()
-        self.properties = PropertyHandler()
+        self.units = UnitHandler(self.file)
+        self.properties = PropertyHandler(self.file, self.units)
         self.elements = ElementHandler(self.file)
-
-        self._element_types = self.elements.valid_elements()
 
         self._element = {"special": {"": 0}, "grid": {"MATRIX": 0}}
         self._parent = {}
         self._connection = {}
         self._property = {}
-        # self._timestep = {}
-        # self._day = {}
-        # self._date = {}
 
         self._grid_size = {}
 
@@ -114,32 +105,17 @@ class Sr3Reader:
             should be read from sr3 file.
             (default: True)
         """
-        # self._group_type = type(self.file.get_table("General"))
         self._dataset_type = type(self.file.get_table("General/HistoryTable"))
-
-        # self._read_master_dates()
-        self.dates.extract()
-
-        self.units.extract(
-            units_table=self.file.get_table("General/UnitsTable"),
-            conversion_table=self.file.get_table("General/UnitConversionTable"))
-
-        self.properties.set_units(self.units)
-        self.properties.extract(
-            property_table=self.file.get_table("General/NameRecordTable"),
-            components_table=self.file.get_table("General/ComponentTable"))
 
         self._get_grid_sizes()
 
         if read_elements:
-            for element in self._element_types:
+            for element in self.elements.valid_elements():
                 _ = self.get_elements(element)
                 _ = self.get_properties(element)
                 self._get_parents(element)
                 self._get_connections(element)
-                # _ = self.get_timesteps(element)
-                # _ = self.get_days(element)
-                # _ = self.get_dates(element)
+
 
             alias = {"OILRATSC": "QO",
                      "GASRATSC": "QG",
@@ -174,19 +150,6 @@ class Sr3Reader:
         return list(unique_items.keys())
 
 
-    # def _get_dataset(self, element_type, dataset_string):
-    #     if element_type == "grid":
-    #         s = f"SpatialProperties/{dataset_string.upper()}"
-    #     else:
-    #         el_type_string = element_type.upper()
-    #         if element_type == "special":
-    #             el_type_string = el_type_string + " HISTORY"
-    #         else:
-    #             el_type_string = el_type_string + "S"
-    #         s = f"TimeSeries/{el_type_string}/{dataset_string}"
-    #     return self.file.get_table(s)
-
-
     def _get_elements(self, element_type):
         dataset = self.file.get_element_table(
             element_type=element_type,
@@ -212,9 +175,7 @@ class Sr3Reader:
         ValueError
             If an invalid element type is provided.
         """
-        if element_type not in self._element_types:
-            msg = f'Valid element type: {", ".join(self._element_types)}'
-            raise ValueError(msg)
+        self.elements.is_valid(element_type, throw_error=True)
         if element_type not in self._element:
             self._get_elements(element_type=element_type)
         return self._element[element_type]
@@ -250,9 +211,7 @@ class Sr3Reader:
         ValueError
             If an invalid element type is provided.
         """
-        if element_type not in self._element_types:
-            msg = f'Valid element types: {", ".join(self._element_types)}'
-            raise ValueError(msg)
+        self.elements.is_valid(element_type, throw_error=True)
         if element_type not in self._property:
             self._get_properties(element_type=element_type)
         return self._property[element_type]
@@ -277,12 +236,12 @@ class Sr3Reader:
             If new property already exists and check_exists=True.
         """
         if check_exists:
-            for element in self._element_types:
+            for element in self.elements.valid_elements():
                 if new in self.get_properties(element):
                     msg = f'Property already exists: {new}'
                     raise ValueError(msg)
 
-        for element in self._element_types:
+        for element in self.elements.valid_elements():
             if old in self.get_properties(element):
                 p = self._property[element][old]
                 self._property[element][new] = p
@@ -324,9 +283,7 @@ class Sr3Reader:
         ValueError
             If an invalid element type is provided.
         """
-        if element_type not in self._element_types:
-            msg = f'Valid element type: {", ".join(self._element_types)}'
-            raise ValueError(msg)
+        self.elements.is_valid(element_type, throw_error=True)
         if element_type not in self._parent:
             self._get_parents(element_type)
         return self._parent[element_type][element_name]
@@ -367,9 +324,7 @@ class Sr3Reader:
         ValueError
             If an invalid element type is provided.
         """
-        if element_type not in self._element_types:
-            msg = f'Valid element type: {", ".join(self._element_types)}'
-            raise ValueError(msg)
+        self.elements.is_valid(element_type, throw_error=True)
         if element_type not in self._connection:
             self._get_connections(element_type)
         return self._connection[element_type][element_name]
@@ -492,7 +447,7 @@ class Sr3Reader:
                     grid_property_list[key]["is_internal"] = True
 
         _list_grid_properties("000000/GRID", 0)
-        for ts in self.dates.get_timesteps("grid"): #self.get_timesteps(element_type="grid"):
+        for ts in self.dates.get_timesteps("grid"):
             _list_grid_properties(str(ts).zfill(6))
         for p in grid_property_list.values():
             p["timesteps"] = list(p["timesteps"])

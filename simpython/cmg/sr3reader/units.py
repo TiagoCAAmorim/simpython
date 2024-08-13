@@ -42,11 +42,10 @@ class UnitHandler:
     """
 
 
-    def __init__(self, units_table=None, conversion_table=None):
+    def __init__(self, sr3_file):
         self._unit_list = {}
-        if units_table is not None and conversion_table is not None:
-            self.extract(units_table, conversion_table)
-
+        self.file = sr3_file
+        self.extract()
 
     def add(self, old, new, gain, offset):
         """Adds a new unit in the form:
@@ -215,18 +214,10 @@ class UnitHandler:
         return (gain, offset)
 
 
-    def extract(self, units_table, conversion_table):
-        """Extracts unit information from the given tables.
+    def extract(self):
+        """Extracts unit information from the sr3 file."""
 
-        Parameters
-        ----------
-        units_table : h5py.Dataset
-            Units table from the SR3 file.
-            Usually "General/UnitsTable".
-        conversion_table : h5py.Dataset
-            Conversion table from the SR3 file.
-            Usually "General/UnitConversionTable".
-        """
+        units_table = self.file.get_table("General/UnitsTable")
         columns = zip(
             units_table["Index"],
             units_table["Dimensionality"],
@@ -243,6 +234,7 @@ class UnitHandler:
             for (number, name, internal_name, output_name) in columns
         }
 
+        conversion_table = self.file.get_table("General/UnitConversionTable")
         columns = zip(
             conversion_table["Dimensionality"],
             conversion_table["Unit Name"],
