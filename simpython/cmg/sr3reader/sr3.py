@@ -130,3 +130,25 @@ class Sr3Handler:
 
         # self.close()
         return table
+
+
+    def get_element_table(self, element_type, dataset_string):
+        """Returns table from sr3 file associated to element type.
+
+        Parameters
+        ----------
+        element_type : str
+            Element type.
+        dataset_string : str
+            Dataset string.
+        """
+        if element_type == "grid":
+            s = f"SpatialProperties/{dataset_string.upper()}"
+        else:
+            el_type_string = element_type.upper()
+            if element_type == "special":
+                el_type_string = el_type_string + " HISTORY"
+            else:
+                el_type_string = el_type_string + "S"
+            s = f"TimeSeries/{el_type_string}/{dataset_string}"
+        return self.get_table(s)

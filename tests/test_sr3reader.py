@@ -636,39 +636,39 @@ class TestSr3Reader(unittest.TestCase):
         test_file = Path("tests/sr3/base_case_3a.sr3").resolve()
         sr3_file = sr3reader.Sr3Reader(test_file)
 
-        file_read = sr3_file.get_timesteps()
+        file_read = sr3_file.dates.get_timesteps()
         true_result = list(range(3609))
         _test_equal_lists(self, true_result, file_read)
 
-        file_read = sr3_file.get_dates("group")
+        file_read = sr3_file.dates.get_dates("group")
         true_result = datetime.strptime("20181002", "%Y%m%d")
         self.assertEqual(true_result, file_read[0])
         true_result = datetime.strptime("20240803", "%Y%m%d")
         self.assertEqual(true_result, file_read[-1])
 
-        file_read = sr3_file.get_days("well")
+        file_read = sr3_file.dates.get_days("well")
         true_result = 30.
         self.assertEqual(true_result, file_read[0])
         true_result = 2162.
         self.assertEqual(true_result, file_read[-1])
 
-        file_read = sr3_file.get_days("grid")
+        file_read = sr3_file.dates.get_days("grid")
         true_result = [0., 30.]
         _test_equal_lists(self, true_result, file_read)
 
-        file_read = sr3_file.day2date(day=735.)
+        file_read = sr3_file.dates.day2date(day=735.)
         true_result = datetime.strptime("20200906", "%Y%m%d")
         self.assertEqual(true_result, file_read)
 
-        file_read = sr3_file.day2date(day=[735.])
+        file_read = sr3_file.dates.day2date(day=[735.])
         true_result = [datetime.strptime("20200906", "%Y%m%d")]
         _test_equal_lists(self, true_result, file_read)
 
-        file_read = sr3_file.date2day(date=datetime.strptime("20200906", "%Y%m%d"))
+        file_read = sr3_file.dates.date2day(date=datetime.strptime("20200906", "%Y%m%d"))
         true_result = 735.
         self.assertEqual(true_result, file_read)
 
-        file_read = sr3_file.date2day(date=[datetime.strptime("20200906", "%Y%m%d")])
+        file_read = sr3_file.dates.date2day(date=[datetime.strptime("20200906", "%Y%m%d")])
         true_result = [735.]
         _test_equal_lists(self, true_result, file_read)
 
