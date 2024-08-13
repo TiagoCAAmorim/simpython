@@ -12,6 +12,7 @@ Sr3FileHandler
 Usage Example:
 --------------
 sr3_handler = Sr3Handler()
+table = sr3_handler.get_table("General/UnitsTable")
 """
 
 from pathlib import Path
@@ -35,21 +36,25 @@ class Sr3Handler:
     ----------
     _file_path : str
         File path.
+    self._open_count : int
+        Number of net open calls.
+    self._open_calls : int
+        Number of total open calls.
 
     Methods
     -------
-    add(old, new, gain, offset)
-        Adds a new unit conversion to the unit list.
-    set_current(dimensionality, unit):
-        Sets the current unit for a given dimensionality.
-    get_current(dimensionality):
-        Gets the current unit for a given dimensionality string.
-    get_all_current():
-        Returns dict with all current units.
-    conversion(dimensionality, is_delta=False):
-        Get unit conversion factors for a given dimensionality string.
-    extract(units_table, conversion_table):
-        Extracts unit information from the given tables.
+    is_closed():
+        Check if sr3 file is closed.
+    is_open():
+        Check if sr3 file is open.
+    open():
+        Manually open sr3 file.
+    close(force_close=False):
+        Manually close sr3 file.
+    get_hdf_elements():
+        Returns dict with all groups and databases in file.
+    get_table(table_name):
+        Returns table from sr3 file.
     """
 
 
