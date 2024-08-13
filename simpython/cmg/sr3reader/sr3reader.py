@@ -3,26 +3,15 @@ Implements class Sr3Reader
 """
 
 from datetime import datetime, timedelta
-# import re
 from collections import OrderedDict
-from pathlib import Path
 
 import numpy as np
 from scipy import interpolate  # type: ignore
-import h5py  # type: ignore
 
 from .units import UnitHandler
 from .properties import PropertyHandler
+from .sr3 import Sr3Handler
 # from .elements import ElementHandler
-
-
-def _need_read_file(func):  # pylint: disable=no-self-argument
-    def wrapper(self, *args, **kwargs):
-        self.open()
-        result = func(self, *args, **kwargs)  # pylint: disable=not-callable
-        self.close()
-        return result
-    return wrapper
 
 
 class Sr3Reader:
@@ -76,13 +65,8 @@ class Sr3Reader:
             If file is not found.
         """
 
-        self._file_path = Path(file_path)
-        if not self._file_path.is_file():
-            raise FileNotFoundError(f"File not found: {self._file_path}")
+        self.file = Sr3Handler(file_path)
 
-        self._f = None
-        self._open_count = 0
-        self._open_calls = 0
         self._group_type = None
         self._dataset_type = None
 
@@ -99,6 +83,7 @@ class Sr3Reader:
             "special",
             "grid"
         ]
+
         self._element = {"special": {"": 0}, "grid": {"MATRIX": 0}}
         self._parent = {}
         self._connection = {}
@@ -123,63 +108,6 @@ class Sr3Reader:
             self.units.set_current("pressure", "kgf/cm2")
 
 
-    def _file_is_closed(self):
-        return self._f is None
-
-
-    def _file_is_open(self):
-        return not self._file_is_closed()
-
-
-    def open(self):
-        """Manually open sr3 file."""
-        if self._file_is_closed():
-            self._f = h5py.File(self._file_path)
-            self._open_calls += 1
-            self._open_count = 0
-        self._open_count += 1
-
-
-    def close(self, force_close=False):
-        """Manually close sr3 file."""
-        if self._file_is_closed():
-            self._open_count = 0
-        else:
-            if force_close:
-                self._open_count = 1
-            if self._open_count == 1:
-                self._f.close()
-                self._f = None
-            self._open_count -= 1
-
-
-    @_need_read_file  # type: ignore[arg-type]
-    def get_hdf_elements(self):
-        """Returns dict with all groups and databases in file"""
-        sr3_elements = []
-
-        def get_type(name):
-            sr3_elements.append((name, type(self.get_table(name))))
-
-        self._f.visit(get_type)
-        return sr3_elements
-
-
-    def get_table(self, table_name):
-        """Returns table from sr3 file
-
-        Parameters
-        ----------
-        table_name : str
-            Table to be evaluated.
-            Returns None if table is not found.
-        """
-        if table_name in self._f:
-            return self._f[table_name]
-        return None
-
-
-    @_need_read_file  # type: ignore[arg-type]
     def read(self, read_elements=True):
         """Reads general data
 
@@ -190,19 +118,19 @@ class Sr3Reader:
             should be read from sr3 file.
             (default: True)
         """
-        self._group_type = type(self.get_table("General"))
-        self._dataset_type = type(self.get_table("General/HistoryTable"))
+        self._group_type = type(self.file.get_table("General"))
+        self._dataset_type = type(self.file.get_table("General/HistoryTable"))
 
         self._read_master_dates()
 
         self.units.extract(
-            units_table=self.get_table("General/UnitsTable"),
-            conversion_table=self.get_table("General/UnitConversionTable"))
+            units_table=self.file.get_table("General/UnitsTable"),
+            conversion_table=self.file.get_table("General/UnitConversionTable"))
 
         self.properties.set_units(self.units)
         self.properties.extract(
-            property_table=self.get_table("General/NameRecordTable"),
-            components_table=self.get_table("General/ComponentTable"))
+            property_table=self.file.get_table("General/NameRecordTable"),
+            components_table=self.file.get_table("General/ComponentTable"))
 
         self._get_grid_sizes()
 
@@ -210,8 +138,8 @@ class Sr3Reader:
             for element in self._element_types:
                 _ = self.get_elements(element)
                 _ = self.get_properties(element)
-                _ = self._get_parents(element)
-                _ = self._get_connections(element)
+                self._get_parents(element)
+                self._get_connections(element)
                 _ = self.get_timesteps(element)
                 _ = self.get_days(element)
                 _ = self.get_dates(element)
@@ -229,7 +157,6 @@ class Sr3Reader:
                      "OILRATRC": "QO_RC",
                      "GASRATRC": "QG_RC",
                      "WATRATRC": "QW_RC",
-                     "LIQRATRC": "QL_RC",
 
                      "OILSECSU": "VOIP",
                      "ONFRAC": "UPTIME",
@@ -240,15 +167,11 @@ class Sr3Reader:
 
                      }
             for k,v in alias.items():
-                self.set_alias(
-                    old=k,
-                    new=v,
-                    check_exists=True)
+                self.set_alias(old=k, new=v, check_exists=True)
 
 
-    @_need_read_file  # type: ignore[arg-type]
     def _read_master_dates(self):
-        dataset = self.get_table("General/MasterTimeTable")
+        dataset = self.file.get_table("General/MasterTimeTable")
         self._all_days = dict(zip(dataset["Index"], dataset["Offset in days"]))
 
         def _parse_date(date):
@@ -262,7 +185,7 @@ class Sr3Reader:
             fraction_of_day = timedelta(days=decimal_part)
             return parsed_date + fraction_of_day
 
-        dataset = self.get_table("General/MasterTimeTable")
+        dataset = self.file.get_table("General/MasterTimeTable")
         self._all_dates = {
             number: _parse_date(date)
             for (number, date) in zip(dataset["Index"], dataset["Date"])
@@ -286,12 +209,9 @@ class Sr3Reader:
             else:
                 el_type_string = el_type_string + "S"
             s = f"TimeSeries/{el_type_string}/{dataset_string}"
-        if s in self._f:
-            return self.get_table(s)
-        return []
+        return self.file.get_table(s)
 
 
-    @_need_read_file  # type: ignore[arg-type]
     def _get_elements(self, element_type):
         dataset = self._get_dataset(
             element_type=element_type,
@@ -325,7 +245,6 @@ class Sr3Reader:
         return self._element[element_type]
 
 
-    @_need_read_file  # type: ignore[arg-type]
     def _get_properties(self, element_type):
         if element_type == "grid":
             self._property[element_type] = self._get_grid_properties()
@@ -392,10 +311,9 @@ class Sr3Reader:
             if old in self.get_properties(element):
                 p = self._property[element][old]
                 self._property[element][new] = p
-        self.properties.set_alias(old, new)
+        self.properties.set_alias(old, new, return_error=check_exists)
 
 
-    @_need_read_file  # type: ignore[arg-type]
     def _get_timesteps(self, element_type):
         if element_type == "grid":
             self._timestep[element_type] = self._get_grid_timesteps()
@@ -532,7 +450,6 @@ class Sr3Reader:
         return interp_date2day(date)
 
 
-    @_need_read_file  # type: ignore[arg-type]
     def _get_parents(self, element_type):
         if element_type in ["well", "group", "layer"]:
             dataset = self._get_dataset(
@@ -576,7 +493,6 @@ class Sr3Reader:
         return self._parent[element_type][element_name]
 
 
-    @_need_read_file  # type: ignore[arg-type]
     def _get_connections(self, element_type):
         if element_type == "layer":
             dataset = self._get_dataset(
@@ -620,9 +536,8 @@ class Sr3Reader:
         return self._connection[element_type][element_name]
 
 
-    @_need_read_file  # type: ignore[arg-type]
     def _get_grid_sizes(self):
-        dataset = self.get_table("SpatialProperties/000000/GRID")
+        dataset = self.file.get_table("SpatialProperties/000000/GRID")
         ni = dataset["IGNTID"][0]
         nj = dataset["IGNTJD"][0]
         nk = dataset["IGNTKD"][0]
@@ -630,7 +545,7 @@ class Sr3Reader:
         n_active = dataset["IPSTCS"].size
         if dataset["IPSTCS"][-1] > ni * nj * nk:
             self._element["grid"]["FRACTURE"] = np.where(
-                self.get_table("SpatialProperties/000000/GRID/IPSTCS") > ni * nj * nk
+                self.file.get_table("SpatialProperties/000000/GRID/IPSTCS") > ni * nj * nk
             )[0][0]
             n_cells = 2 * n_cells
         self._grid_size = {
@@ -665,12 +580,11 @@ class Sr3Reader:
         return self._grid_size["n_active"]
 
 
-    @_need_read_file  # type: ignore[arg-type]
     def _get_grid_timesteps(self):
-        dataset = self.get_table("SpatialProperties")
+        dataset = self.file.get_table("SpatialProperties")
         grid_timestep_list = []
         for key in dataset.keys():
-            sub_dataset = self.get_table(f"SpatialProperties/{key}")
+            sub_dataset = self.file.get_table(f"SpatialProperties/{key}")
             if isinstance(sub_dataset, self._group_type):
                 grid_timestep_list.append(int(key))
         return np.array(grid_timestep_list)
@@ -684,9 +598,8 @@ class Sr3Reader:
         pass
 
 
-    @_need_read_file  # type: ignore[arg-type]
     def _get_grid_properties(self):
-        dataset = self.get_table("SpatialProperties/Statistics")
+        dataset = self.file.get_table("SpatialProperties/Statistics")
         grid_property_list = {
             name.decode(): {
                 "min": min_,
@@ -708,9 +621,9 @@ class Sr3Reader:
         n_cells = ni * nj * nk
 
         def _list_grid_properties(timestep, set_timestep=None):
-            dataset = self.get_table(f"SpatialProperties/{timestep}")
+            dataset = self.file.get_table(f"SpatialProperties/{timestep}")
             for key in dataset.keys():
-                sub_dataset = self.get_table(f"SpatialProperties/{timestep}/{key}")
+                sub_dataset = self.file.get_table(f"SpatialProperties/{timestep}/{key}")
                 if not isinstance(sub_dataset, self._dataset_type):
                     continue
                 key = key.replace("%2F", "/")
@@ -771,7 +684,6 @@ class Sr3Reader:
         n_properties = 1 if is_1d else len(property_names)
         n_elements = int(n_data_columns / n_properties)
         for i_property, p in enumerate(property_names):
-            # d = self._master_property_list[p]["dimensionality"]
             gain, offset = self.properties.conversion(p)
             if gain != 1.0 or offset != 0.0:
                 for i_element in range(n_elements):
@@ -815,7 +727,6 @@ class Sr3Reader:
         return data[:, order]
 
 
-    @_need_read_file  # type: ignore[arg-type]
     def _get_raw_data(
         self, element_type, property_names, element_names=None, index=None
     ):
@@ -986,7 +897,6 @@ class Sr3Reader:
         return original_index
 
 
-    @_need_read_file  # type: ignore[arg-type]
     def _get_single_grid_property(self,
                                   property_name,
                                   ts=None,
@@ -1067,7 +977,6 @@ class Sr3Reader:
         raise ValueError(f'Invalid elements: {", ".join(element_names)}')
 
 
-    @_need_read_file  # type: ignore[arg-type]
     def _get_multiple_grid_properties(self,
                                       property_names,
                                       ts=None,
@@ -1101,7 +1010,6 @@ class Sr3Reader:
         return data
 
 
-    @_need_read_file  # type: ignore[arg-type]
     def _get_grid_data_interpolated(self,
                                     property_names,
                                     day=None,

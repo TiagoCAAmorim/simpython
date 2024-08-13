@@ -116,7 +116,7 @@ class PropertyHandler:
         self._component_list = {
             (number + 1): name[0].decode()
             for (number, name) in enumerate(dataset[:])
-            if name[0].decode() != "WATER" and ignore_water
+            if not (name[0].decode() == "WATER" and ignore_water)
         }
 
 
@@ -217,7 +217,7 @@ class PropertyHandler:
         return self._units.conversion(d)
 
 
-    def set_alias(self, old, new):
+    def set_alias(self, old, new, return_error=True):
         """Sets an alias for an existing property.
 
         Parameters
@@ -226,7 +226,21 @@ class PropertyHandler:
             Original property.
         new : str
             New property alias.
+        check_error : bool, optional
+            Raises error if problems are found.
+            (default : True)
+
+        Raises
+        ------
+        ValueError
+            If old property does not exist.
+        ValueError
+            If new property already exists.
         """
-        if old in self._properties:
-            p = self._properties[old]
-            self._properties[new] = p
+        if old not in self._properties:
+            msg = f'Property not found: {old}'
+            raise ValueError(msg)
+        if new in self._properties and return_error:
+            msg = f'Property already exists: {new}'
+            raise ValueError(msg)
+        self._properties[new] = self._properties[old]
