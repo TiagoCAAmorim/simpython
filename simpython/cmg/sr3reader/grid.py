@@ -58,7 +58,7 @@ class GridHandler:
         ----------
         key : str, optional
             Size key.
-            If none, returns all sizes.
+            If none, returns all grid sizes.
             (default: None)
 
         Raises
@@ -145,33 +145,36 @@ class GridHandler:
 
         n_active = self._size["n_active"]
         n_cells = self._size["n_cells"]
-
         _dataset_type = type(self.file.get_table("General/HistoryTable"))
-        def _list_grid_properties(timestep, set_timestep=None):
-            dataset = self.file.get_table(f"SpatialProperties/{timestep}")
+
+        def _list_grid_properties(timestep_str, set_timestep=None):
+            dataset = self.file.get_table(f"SpatialProperties/{timestep_str}")
             for key in dataset.keys():
-                sub_dataset = self.file.get_table(f"SpatialProperties/{timestep}/{key}")
+                sub_dataset = self.file.get_table(f"SpatialProperties/{timestep_str}/{key}")
                 if not isinstance(sub_dataset, _dataset_type):
                     continue
                 key = key.replace("%2F", "/")
                 if key not in grid_property_list:
                     raise ValueError(f"{key} not listed previously!")
+
                 size = sub_dataset.size
                 if size not in [n_cells, n_active]:
                     _ = grid_property_list.pop(key)
                     continue
                 if "size" in grid_property_list[key]:
                     if grid_property_list[key]["size"] != size:
-                        msg = f"Inconsistent grid size for {key}."
+                        msg = f"Inconsistent grid size for {key}. "
+                        msg += f"Expected {size}, found {grid_property_list[key]['size']}."
                         raise ValueError(msg)
                 else:
                     grid_property_list[key]["size"] = size
                     grid_property_list[key]["is_complete"] = (
                         sub_dataset.size == n_cells
                     )
+
                 if set_timestep is None:
                     grid_property_list[key]["timesteps"].add(
-                        int(timestep)
+                        int(timestep_str)
                     )
                 else:
                     grid_property_list[key]["timesteps"].add(
@@ -185,5 +188,4 @@ class GridHandler:
         for p in grid_property_list.values():
             p["timesteps"] = list(p["timesteps"])
             p["timesteps"].sort()
-        # self._grid_properties_adjustments(grid_property_list)
         return grid_property_list

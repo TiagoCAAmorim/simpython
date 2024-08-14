@@ -679,19 +679,19 @@ class TestSr3Reader(unittest.TestCase):
         test_file = Path("tests/sr3/base_case_3a.sr3").resolve()
         sr3_file = sr3reader.Sr3Reader(test_file)
 
-        file_read = sr3_file.get_parent(element_type="group", element_name="I-PLAT1-PRO")
+        file_read = sr3_file.elements.get_parent(element_type="group", element_name="I-PLAT1-PRO")
         true_result = "PLAT1-PRO"
         self.assertEqual(true_result, file_read)
 
-        file_read = sr3_file.get_parent(element_type="layer", element_name="P13{28,24,48}")
+        file_read = sr3_file.elements.get_parent(element_type="layer", element_name="P13{28,24,48}")
         true_result = "P13"
         self.assertEqual(true_result, file_read)
 
-        file_read = sr3_file.get_parent(element_type="well", element_name="P13")
+        file_read = sr3_file.elements.get_parent(element_type="well", element_name="P13")
         true_result = "P-PLAT1-PRO"
         self.assertEqual(true_result, file_read)
 
-        file_read = sr3_file.get_connection(element_type="layer", element_name="I11{31,10,76}")
+        file_read = sr3_file.elements.get_connection(element_type="layer", element_name="I11{31,10,76}")
         true_result = 99
         self.assertEqual(true_result, file_read)
 

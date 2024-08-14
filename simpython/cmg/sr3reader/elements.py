@@ -30,6 +30,8 @@ class ElementHandler:
 
     def __init__(self, sr3_file, units, grid):
         self._element = {k:{} for k in ElementHandler.valid_elements()}
+        self._parent = {k:{} for k in ElementHandler.valid_elements()}
+        self._connection = {k:{} for k in ElementHandler.valid_elements()}
         self._property = {k:{} for k in ElementHandler.valid_elements()}
         self.file = sr3_file
         self.units = units
@@ -40,7 +42,8 @@ class ElementHandler:
         """Extracts element information."""
         for element_type in ElementHandler.valid_elements():
             self._get_elements(element_type)
-            # self._get_properties(element_type)
+            self._get_parents(element_type)
+            self._get_connections(element_type)
 
 
     @staticmethod
@@ -111,3 +114,81 @@ class ElementHandler:
         """
         self.is_valid(element_type, throw_error=True)
         return self._element[element_type]
+
+
+    def _get_parents(self, element_type):
+        if element_type in ["well", "group", "layer"]:
+            dataset = self.file.get_element_table(
+                element_type=element_type,
+                dataset_string=f"{element_type.capitalize()}Table",
+            )
+
+            def _name(name, parent):
+                if element_type == "layer":
+                    return f"{parent.decode()}{{{name.decode()}}}"
+                return name.decode()
+
+            self._parent[element_type] = {
+                _name(name, parent): parent.decode()
+                for (name, parent) in zip(dataset["Name"], dataset["Parent"])
+            }
+        else:
+            self._parent[element_type] = {
+                name: "" for name in self._element[element_type]
+            }
+
+
+    def get_parent(self, element_type, element_name):
+        """Get parent of an element.
+
+        Parameters
+        ----------
+        element_type : str
+            Element type to be evaluated.
+
+        Raises
+        ------
+        ValueError
+            If an invalid element type is provided.
+        """
+        self.is_valid(element_type, throw_error=True)
+        return self._parent[element_type][element_name]
+
+
+    def _get_connections(self, element_type):
+        if element_type == "layer":
+            dataset = self.file.get_element_table(
+                element_type=element_type,
+                dataset_string=f"{element_type.capitalize()}Table",
+            )
+
+            def _name(name, parent):
+                return f"{parent.decode()}{{{name.decode()}}}"
+
+            self._connection[element_type] = {
+                _name(name, parent): connection
+                for (name, parent, connection) in zip(
+                    dataset["Name"], dataset["Parent"], dataset["Connect To"]
+                )
+            }
+        else:
+            self._connection[element_type] = {
+                name: "" for name in self._element[element_type]
+            }
+
+
+    def get_connection(self, element_type, element_name):
+        """Get connection of an element.
+
+        Parameters
+        ----------
+        element_type : str
+            Element type to be evaluated.
+
+        Raises
+        ------
+        ValueError
+            If an invalid element type is provided.
+        """
+        self.is_valid(element_type, throw_error=True)
+        return self._connection[element_type][element_name]

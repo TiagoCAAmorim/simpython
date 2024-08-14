@@ -74,15 +74,6 @@ class Sr3Reader:
         self.properties = PropertyHandler(self.file, self.units, self.grid)
         self.elements = ElementHandler(self.file, self.units, self.grid)
 
-        self._element = {"special": {"": 0}, "grid": {"MATRIX": 0}}
-        self._parent = {}
-        self._connection = {}
-        self._property = {}
-
-        self._grid_size = {}
-
-        self.read()
-
         if usual_units:
             additional_units = [
                 ("m3", "MMm3", (1.0e-6, 0.0)),
@@ -94,49 +85,34 @@ class Sr3Reader:
                 self.units.add(old, new, gain, offset)
             self.units.set_current("pressure", "kgf/cm2")
 
-
-    def read(self, read_elements=True):
-        """Reads general data
-
-        Parameters
-        ----------
-        read_elements : bool, optional
-            Define if list of elements and properties
-            should be read from sr3 file.
-            (default: True)
-        """
-        if read_elements:
-            for element in self.elements.valid_elements():
-                # _ = self.get_elements(element)
-                # _ = self.get_properties(element)
-                self._get_parents(element)
-                self._get_connections(element)
+            self._set_usual_alias()
 
 
-            alias = {"OILRATSC": "QO",
-                     "GASRATSC": "QG",
-                     "WATRATSC": "QW",
-                     "LIQRATSC": "QL",
+    def _set_usual_alias(self):
+        alias = {
+            "OILRATSC": "QO",
+            "GASRATSC": "QG",
+            "WATRATSC": "QW",
+            "LIQRATSC": "QL",
 
-                     "OILVOLSC": "NP",
-                     "GASVOLSC": "GP",
-                     "WATVOLSC": "WP",
-                     "LIQVOLSC": "LP",
+            "OILVOLSC": "NP",
+            "GASVOLSC": "GP",
+            "WATVOLSC": "WP",
+            "LIQVOLSC": "LP",
 
-                     "OILRATRC": "QO_RC",
-                     "GASRATRC": "QG_RC",
-                     "WATRATRC": "QW_RC",
+            "OILRATRC": "QO_RC",
+            "GASRATRC": "QG_RC",
+            "WATRATRC": "QW_RC",
 
-                     "OILSECSU": "VOIP",
-                     "ONFRAC": "UPTIME",
+            "OILSECSU": "VOIP",
+            "ONFRAC": "UPTIME",
 
-                     "ELTSCUM": "ELAPSED",
-                     "TSCUTCUM": "TS_CUTS",
-                     "DELTIME": "TS_SIZE",
-
-                     }
-            for k,v in alias.items():
-                self.properties.set_alias(old=k, new=v, return_error=True)
+            "ELTSCUM": "ELAPSED",
+            "TSCUTCUM": "TS_CUTS",
+            "DELTIME": "TS_SIZE",
+            }
+        for k,v in alias.items():
+            self.properties.set_alias(old=k, new=v, return_error=False)
 
 
     def _remove_duplicates(self, input_list):
@@ -144,152 +120,6 @@ class Sr3Reader:
         for item in input_list:
             unique_items[item] = None
         return list(unique_items.keys())
-
-
-    # def set_alias(self, old, new, check_exists=True):
-    #     """Sets an alias for an existing property.
-
-    #     Parameters
-    #     ----------
-    #     old : str
-    #         Original property.
-    #     new : str
-    #         New property alias.
-    #     check_exists : bool, optional
-    #         Checks if new property already exists.
-    #         (default: True)
-
-    #     Raises
-    #     ------
-    #     ValueError
-    #         If new property already exists and check_exists=True.
-    #     """
-    #     if check_exists:
-    #         for element in self.elements.valid_elements():
-    #             if new in self.get_properties(element):
-    #                 msg = f'Property already exists: {new}'
-    #                 raise ValueError(msg)
-
-    #     for element in self.elements.valid_elements():
-    #         if old in self.get_properties(element):
-    #             p = self._property[element][old]
-    #             self._property[element][new] = p
-    #     self.properties.set_alias(old, new, return_error=check_exists)
-
-
-    def _get_parents(self, element_type):
-        if element_type in ["well", "group", "layer"]:
-            dataset = self.file.get_element_table(
-                element_type=element_type,
-                dataset_string=f"{element_type.capitalize()}Table",
-            )
-
-            def _name(name, parent):
-                if element_type == "layer":
-                    return f"{parent.decode()}{{{name.decode()}}}"
-                return name.decode()
-
-            self._parent[element_type] = {
-                _name(name, parent): parent.decode()
-                for (name, parent) in zip(dataset["Name"], dataset["Parent"])
-            }
-        else:
-            self._parent[element_type] = {
-                name: "" for name in self.elements.get(element_type)
-            }
-
-
-    def get_parent(self, element_type, element_name):
-        """Get parent of an element.
-
-        Parameters
-        ----------
-        element_type : str
-            Element type to be evaluated.
-
-        Raises
-        ------
-        ValueError
-            If an invalid element type is provided.
-        """
-        self.elements.is_valid(element_type, throw_error=True)
-        if element_type not in self._parent:
-            self._get_parents(element_type)
-        return self._parent[element_type][element_name]
-
-
-    def _get_connections(self, element_type):
-        if element_type == "layer":
-            dataset = self.file.get_element_table(
-                element_type=element_type,
-                dataset_string=f"{element_type.capitalize()}Table",
-            )
-
-            def _name(name, parent):
-                return f"{parent.decode()}{{{name.decode()}}}"
-
-            self._connection[element_type] = {
-                _name(name, parent): connection
-                for (name, parent, connection) in zip(
-                    dataset["Name"], dataset["Parent"], dataset["Connect To"]
-                )
-            }
-        else:
-            self._connection[element_type] = {
-                name: "" for name in self.elements.get(element_type)
-            }
-
-
-    def get_connection(self, element_type, element_name):
-        """Get connection of an element.
-
-        Parameters
-        ----------
-        element_type : str
-            Element type to be evaluated.
-
-        Raises
-        ------
-        ValueError
-            If an invalid element type is provided.
-        """
-        self.elements.is_valid(element_type, throw_error=True)
-        if element_type not in self._connection:
-            self._get_connections(element_type)
-        return self._connection[element_type][element_name]
-
-
-    # def get_grid_size(self):
-    #     """Get grid sizes.
-
-    #     Parameters
-    #     ----------
-    #         None
-    #     """
-    #     ni = self._grid_size["ni"]
-    #     nj = self._grid_size["nj"]
-    #     nk = self._grid_size["nk"]
-    #     return ni, nj, nk
-
-
-    # def get_active_cells(self):
-    #     """Get number of active cells.
-
-    #     Parameters
-    #     ----------
-    #         None
-    #     """
-    #     return self._grid_size["n_active"]
-
-
-    # def _grid_properties_adjustments(self, grid_property_list):
-    #     # TODO
-    #     # for p,v in grid_property_list.items():
-    #     #     if p in ['DIFRAC','DJFRAC','DKFRAC']:
-    #     #         v['is_internal'] = True
-    #     pass
-
-
 
 
     def _concatenate_arrays(self, arr1, arr2):
