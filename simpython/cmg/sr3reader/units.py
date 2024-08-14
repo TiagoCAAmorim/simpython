@@ -42,10 +42,11 @@ class UnitHandler:
     """
 
 
-    def __init__(self, sr3_file):
+    def __init__(self, sr3_file, auto_read=True):
         self._unit_list = {}
         self.file = sr3_file
-        self.extract()
+        if auto_read:
+            self.extract()
 
     def add(self, old, new, gain, offset):
         """Adds a new unit in the form:

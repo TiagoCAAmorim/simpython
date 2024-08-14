@@ -44,7 +44,8 @@ class TestSr3Reader(unittest.TestCase):
         """Tests reading the elements of a file"""
 
         test_file = Path("tests/sr3/base_case_3a.sr3").resolve()
-        sr3_file = sr3reader.Sr3Reader(test_file)
+        sr3_file = sr3reader.Sr3Reader(test_file, auto_read=False)
+        sr3_file.read()
 
         true_result = [
             "I11",
@@ -133,8 +134,7 @@ class TestSr3Reader(unittest.TestCase):
             "C29toC63",
             "WATER"
         ]
-        c_ = sr3_file.properties._component_list  # pylint: disable=protected-access
-        file_read = c_.values()
+        file_read = sr3_file.properties.get_components_list().values()
         _test_equal_lists(self, true_result, file_read)
 
     def test_read_properties(self):
@@ -679,19 +679,27 @@ class TestSr3Reader(unittest.TestCase):
         test_file = Path("tests/sr3/base_case_3a.sr3").resolve()
         sr3_file = sr3reader.Sr3Reader(test_file)
 
-        file_read = sr3_file.elements.get_parent(element_type="group", element_name="I-PLAT1-PRO")
+        file_read = sr3_file.elements.get_parent(
+            element_type="group",
+            element_name="I-PLAT1-PRO")
         true_result = "PLAT1-PRO"
         self.assertEqual(true_result, file_read)
 
-        file_read = sr3_file.elements.get_parent(element_type="layer", element_name="P13{28,24,48}")
+        file_read = sr3_file.elements.get_parent(
+            element_type="layer",
+            element_name="P13{28,24,48}")
         true_result = "P13"
         self.assertEqual(true_result, file_read)
 
-        file_read = sr3_file.elements.get_parent(element_type="well", element_name="P13")
+        file_read = sr3_file.elements.get_parent(
+            element_type="well",
+            element_name="P13")
         true_result = "P-PLAT1-PRO"
         self.assertEqual(true_result, file_read)
 
-        file_read = sr3_file.elements.get_connection(element_type="layer", element_name="I11{31,10,76}")
+        file_read = sr3_file.elements.get_connection(
+            element_type="layer",
+            element_name="I11{31,10,76}")
         true_result = 99
         self.assertEqual(true_result, file_read)
 

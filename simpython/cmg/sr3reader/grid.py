@@ -28,12 +28,14 @@ class GridHandler:
     -------
     """
 
-    def __init__(self, sr3_file, dates):
+    def __init__(self, sr3_file, dates, auto_read=True):
         self._properties = []
         self._size = ()
         self.file = sr3_file
         self.dates = dates
-        self.extract()
+
+        if auto_read:
+            self.extract()
 
 
     def extract(self):

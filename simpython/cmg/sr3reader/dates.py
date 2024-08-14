@@ -31,19 +31,18 @@ class DateHandler:
     -------
     """
 
-    def __init__(self, sr3_file):
+    def __init__(self, sr3_file, auto_read=True):
         self._days = {k:np.array([]) for k in ElementHandler.valid_elements()}
         self._days['all'] = np.array([])
         self._dates = {k:np.array([]) for k in ElementHandler.valid_elements()}
         self._dates['all'] = np.array([])
+        self._dates['timestamp'] = np.array([])
         self._timesteps = {k:np.array([]) for k in ElementHandler.valid_elements()}
         self._timesteps['all'] = np.array([])
 
         self.file = sr3_file
-        self.extract()
-
-        v_timestamp = np.vectorize(lambda t: t.timestamp())
-        self._dates['timestamp'] = v_timestamp(self._dates['all'])
+        if auto_read:
+            self.extract()
 
 
     def extract(self):
@@ -54,6 +53,9 @@ class DateHandler:
             self._get_timesteps(element_type)
             self._get_days(element_type)
             self._get_dates(element_type)
+
+        v_timestamp = np.vectorize(lambda t: t.timestamp())
+        self._dates['timestamp'] = v_timestamp(self._dates['all'])
 
 
     def _read_master_time_table(self, dataset):

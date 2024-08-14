@@ -49,7 +49,7 @@ class Sr3Reader:
     """
 
 
-    def __init__(self, file_path, usual_units=True):
+    def __init__(self, file_path, usual_units=True, auto_read=True):
         """
         Parameters
         ----------
@@ -68,27 +68,37 @@ class Sr3Reader:
 
         self.file = Sr3Handler(file_path)
 
-        self.dates = DateHandler(self.file)
-        self.units = UnitHandler(self.file)
-        self.grid = GridHandler(self.file, self.dates)
-        self.properties = PropertyHandler(self.file, self.units, self.grid)
-        self.elements = ElementHandler(self.file, self.units, self.grid)
+        self.dates = DateHandler(self.file, auto_read=auto_read)
+        self.units = UnitHandler(self.file, auto_read=auto_read)
+        self.grid = GridHandler(self.file, self.dates, auto_read=auto_read)
+        self.properties = PropertyHandler(self.file, self.units, self.grid, auto_read=auto_read)
+        self.elements = ElementHandler(self.file, self.units, self.grid, auto_read=auto_read)
 
-        if usual_units:
-            additional_units = [
-                ("m3", "MMm3", (1.0e-6, 0.0)),
-                ("bbl", "MMbbl", (1.0e-6, 0.0)),
-                ("kg/cm2", "kgf/cm2", (1.0, 0.0)),
-            ]
-
-            for old, new, (gain, offset) in additional_units:
-                self.units.add(old, new, gain, offset)
-            self.units.set_current("pressure", "kgf/cm2")
-
-            self._set_usual_alias()
+        if usual_units and auto_read:
+            self.set_usual_units()
 
 
-    def _set_usual_alias(self):
+    def read(self):
+        """Reads the contents of the sr3 file."""
+        self.dates.extract()
+        self.units.extract()
+        self.grid.extract()
+        self.properties.extract()
+        self.elements.extract()
+
+
+    def set_usual_units(self):
+        """Sets some usual units and property aliases."""
+        additional_units = [
+            ("m3", "MMm3", (1.0e-6, 0.0)),
+            ("bbl", "MMbbl", (1.0e-6, 0.0)),
+            ("kg/cm2", "kgf/cm2", (1.0, 0.0)),
+        ]
+
+        for old, new, (gain, offset) in additional_units:
+            self.units.add(old, new, gain, offset)
+        self.units.set_current("pressure", "kgf/cm2")
+
         alias = {
             "OILRATSC": "QO",
             "GASRATSC": "QG",

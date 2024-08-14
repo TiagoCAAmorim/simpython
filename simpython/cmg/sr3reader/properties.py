@@ -34,14 +34,16 @@ class PropertyHandler:
     """
 
 
-    def __init__(self, sr3_file, units, grid):
+    def __init__(self, sr3_file, units, grid, auto_read=True):
         self._properties = {}
         self._component_list = {}
         self._element_properties = {k:{} for k in ElementHandler.valid_elements()}
         self.file = sr3_file
         self.units = units
         self.grid = grid
-        self.extract()
+
+        if auto_read:
+            self.extract()
 
 
     def extract(self):
@@ -108,7 +110,7 @@ class PropertyHandler:
                 name.decode(): number
                 for (number, name) in enumerate(data[:])
             }
-        return self.replace_components(properties)
+        return self._replace_components(properties)
 
 
     def get(self, element=None, name=None):
@@ -146,7 +148,12 @@ class PropertyHandler:
         return self._element_properties[element][name]
 
 
-    def replace_components(self, property_list):
+    def get_components_list(self):
+        """Returns list of components."""
+        return self._component_list
+
+
+    def _replace_components(self, property_list):
         """Returns list or dict that replaces components numbers to names.
 
         Parameters

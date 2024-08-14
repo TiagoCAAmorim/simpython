@@ -28,7 +28,7 @@ class ElementHandler:
     -------
     """
 
-    def __init__(self, sr3_file, units, grid):
+    def __init__(self, sr3_file, units, grid, auto_read=True):
         self._element = {k:{} for k in ElementHandler.valid_elements()}
         self._parent = {k:{} for k in ElementHandler.valid_elements()}
         self._connection = {k:{} for k in ElementHandler.valid_elements()}
@@ -36,7 +36,9 @@ class ElementHandler:
         self.file = sr3_file
         self.units = units
         self.grid = grid
-        self.extract()
+
+        if auto_read:
+            self.extract()
 
     def extract(self):
         """Extracts element information."""
