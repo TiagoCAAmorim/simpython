@@ -16,6 +16,7 @@ description("OILRATSC")
 """
 
 import re
+from .elements import ElementHandler
 
 
 class PropertyHandler:
@@ -29,62 +30,31 @@ class PropertyHandler:
 
     Methods
     -------
-    set_units(units):
-        Sets the unit handler for the property handler.
-    extract(property_table, components_table=None):
-        Extracts property information from the given table.
-    replace_components(property_list):
-        Returns list or dict that replaces components numbers to names.
-    description(property_name):
-        Returns dict with property attributes.
-    dimensionality(self, property_name):
-        Returns property dimensionality.
-    unit(self, property_name):
-        Returns property current unit.
-    conversion(self, property_name):
-        Returns property current unit conversion.
-    set_alias(self, old, new):
-        Sets an alias for an existing property.
+
     """
 
 
-    def __init__(self, sr3_file, units):
+    def __init__(self, sr3_file, units, grid):
         self._properties = {}
         self._component_list = {}
-        self._units = units
+        self._element_properties = {k:{} for k in ElementHandler.valid_elements()}
         self.file = sr3_file
+        self.units = units
+        self.grid = grid
         self.extract()
 
 
-    def set_units(self, units):
-        """Sets the unit handler for the property handler.
-
-        Parameters
-        ----------
-        units : UnitHandler
-            Unit handler to be used.
-        """
-        self._units = units
-
-
     def extract(self):
-        """Extracts property information from the given table.
-
-        Parameters
-        ----------
-        property_table : h5py.Dataset
-            Property table from the SR3 file.
-            Usually "General/UnitsTable".
-        components_table : h5py.Dataset
-            Components table from the SR3 file.
-            Usually "General/ComponentTable".
-        """
+        """Extracts property information from the sr3 file."""
         property_table = self.file.get_table("General/NameRecordTable")
         components_table = self.file.get_table("General/ComponentTable")
 
         if components_table is not None:
             self._extract_components_table(components_table)
         self._extract_property_table(property_table)
+
+        for k in ElementHandler.valid_elements():
+            self._element_properties[k] = self._extract_element_properties(k)
 
 
     def _extract_property_table(self, dataset):
@@ -117,12 +87,63 @@ class PropertyHandler:
                     }
         _ = self._properties.pop("")
 
+
     def _extract_components_table(self, dataset, ignore_water=False):
         self._component_list = {
             (number + 1): name[0].decode()
             for (number, name) in enumerate(dataset[:])
             if not (name[0].decode() == "WATER" and ignore_water)
         }
+
+
+    def _extract_element_properties(self, element_type):
+        if element_type == "grid":
+            properties = self.grid.get_property()
+        else:
+            data = self.file.get_element_table(
+                element_type=element_type,
+                dataset_string="Variables"
+            )
+            properties = {
+                name.decode(): number
+                for (number, name) in enumerate(data[:])
+            }
+        return self.replace_components(properties)
+
+
+    def get(self, element=None, name=None):
+        """Get property or property list.
+
+        Parameters
+        ----------
+        element : str, optional
+            Element type.
+            Returns master properties table if None.
+            (default : None)
+        name : str, optional
+            Property name.
+            Returns all element properties if None.
+            (default : None)
+
+        Raises
+        ------
+        ValueError
+            If element type is not defined and a property name is provided.
+        ValueError
+            If property name is not found.
+        """
+        if element is None:
+            if name is not None:
+                msg = "Element type must be defined if a property name is provided."
+                raise ValueError(msg)
+            return self._properties
+        ElementHandler.is_valid(element, throw_error=True)
+        if name is None:
+            return self._element_properties[element]
+        if name not in self._element_properties[element]:
+            msg = f"Property {name} not found for element {element}."
+            raise ValueError(msg)
+        return self._element_properties[element][name]
 
 
     def replace_components(self, property_list):
@@ -164,7 +185,7 @@ class PropertyHandler:
         return {
             "description": p["name"],
             "long description": p["long name"],
-            "unit": self._units.get_current(p["dimensionality"]),
+            "unit": self.units.get_current(p["dimensionality"]),
         }
 
 
@@ -202,7 +223,7 @@ class PropertyHandler:
             If property_name is not found.
         """
         d = self.dimensionality(property_name)
-        return self._units.get_current(d)
+        return self.units.get_current(d)
 
 
     def conversion(self, property_name):
@@ -219,7 +240,7 @@ class PropertyHandler:
             If property_name is not found.
         """
         d = self.dimensionality(property_name)
-        return self._units.conversion(d)
+        return self.units.conversion(d)
 
 
     def set_alias(self, old, new, return_error=True):
@@ -248,4 +269,10 @@ class PropertyHandler:
         if new in self._properties and return_error:
             msg = f'Property already exists: {new}'
             raise ValueError(msg)
+
         self._properties[new] = self._properties[old]
+
+        for k in self._element_properties:
+            if old in self._element_properties[k]:
+                p = self._element_properties[k][old]
+                self._element_properties[k][new] = p

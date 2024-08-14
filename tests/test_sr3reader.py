@@ -68,7 +68,7 @@ class TestSr3Reader(unittest.TestCase):
             "P15",
             "P16",
         ]
-        file_read = sr3_file.get_elements("well").keys()
+        file_read = sr3_file.elements.get("well").keys()
         _test_equal_lists(self, true_result, file_read)
 
         true_result = [
@@ -89,11 +89,11 @@ class TestSr3Reader(unittest.TestCase):
             "PLAT-TLD-PRO",
             "PLAT-TLD-INJ",
         ]
-        file_read = sr3_file.get_elements("group").keys()
+        file_read = sr3_file.elements.get("group").keys()
         _test_equal_lists(self, true_result, file_read)
 
         true_result = ["FIELD"]
-        file_read = sr3_file.get_elements("sector").keys()
+        file_read = sr3_file.elements.get("sector").keys()
         _test_equal_lists(self, true_result, file_read)
 
         true_result = [
@@ -118,11 +118,11 @@ class TestSr3Reader(unittest.TestCase):
             "I16-W{12,22,42}",
             "I17-W{7,26,41}",
         ]
-        file_read = sr3_file.get_elements("layer").keys()
+        file_read = sr3_file.elements.get("layer").keys()
         _test_equal_lists(self, true_result, file_read, True)
 
-        true_result = ["MATRIX"]
-        file_read = sr3_file.get_elements("grid").keys()
+        true_result = ["MATRIX", "FRACTURE"]
+        file_read = sr3_file.elements.get("grid").keys()
         _test_equal_lists(self, true_result, file_read)
 
         true_result = [
@@ -263,7 +263,7 @@ class TestSr3Reader(unittest.TestCase):
             "WTGMASRSC(C29toC63)",
             "LP","QW","QG","QW_RC","QO","QL","QO_RC","NP","UPTIME","QG_RC","WP","GP"
         ]
-        file_read = sr3_file.get_properties("well").keys()
+        file_read = sr3_file.properties.get("well").keys()
         _test_equal_lists(self, true_result, file_read)
 
         true_result = [
@@ -385,7 +385,7 @@ class TestSr3Reader(unittest.TestCase):
             "WTGMASRSC(C29toC63)",
             "WP","QO","UPTIME","QG","QW","QW_RC","QG_RC","QO_RC","NP","QL","GP","LP"
         ]
-        file_read = sr3_file.get_properties("group").keys()
+        file_read = sr3_file.properties.get("group").keys()
         _test_equal_lists(self, true_result, file_read)
 
         true_result = [
@@ -491,11 +491,11 @@ class TestSr3Reader(unittest.TestCase):
             "INLSECRECOO",
             "VOIP"
         ]
-        file_read = sr3_file.get_properties("sector").keys()
+        file_read = sr3_file.properties.get("sector").keys()
         _test_equal_lists(self, true_result, file_read)
 
         true_result = ["STATUS"]
-        file_read = sr3_file.get_properties("layer").keys()
+        file_read = sr3_file.properties.get("layer").keys()
         _test_equal_lists(self, true_result, file_read)
 
         true_result = [
@@ -552,7 +552,7 @@ class TestSr3Reader(unittest.TestCase):
             "VISW",
             "Z(CO2)",
         ]
-        file_read = sr3_file.get_properties("grid").keys()
+        file_read = sr3_file.properties.get("grid").keys()
         _test_equal_lists(self, true_result, file_read)
 
         true_result = [
@@ -570,7 +570,7 @@ class TestSr3Reader(unittest.TestCase):
             "MEMUSAGE",
             "TS_SIZE","TS_CUTS","ELAPSED"
         ]
-        file_read = sr3_file.get_properties("special").keys()
+        file_read = sr3_file.properties.get("special").keys()
         _test_equal_lists(self, true_result, file_read)
 
     def test_read_units(self):
@@ -617,17 +617,18 @@ class TestSr3Reader(unittest.TestCase):
         file_read = sr3_file.properties.unit(property_name="OILRATSC")
         self.assertEqual("m3/day", file_read)
 
-        sr3_file.set_alias(old="OILRATSC",
-                           new="QO",
-                           check_exists=False)
+        sr3_file.properties.set_alias(
+            old="OILRATSC",
+            new="QO",
+            return_error=False)
         file_read = sr3_file.properties.unit(property_name="QO")
         self.assertEqual("m3/day", file_read)
 
         with self.assertRaises(ValueError):
-            sr3_file.set_alias(old="OILRATSC", new="QO")
+            sr3_file.properties.set_alias(old="OILRATSC", new="QO")
 
         with self.assertRaises(ValueError):
-            sr3_file.set_alias(old="OILRATSC", new="OILRATRC")
+            sr3_file.properties.set_alias(old="OILRATSC", new="OILRATRC")
 
 
     def test_read_times(self):
@@ -700,11 +701,11 @@ class TestSr3Reader(unittest.TestCase):
         test_file = Path("tests/sr3/base_case_3a.sr3").resolve()
         sr3_file = sr3reader.Sr3Reader(test_file)
 
-        file_read = sr3_file.get_grid_size()
+        file_read = sr3_file.grid.get_size("nijk")
         true_result = (47, 39, 291)
         self.assertEqual(true_result, file_read)
 
-        file_read = sr3_file.get_active_cells()
+        file_read = sr3_file.grid.get_size("n_active")
         true_result = 67241
         self.assertEqual(true_result, file_read)
 
@@ -723,9 +724,10 @@ class TestSr3Reader(unittest.TestCase):
                        52595.77029111726 / 98.0665]
         _test_equal_lists(self, true_result, list(file_read[:,1]))
 
-        sr3_file.set_alias(old="OILRATSC",
-                           new="QO",
-                           check_exists=False)
+        sr3_file.properties.set_alias(
+            old="OILRATSC",
+            new="QO",
+            return_error=False)
         file_read = sr3_file.get_data(element_type="well",
                                       property_names=["QO","BHP"],
                                       element_names=["P14","P11"],
@@ -781,7 +783,7 @@ class TestSr3Reader(unittest.TestCase):
             property_names="NET/GROSS",
             element_names="MATRIX",
             day=0.)
-        for i in range(sr3_file.get_active_cells()):
+        for i in range(sr3_file.grid.get_size("n_active")):
             self.assertTrue(file_read[i] - 1 < 0.00001)
 
         file_read = sr3_file.get_grid_data(

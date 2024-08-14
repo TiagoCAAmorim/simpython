@@ -8,6 +8,7 @@ import numpy as np
 from scipy import interpolate  # type: ignore
 
 from .units import UnitHandler
+from .grid import GridHandler
 from .properties import PropertyHandler
 from .sr3 import Sr3Handler
 from .dates import DateHandler
@@ -67,12 +68,11 @@ class Sr3Reader:
 
         self.file = Sr3Handler(file_path)
 
-        self._dataset_type = None
-
         self.dates = DateHandler(self.file)
         self.units = UnitHandler(self.file)
-        self.properties = PropertyHandler(self.file, self.units)
-        self.elements = ElementHandler(self.file)
+        self.grid = GridHandler(self.file, self.dates)
+        self.properties = PropertyHandler(self.file, self.units, self.grid)
+        self.elements = ElementHandler(self.file, self.units, self.grid)
 
         self._element = {"special": {"": 0}, "grid": {"MATRIX": 0}}
         self._parent = {}
@@ -105,14 +105,10 @@ class Sr3Reader:
             should be read from sr3 file.
             (default: True)
         """
-        self._dataset_type = type(self.file.get_table("General/HistoryTable"))
-
-        self._get_grid_sizes()
-
         if read_elements:
             for element in self.elements.valid_elements():
-                _ = self.get_elements(element)
-                _ = self.get_properties(element)
+                # _ = self.get_elements(element)
+                # _ = self.get_properties(element)
                 self._get_parents(element)
                 self._get_connections(element)
 
@@ -140,7 +136,7 @@ class Sr3Reader:
 
                      }
             for k,v in alias.items():
-                self.set_alias(old=k, new=v, check_exists=True)
+                self.properties.set_alias(old=k, new=v, return_error=True)
 
 
     def _remove_duplicates(self, input_list):
@@ -150,102 +146,35 @@ class Sr3Reader:
         return list(unique_items.keys())
 
 
-    def _get_elements(self, element_type):
-        dataset = self.file.get_element_table(
-            element_type=element_type,
-            dataset_string="Origins"
-        )
-        self._element[element_type] = {
-            name.decode(): number
-            for (number, name) in enumerate(dataset[:])
-            if name.decode() != ""
-        }
+    # def set_alias(self, old, new, check_exists=True):
+    #     """Sets an alias for an existing property.
 
+    #     Parameters
+    #     ----------
+    #     old : str
+    #         Original property.
+    #     new : str
+    #         New property alias.
+    #     check_exists : bool, optional
+    #         Checks if new property already exists.
+    #         (default: True)
 
-    def get_elements(self, element_type):
-        """Get list of elements.
+    #     Raises
+    #     ------
+    #     ValueError
+    #         If new property already exists and check_exists=True.
+    #     """
+    #     if check_exists:
+    #         for element in self.elements.valid_elements():
+    #             if new in self.get_properties(element):
+    #                 msg = f'Property already exists: {new}'
+    #                 raise ValueError(msg)
 
-        Parameters
-        ----------
-        element_type : str
-            Element type to be evaluated.
-
-        Raises
-        ------
-        ValueError
-            If an invalid element type is provided.
-        """
-        self.elements.is_valid(element_type, throw_error=True)
-        if element_type not in self._element:
-            self._get_elements(element_type=element_type)
-        return self._element[element_type]
-
-
-    def _get_properties(self, element_type):
-        if element_type == "grid":
-            self._property[element_type] = self._get_grid_properties()
-        else:
-            data = self.file.get_element_table(
-                element_type=element_type,
-                dataset_string="Variables"
-            )
-            self._property[element_type] = {
-                name.decode(): number
-                for (number, name) in enumerate(data[:])
-            }
-        self._property[element_type] = self.properties.replace_components(
-            self._property[element_type]
-        )
-
-
-    def get_properties(self, element_type):
-        """Get list of properties.
-
-        Parameters
-        ----------
-        element_type : str
-            Element type to be evaluated.
-
-        Raises
-        ------
-        ValueError
-            If an invalid element type is provided.
-        """
-        self.elements.is_valid(element_type, throw_error=True)
-        if element_type not in self._property:
-            self._get_properties(element_type=element_type)
-        return self._property[element_type]
-
-
-    def set_alias(self, old, new, check_exists=True):
-        """Sets an alias for an existing property.
-
-        Parameters
-        ----------
-        old : str
-            Original property.
-        new : str
-            New property alias.
-        check_exists : bool, optional
-            Checks if new property already exists.
-            (default: True)
-
-        Raises
-        ------
-        ValueError
-            If new property already exists and check_exists=True.
-        """
-        if check_exists:
-            for element in self.elements.valid_elements():
-                if new in self.get_properties(element):
-                    msg = f'Property already exists: {new}'
-                    raise ValueError(msg)
-
-        for element in self.elements.valid_elements():
-            if old in self.get_properties(element):
-                p = self._property[element][old]
-                self._property[element][new] = p
-        self.properties.set_alias(old, new, return_error=check_exists)
+    #     for element in self.elements.valid_elements():
+    #         if old in self.get_properties(element):
+    #             p = self._property[element][old]
+    #             self._property[element][new] = p
+    #     self.properties.set_alias(old, new, return_error=check_exists)
 
 
     def _get_parents(self, element_type):
@@ -266,7 +195,7 @@ class Sr3Reader:
             }
         else:
             self._parent[element_type] = {
-                name: "" for name in self.get_elements(element_type)
+                name: "" for name in self.elements.get(element_type)
             }
 
 
@@ -307,7 +236,7 @@ class Sr3Reader:
             }
         else:
             self._connection[element_type] = {
-                name: "" for name in self.get_elements(element_type)
+                name: "" for name in self.elements.get(element_type)
             }
 
 
@@ -330,130 +259,37 @@ class Sr3Reader:
         return self._connection[element_type][element_name]
 
 
-    def _get_grid_sizes(self):
-        dataset = self.file.get_table("SpatialProperties/000000/GRID")
-        ni = dataset["IGNTID"][0]
-        nj = dataset["IGNTJD"][0]
-        nk = dataset["IGNTKD"][0]
-        n_cells = ni * nj * nk
-        n_active = dataset["IPSTCS"].size
-        if dataset["IPSTCS"][-1] > ni * nj * nk:
-            self._element["grid"]["FRACTURE"] = np.where(
-                self.file.get_table("SpatialProperties/000000/GRID/IPSTCS") > ni * nj * nk
-            )[0][0]
-            n_cells = 2 * n_cells
-        self._grid_size = {
-            "ni": ni,
-            "nj": nj,
-            "nk": nk,
-            "n_active": n_active,
-            "n_cells": n_cells,
-        }
+    # def get_grid_size(self):
+    #     """Get grid sizes.
+
+    #     Parameters
+    #     ----------
+    #         None
+    #     """
+    #     ni = self._grid_size["ni"]
+    #     nj = self._grid_size["nj"]
+    #     nk = self._grid_size["nk"]
+    #     return ni, nj, nk
 
 
-    def get_grid_size(self):
-        """Get grid sizes.
+    # def get_active_cells(self):
+    #     """Get number of active cells.
 
-        Parameters
-        ----------
-            None
-        """
-        ni = self._grid_size["ni"]
-        nj = self._grid_size["nj"]
-        nk = self._grid_size["nk"]
-        return ni, nj, nk
+    #     Parameters
+    #     ----------
+    #         None
+    #     """
+    #     return self._grid_size["n_active"]
 
 
-    def get_active_cells(self):
-        """Get number of active cells.
-
-        Parameters
-        ----------
-            None
-        """
-        return self._grid_size["n_active"]
+    # def _grid_properties_adjustments(self, grid_property_list):
+    #     # TODO
+    #     # for p,v in grid_property_list.items():
+    #     #     if p in ['DIFRAC','DJFRAC','DKFRAC']:
+    #     #         v['is_internal'] = True
+    #     pass
 
 
-    # def _get_grid_timesteps(self):
-    #     dataset = self.file.get_table("SpatialProperties")
-    #     grid_timestep_list = []
-    #     for key in dataset.keys():
-    #         sub_dataset = self.file.get_table(f"SpatialProperties/{key}")
-    #         if isinstance(sub_dataset, self._group_type):
-    #             grid_timestep_list.append(int(key))
-    #     return np.array(grid_timestep_list)
-
-
-    def _grid_properties_adjustments(self, grid_property_list):
-        # TODO
-        # for p,v in grid_property_list.items():
-        #     if p in ['DIFRAC','DJFRAC','DKFRAC']:
-        #         v['is_internal'] = True
-        pass
-
-
-    def _get_grid_properties(self):
-        dataset = self.file.get_table("SpatialProperties/Statistics")
-        grid_property_list = {
-            name.decode(): {
-                "min": min_,
-                "max": max_,
-                "timesteps": set(),
-                "is_internal": False,
-                "is_complete": False,
-                "original_name": name.decode().replace("/","%2F")
-            }
-            for name, min_, max_ in zip(
-                dataset["Keyword"], dataset["Min"], dataset["Max"]
-            )
-        }
-
-        ni = self._grid_size["ni"]
-        nj = self._grid_size["nj"]
-        nk = self._grid_size["nk"]
-        n_active = self._grid_size["n_active"]
-        n_cells = ni * nj * nk
-
-        def _list_grid_properties(timestep, set_timestep=None):
-            dataset = self.file.get_table(f"SpatialProperties/{timestep}")
-            for key in dataset.keys():
-                sub_dataset = self.file.get_table(f"SpatialProperties/{timestep}/{key}")
-                if not isinstance(sub_dataset, self._dataset_type):
-                    continue
-                key = key.replace("%2F", "/")
-                if key not in grid_property_list:
-                    raise ValueError(f"{key} not listed previously!")
-                size = sub_dataset.size
-                if size not in [n_cells, n_active]:
-                    _ = grid_property_list.pop(key)
-                    continue
-                if "size" in grid_property_list[key]:
-                    if grid_property_list[key]["size"] != size:
-                        msg = f"Inconsistent grid size for {key}."
-                        raise ValueError(msg)
-                else:
-                    grid_property_list[key]["size"] = size
-                    grid_property_list[key]["is_complete"] = (
-                        sub_dataset.size == n_cells
-                    )
-                if set_timestep is None:
-                    grid_property_list[key]["timesteps"].add(
-                        int(timestep)
-                    )
-                else:
-                    grid_property_list[key]["timesteps"].add(
-                        set_timestep
-                    )
-                    grid_property_list[key]["is_internal"] = True
-
-        _list_grid_properties("000000/GRID", 0)
-        for ts in self.dates.get_timesteps("grid"):
-            _list_grid_properties(str(ts).zfill(6))
-        for p in grid_property_list.values():
-            p["timesteps"] = list(p["timesteps"])
-            p["timesteps"].sort()
-        self._grid_properties_adjustments(grid_property_list)
-        return grid_property_list
 
 
     def _concatenate_arrays(self, arr1, arr2):
@@ -533,11 +369,11 @@ class Sr3Reader:
             return [index_dict[name_list]]
 
         property_indexes = _get_indexes(
-            property_names, self.get_properties(element_type)
+            property_names, self.properties.get(element_type)
         )
         element_indexes = _get_indexes(
             name_list=element_names,
-            index_dict=self.get_elements(element_type)
+            index_dict=self.elements.get(element_type)
         )
         dataset = self.file.get_element_table(
             element_type=element_type,
@@ -609,7 +445,7 @@ class Sr3Reader:
             msg = "To get grid data use 'get_grid_data'."
             raise ValueError(msg)
         if element_names is None:
-            element_names = self.get_elements(element_type=element_type)
+            element_names = self.elements.get(element_type=element_type)
         if raw_data is None:
             raw_data = self._get_raw_data(
                 element_type=element_type,
@@ -697,22 +533,25 @@ class Sr3Reader:
                                   element_names=None):
         if element_names is None:
             element_names = ["MATRIX"]
-        if "FRACTURE" not in self.get_elements("grid"):
-            if "FRACTURE" in element_names:
-                msg = "Current grid does not have fracture values."
-                raise ValueError(msg)
+        if isinstance(element_names, str):
+            element_names = [element_names]
+        if any(e not in ["MATRIX","FRACTURE"] for e in element_names):
+            msg = f"Invalid element type: {', '.join(element_names)}. Expected: MATRIX, FRACTURE."
+            raise ValueError(msg)
+        if not self.grid.has_fracture() and element_names != ["MATRIX"]:
+            msg = "Matrix only grid."
+            raise ValueError(msg)
 
-        properties_ = self.get_properties("grid")
+        properties_ = self.properties.get("grid")
         if properties_[property_name]["is_internal"]:
             ts = "000000/GRID"
         else:
             if ts is None:
                 ts = 0
-            timesteps_ = properties_[property_name]["timesteps"]
-            if ts not in timesteps_:
-                msg1 = f"Grid property {property_name} does not "
-                msg2 = f"have values for timestep {ts}."
-                raise ValueError(msg1+msg2)
+            if ts not in properties_[property_name]["timesteps"]:
+                msg = f"Grid property {property_name} does not "
+                msg += f"have values for timestep {ts}."
+                raise ValueError(msg)
             ts = str(ts).zfill(6)
 
         p_name_ = properties_[property_name]["original_name"]
@@ -726,21 +565,25 @@ class Sr3Reader:
                                    has_dates=False,
                                    is_1d=True)
 
-        ni = self._grid_size["ni"]
-        nj = self._grid_size["nj"]
-        nk = self._grid_size["nk"]
-        size = self.get_properties("grid")[property_name]["size"]
-        if size == ni * nj * nk:
-            return data[:]
-        if "FRACTURE" not in self.get_elements("grid"):
+        if not self.grid.has_fracture():
             return data[:]
         if element_names == ["MATRIX", "FRACTURE"]:
             return data[:]
+
+        size = self.properties.get("grid", property_name)["size"]
+        if size == self.grid.get_size("n_active"):
+            cell_index = self.grid.get_size("n_active_matrix")
+        elif size == self.grid.get_size("n_cells"):
+            cell_index = int(self.grid.get_size("n_cells") / 2)
+        else:
+            msg = f"Invalid size for property {property_name}: {size}. "
+            msg += f"Expected: {self.grid.get_size('n_active')} or {self.grid.get_size('n_cells')}."
+            raise ValueError(msg)
+
         if element_names == ["MATRIX"]:
-            return data[: self.get_elements("grid")["FRACTURE"]]
+            return data[: cell_index]
         if element_names == ["FRACTURE"]:
-            return data[self.get_elements("grid")["FRACTURE"]:]
-        raise ValueError(f"Invalid option: {element_names}.")
+            return data[cell_index:]
 
 
     def _get_grid_data_to_complete(self,
@@ -749,9 +592,7 @@ class Sr3Reader:
                                    default=0):
         if element_names is None:
             element_names = ["MATRIX"]
-        ni = self._grid_size["ni"]
-        nj = self._grid_size["nj"]
-        nk = self._grid_size["nk"]
+        ni, nj, nk = self.grid.get_size('nijk')
 
         dtype = values.dtype
         default = np.array(default).astype(dtype)
@@ -779,7 +620,7 @@ class Sr3Reader:
             element_names = ["MATRIX"]
         if isinstance(property_names, str):
             property_names = [property_names]
-        properties = self.get_properties("grid")
+        properties = self.properties.get("grid")
         is_complete = {
             p: properties[p]["is_complete"] for p in property_names
         }
@@ -835,7 +676,7 @@ class Sr3Reader:
 
         def _cannot_interpolate_grid_data(property_names, ts):
             if isinstance(property_names, str):
-                property_ = self.get_properties("grid")[property_names]
+                property_ = self.properties.get("grid")[property_names]
                 if property_["is_internal"]:
                     return False
                 if ts in property_["timesteps"]:
