@@ -33,8 +33,6 @@ class UnitHandler:
         Sets the current unit for a given dimensionality.
     get_current(dimensionality):
         Gets the current unit for a given dimensionality string.
-    get_all_current():
-        Returns dict with all current units.
     conversion(dimensionality, is_delta=False):
         Get unit conversion factors for a given dimensionality string.
     read(units_table, conversion_table):
@@ -47,6 +45,7 @@ class UnitHandler:
         self.file = sr3_file
         if auto_read:
             self.read()
+
 
     def add(self, old, new, gain, offset):
         """Adds a new unit in the form:
@@ -101,7 +100,7 @@ class UnitHandler:
             If an invalid dimensionality variable
             type is provided.
         """
-        dimensionality = self._dimensionality_number(dimensionality)
+        dimensionality = self._dimensionality2number(dimensionality)
         if unit not in self._unit_list[dimensionality]["conversion"]:
             msg = "{unit} is not a valid unit for "
             msg += f"{self._unit_list[dimensionality]['type']}."
@@ -118,7 +117,7 @@ class UnitHandler:
         return out
 
 
-    def _dimensionality_number(self, dimensionality):
+    def _dimensionality2number(self, dimensionality):
         if isinstance(dimensionality, int):
             return dimensionality
         if isinstance(dimensionality, str):
@@ -138,16 +137,27 @@ class UnitHandler:
         raise TypeError(msg)
 
 
-    def get_current(self, dimensionality):
+    def get_current(self, dimensionality=None):
         """Gets the current unit for a given dimensionality string.
 
         Parameters
         ----------
-        dimensionality : str
-            Dimensionality to evaluate.
+        dimensionality : str, optional
+            Base dimensionality or compound dimensionality to evaluate.
+            Compound dimensionality expected format:
+            base dimensionalities numbers, '|' as separator
+            and '/' as division (ex.: '1|3/2').
+            If none, returns all current units.
+            (default: None)
         """
+        if dimensionality is None:
+            return self._get_all_current()
         if dimensionality == "":
             return ""
+        if dimensionality in [d["type"] for d in self._unit_list.values()]:
+            d_num = self._dimensionality2number(dimensionality)
+            return self._unit_list[d_num]["current"]
+
         unit = ""
         if dimensionality[0] == "-":
             unit = "1"
@@ -163,13 +173,7 @@ class UnitHandler:
         return unit
 
 
-    def get_all_current(self):
-        """Returns dict with all current units.
-
-        Parameters
-        ----------
-        None
-        """
+    def _get_all_current(self):
         current_units = {}
         for d in self._unit_list.values():
             current_units[d["type"]] = d["current"]

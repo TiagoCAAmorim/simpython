@@ -8,7 +8,7 @@ from datetime import datetime
 import unittest
 
 import context  # noqa # pylint: disable=unused-import
-from simpython.cmg import sr3reader
+from simpython.cmg.sr3reader import Sr3Reader
 
 
 def only_in_first(list_1, list_2):
@@ -43,9 +43,9 @@ class TestSr3Reader(unittest.TestCase):
     def test_read_elements(self):
         """Tests reading the elements of a file"""
 
-        test_file = Path("tests/sr3/base_case_3a.sr3").resolve()
-        sr3_file = sr3reader.Sr3Reader(test_file, auto_read=False)
-        sr3_file.read()
+        test_file = Path("tests/sr3/base_case_3a.sr3")
+        sr3 = Sr3Reader(test_file, auto_read=False)
+        sr3.read()
 
         true_result = [
             "I11",
@@ -69,7 +69,7 @@ class TestSr3Reader(unittest.TestCase):
             "P15",
             "P16",
         ]
-        file_read = sr3_file.elements.get("well").keys()
+        file_read = sr3.elements.get("well").keys()
         _test_equal_lists(self, true_result, file_read)
 
         true_result = [
@@ -90,11 +90,11 @@ class TestSr3Reader(unittest.TestCase):
             "PLAT-TLD-PRO",
             "PLAT-TLD-INJ",
         ]
-        file_read = sr3_file.elements.get("group").keys()
+        file_read = sr3.elements.get("group").keys()
         _test_equal_lists(self, true_result, file_read)
 
         true_result = ["FIELD"]
-        file_read = sr3_file.elements.get("sector").keys()
+        file_read = sr3.elements.get("sector").keys()
         _test_equal_lists(self, true_result, file_read)
 
         true_result = [
@@ -119,11 +119,11 @@ class TestSr3Reader(unittest.TestCase):
             "I16-W{12,22,42}",
             "I17-W{7,26,41}",
         ]
-        file_read = sr3_file.elements.get("layer").keys()
+        file_read = sr3.elements.get("layer").keys()
         _test_equal_lists(self, true_result, file_read, True)
 
         true_result = ["MATRIX", "FRACTURE"]
-        file_read = sr3_file.elements.get("grid").keys()
+        file_read = sr3.elements.get("grid").keys()
         _test_equal_lists(self, true_result, file_read)
 
         true_result = [
@@ -134,14 +134,14 @@ class TestSr3Reader(unittest.TestCase):
             "C29toC63",
             "WATER"
         ]
-        file_read = sr3_file.properties.get_components_list().values()
+        file_read = sr3.properties.get_components_list().values()
         _test_equal_lists(self, true_result, file_read)
 
     def test_read_properties(self):
         """Tests reading the properties of a file"""
 
-        test_file = Path("tests/sr3/base_case_3a.sr3").resolve()
-        sr3_file = sr3reader.Sr3Reader(test_file)
+        test_file = Path("tests/sr3/base_case_3a.sr3")
+        sr3 = Sr3Reader(test_file)
 
         true_result = [
             "WELLSTATE",
@@ -263,7 +263,7 @@ class TestSr3Reader(unittest.TestCase):
             "WTGMASRSC(C29toC63)",
             "LP","QW","QG","QW_RC","QO","QL","QO_RC","NP","UPTIME","QG_RC","WP","GP"
         ]
-        file_read = sr3_file.properties.get("well").keys()
+        file_read = sr3.properties.get("well").keys()
         _test_equal_lists(self, true_result, file_read)
 
         true_result = [
@@ -385,7 +385,7 @@ class TestSr3Reader(unittest.TestCase):
             "WTGMASRSC(C29toC63)",
             "WP","QO","UPTIME","QG","QW","QW_RC","QG_RC","QO_RC","NP","QL","GP","LP"
         ]
-        file_read = sr3_file.properties.get("group").keys()
+        file_read = sr3.properties.get("group").keys()
         _test_equal_lists(self, true_result, file_read)
 
         true_result = [
@@ -491,11 +491,11 @@ class TestSr3Reader(unittest.TestCase):
             "INLSECRECOO",
             "VOIP"
         ]
-        file_read = sr3_file.properties.get("sector").keys()
+        file_read = sr3.properties.get("sector").keys()
         _test_equal_lists(self, true_result, file_read)
 
         true_result = ["STATUS"]
-        file_read = sr3_file.properties.get("layer").keys()
+        file_read = sr3.properties.get("layer").keys()
         _test_equal_lists(self, true_result, file_read)
 
         true_result = [
@@ -552,7 +552,7 @@ class TestSr3Reader(unittest.TestCase):
             "VISW",
             "Z(CO2)",
         ]
-        file_read = sr3_file.properties.get("grid").keys()
+        file_read = sr3.properties.get("grid").keys()
         _test_equal_lists(self, true_result, file_read)
 
         true_result = [
@@ -570,14 +570,14 @@ class TestSr3Reader(unittest.TestCase):
             "MEMUSAGE",
             "TS_SIZE","TS_CUTS","ELAPSED"
         ]
-        file_read = sr3_file.properties.get("special").keys()
+        file_read = sr3.properties.get("special").keys()
         _test_equal_lists(self, true_result, file_read)
 
     def test_read_units(self):
         """Tests reading the units"""
 
-        test_file = Path("tests/sr3/base_case_3a.sr3").resolve()
-        sr3_file = sr3reader.Sr3Reader(test_file)
+        test_file = Path("tests/sr3/base_case_3a.sr3")
+        sr3 = Sr3Reader(test_file)
 
         true_result = {
             "time": "day",
@@ -605,99 +605,103 @@ class TestSr3Reader(unittest.TestCase):
             "concentration": "kg/m3",
             "molar concentration": "gmole/m3",
         }
-        file_read = sr3_file.units.get_all_current()
+        file_read = sr3.units.get_current()
         _test_equal_lists(self, true_result.keys(), file_read.keys())
         _test_equal_lists(self, true_result.values(), file_read.values())
 
-        sr3_file.units.set_current(dimensionality="mass",unit="g")
-        file_read = sr3_file.units.get_all_current()
+        sr3.units.set_current(dimensionality="mass",unit="g")
+        file_read = sr3.units.get_current()
         self.assertEqual("g", file_read["mass"])
+        file_read = sr3.units.get_current("mass")
+        self.assertEqual("g", file_read)
 
-        sr3_file.units.add(old="m", new="dm", gain=0.1, offset=0.0)
-        file_read = sr3_file.properties.unit(property_name="OILRATSC")
-        self.assertEqual("m3/day", file_read)
+        sr3.units.add(old="day", new="week", gain=1./7., offset=0.0)
+        sr3.units.set_current(dimensionality="well rate time",unit="week")
+        file_read = sr3.properties.unit(property_name="OILRATSC")
+        self.assertEqual("m3/week", file_read)
 
-        sr3_file.properties.set_alias(
+        sr3.properties.set_alias(
             old="OILRATSC",
             new="QO",
             return_error=False)
-        file_read = sr3_file.properties.unit(property_name="QO")
+        sr3.units.set_current(dimensionality="well rate time",unit="day")
+        file_read = sr3.properties.unit(property_name="QO")
         self.assertEqual("m3/day", file_read)
 
         with self.assertRaises(ValueError):
-            sr3_file.properties.set_alias(old="OILRATSC", new="QO")
+            sr3.properties.set_alias(old="OILRATSC", new="QO")
 
         with self.assertRaises(ValueError):
-            sr3_file.properties.set_alias(old="OILRATSC", new="OILRATRC")
+            sr3.properties.set_alias(old="OILRATSC", new="OILRATRC")
 
 
     def test_read_times(self):
         """Tests reading times and dates"""
 
-        test_file = Path("tests/sr3/base_case_3a.sr3").resolve()
-        sr3_file = sr3reader.Sr3Reader(test_file)
+        test_file = Path("tests/sr3/base_case_3a.sr3")
+        sr3 = Sr3Reader(test_file)
 
-        file_read = sr3_file.dates.get_timesteps()
+        file_read = sr3.dates.get_timesteps()
         true_result = list(range(3609))
         _test_equal_lists(self, true_result, file_read)
 
-        file_read = sr3_file.dates.get_dates("group")
+        file_read = sr3.dates.get_dates("group")
         true_result = datetime.strptime("20181002", "%Y%m%d")
         self.assertEqual(true_result, file_read[0])
         true_result = datetime.strptime("20240803", "%Y%m%d")
         self.assertEqual(true_result, file_read[-1])
 
-        file_read = sr3_file.dates.get_days("well")
+        file_read = sr3.dates.get_days("well")
         true_result = 30.
         self.assertEqual(true_result, file_read[0])
         true_result = 2162.
         self.assertEqual(true_result, file_read[-1])
 
-        file_read = sr3_file.dates.get_days("grid")
+        file_read = sr3.dates.get_days("grid")
         true_result = [0., 30.]
         _test_equal_lists(self, true_result, file_read)
 
-        file_read = sr3_file.dates.day2date(day=735.)
+        file_read = sr3.dates.day2date(day=735.)
         true_result = datetime.strptime("20200906", "%Y%m%d")
         self.assertEqual(true_result, file_read)
 
-        file_read = sr3_file.dates.day2date(day=[735.])
+        file_read = sr3.dates.day2date(day=[735.])
         true_result = [datetime.strptime("20200906", "%Y%m%d")]
         _test_equal_lists(self, true_result, file_read)
 
-        file_read = sr3_file.dates.date2day(date=datetime.strptime("20200906", "%Y%m%d"))
+        file_read = sr3.dates.date2day(date=datetime.strptime("20200906", "%Y%m%d"))
         true_result = 735.
         self.assertEqual(true_result, file_read)
 
-        file_read = sr3_file.dates.date2day(date=[datetime.strptime("20200906", "%Y%m%d")])
+        file_read = sr3.dates.date2day(date=[datetime.strptime("20200906", "%Y%m%d")])
         true_result = [735.]
         _test_equal_lists(self, true_result, file_read)
 
     def test_read_element_hierarchy(self):
         """Tests reading element hierarchy"""
 
-        test_file = Path("tests/sr3/base_case_3a.sr3").resolve()
-        sr3_file = sr3reader.Sr3Reader(test_file)
+        test_file = Path("tests/sr3/base_case_3a.sr3")
+        sr3 = Sr3Reader(test_file)
 
-        file_read = sr3_file.elements.get_parent(
+        file_read = sr3.elements.get_parent(
             element_type="group",
             element_name="I-PLAT1-PRO")
         true_result = "PLAT1-PRO"
         self.assertEqual(true_result, file_read)
 
-        file_read = sr3_file.elements.get_parent(
+        file_read = sr3.elements.get_parent(
             element_type="layer",
             element_name="P13{28,24,48}")
         true_result = "P13"
         self.assertEqual(true_result, file_read)
 
-        file_read = sr3_file.elements.get_parent(
+        file_read = sr3.elements.get_parent(
             element_type="well",
             element_name="P13")
         true_result = "P-PLAT1-PRO"
         self.assertEqual(true_result, file_read)
 
-        file_read = sr3_file.elements.get_connection(
+        file_read = sr3.elements.get_connection(
             element_type="layer",
             element_name="I11{31,10,76}")
         true_result = 99
@@ -706,24 +710,24 @@ class TestSr3Reader(unittest.TestCase):
     def test_read_grid_size(self):
         """Tests reading grid sizes"""
 
-        test_file = Path("tests/sr3/base_case_3a.sr3").resolve()
-        sr3_file = sr3reader.Sr3Reader(test_file)
+        test_file = Path("tests/sr3/base_case_3a.sr3")
+        sr3 = Sr3Reader(test_file)
 
-        file_read = sr3_file.grid.get_size("nijk")
+        file_read = sr3.grid.get_size("nijk")
         true_result = (47, 39, 291)
         self.assertEqual(true_result, file_read)
 
-        file_read = sr3_file.grid.get_size("n_active")
+        file_read = sr3.grid.get_size("n_active")
         true_result = 67241
         self.assertEqual(true_result, file_read)
 
     def test_read_timeseries(self):
         """Tests reading timeseries"""
 
-        test_file = Path("tests/sr3/base_case_3a.sr3").resolve()
-        sr3_file = sr3reader.Sr3Reader(test_file)
+        test_file = Path("tests/sr3/base_case_3a.sr3")
+        sr3 = Sr3Reader(test_file)
 
-        file_read = sr3_file.get_data(element_type="well",
+        file_read = sr3.get_data(element_type="well",
                                       property_names="BHP",
                                       element_names="P11",
                                       days=[30., 1085., 2162.])
@@ -732,11 +736,11 @@ class TestSr3Reader(unittest.TestCase):
                        52595.77029111726 / 98.0665]
         _test_equal_lists(self, true_result, list(file_read[:,1]))
 
-        sr3_file.properties.set_alias(
+        sr3.properties.set_alias(
             old="OILRATSC",
             new="QO",
             return_error=False)
-        file_read = sr3_file.get_data(element_type="well",
+        file_read = sr3.get_data(element_type="well",
                                       property_names=["QO","BHP"],
                                       element_names=["P14","P11"],
                                       days=[30., 1085., 2162.])
@@ -757,21 +761,21 @@ class TestSr3Reader(unittest.TestCase):
                        52595.77029111726 / 98.0665]
         _test_equal_lists(self, true_result, list(file_read[:,4]))
 
-        file_read = sr3_file.get_data(element_type="group",
+        file_read = sr3.get_data(element_type="group",
                                       property_names=["NP"],
                                       element_names=["PLAT1-PRO"],
                                       days=[(2.*1001.0+1008.99)/3.])
         true_result = (2.*166546.69278864737+241094.6563692809)/3.
         self.assertAlmostEqual(true_result, float(list(file_read[:,1])[0]))
 
-        sr3_file.units.set_current(dimensionality="well liquid volume", unit="MMbbl")
-        file_read = sr3_file.get_data(element_type="group",
+        sr3.units.set_current(dimensionality="well liquid volume", unit="MMbbl")
+        file_read = sr3.get_data(element_type="group",
                                       property_names=["NP"],
                                       element_names=["PLAT1-PRO"],
                                       days=[(2.*1001.0+1008.99)/3.])
         self.assertAlmostEqual(true_result * 6.2898108E-6, float(list(file_read[:,1])[0]))
 
-        file_read = sr3_file.get_series_order(property_names=["QO","BHP"],
+        file_read = sr3.get_series_order(property_names=["QO","BHP"],
                                       element_names=["P14","P11"])
         true_result = [
             ("P14", "QO"),
@@ -784,17 +788,17 @@ class TestSr3Reader(unittest.TestCase):
     def test_read_gridmaps(self):
         """Tests reading grid properties"""
 
-        test_file = Path("tests/sr3/base_case_3a.sr3").resolve()
-        sr3_file = sr3reader.Sr3Reader(test_file)
+        test_file = Path("tests/sr3/base_case_3a.sr3")
+        sr3 = Sr3Reader(test_file)
 
-        file_read = sr3_file.get_grid_data(
+        file_read = sr3.get_grid_data(
             property_names="NET/GROSS",
             element_names="MATRIX",
             day=0.)
-        for i in range(sr3_file.grid.get_size("n_active")):
+        for i in range(sr3.grid.get_size("n_active")):
             self.assertTrue(file_read[i] - 1 < 0.00001)
 
-        file_read = sr3_file.get_grid_data(
+        file_read = sr3.get_grid_data(
             property_names="PRES",
             element_names="MATRIX",
             day=30.)
@@ -815,7 +819,7 @@ class TestSr3Reader(unittest.TestCase):
         for i in range(10):
             self.assertTrue(abs(round(true_result[i], 2) - round(file_read_list[i],2)) < 0.01)
 
-        file_read = sr3_file.get_data(
+        file_read = sr3.get_data(
             element_type="grid",
             property_names=["PRES","SO"],
             element_names="MATRIX",
@@ -825,7 +829,7 @@ class TestSr3Reader(unittest.TestCase):
             self.assertTrue(abs(round(true_result[i], 2) - round(file_read_list[i],2)) < 0.01)
 
 
-        file_read = sr3_file.get_grid_data(
+        file_read = sr3.get_grid_data(
             property_names=["SO","PRES","VISO","Z(CO2)"],
             element_names="MATRIX",
             day=10.)
