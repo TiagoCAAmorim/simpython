@@ -35,11 +35,11 @@ class GridHandler:
         self.dates = dates
 
         if auto_read:
-            self.extract()
+            self.read()
 
 
-    def extract(self):
-        """Extracts grid information."""
+    def read(self):
+        """Reads grid information."""
         self._size = self._extract_grid_sizes()
         self._properties = self._extract_properties()
 

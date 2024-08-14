@@ -37,8 +37,8 @@ class UnitHandler:
         Returns dict with all current units.
     conversion(dimensionality, is_delta=False):
         Get unit conversion factors for a given dimensionality string.
-    extract(units_table, conversion_table):
-        Extracts unit information from the given tables.
+    read(units_table, conversion_table):
+        Reads unit information from the given tables.
     """
 
 
@@ -46,7 +46,7 @@ class UnitHandler:
         self._unit_list = {}
         self.file = sr3_file
         if auto_read:
-            self.extract()
+            self.read()
 
     def add(self, old, new, gain, offset):
         """Adds a new unit in the form:
@@ -215,8 +215,8 @@ class UnitHandler:
         return (gain, offset)
 
 
-    def extract(self):
-        """Extracts unit information from the sr3 file."""
+    def read(self):
+        """Reads unit information from the sr3 file."""
 
         units_table = self.file.get_table("General/UnitsTable")
         columns = zip(

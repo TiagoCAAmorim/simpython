@@ -43,11 +43,11 @@ class PropertyHandler:
         self.grid = grid
 
         if auto_read:
-            self.extract()
+            self.read()
 
 
-    def extract(self):
-        """Extracts property information from the sr3 file."""
+    def read(self):
+        """Reads property information from the sr3 file."""
         property_table = self.file.get_table("General/NameRecordTable")
         components_table = self.file.get_table("General/ComponentTable")
 

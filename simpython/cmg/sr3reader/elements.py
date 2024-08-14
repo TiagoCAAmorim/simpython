@@ -38,10 +38,10 @@ class ElementHandler:
         self.grid = grid
 
         if auto_read:
-            self.extract()
+            self.read()
 
-    def extract(self):
-        """Extracts element information."""
+    def read(self):
+        """Reads element information."""
         for element_type in ElementHandler.valid_elements():
             self._get_elements(element_type)
             self._get_parents(element_type)

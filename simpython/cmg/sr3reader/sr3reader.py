@@ -80,11 +80,11 @@ class Sr3Reader:
 
     def read(self):
         """Reads the contents of the sr3 file."""
-        self.dates.extract()
-        self.units.extract()
-        self.grid.extract()
-        self.properties.extract()
-        self.elements.extract()
+        self.dates.read()
+        self.units.read()
+        self.grid.read()
+        self.properties.read()
+        self.elements.read()
 
 
     def set_usual_units(self):

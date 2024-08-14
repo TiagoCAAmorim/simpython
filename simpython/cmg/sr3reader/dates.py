@@ -42,11 +42,11 @@ class DateHandler:
 
         self.file = sr3_file
         if auto_read:
-            self.extract()
+            self.read()
 
 
-    def extract(self):
-        """Extracts date information."""
+    def read(self):
+        """Reads date information."""
         time_table = self.file.get_table("General/MasterTimeTable")
         self._read_master_time_table(time_table)
         for element_type in ElementHandler.valid_elements():
