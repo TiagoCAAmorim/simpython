@@ -23,9 +23,27 @@ class ElementHandler:
 
     Attributes
     ----------
+    file : str
+        The file path of the SR3 file.
+    units : str
+        The units of measurement used in the SR3 file.
+    grid : Grid
+        The grid object representing the simulation grid.
 
     Methods
     -------
+    read()
+        Reads element information from the SR3 file.
+    valid_elements()
+        Returns a tuple of valid element types.
+    is_valid(element_type, throw_error=False)
+        Checks if an element type is valid.
+    get(element_type)
+        Returns a list of elements of the specified type.
+    get_parent(element_type, element_name)
+        Returns the parent of a specified element.
+    get_connection(element_type, element_name)
+        Returns the connection of a specified element.
     """
 
     def __init__(self, sr3_file, units, grid, auto_read=True):
@@ -154,6 +172,9 @@ class ElementHandler:
             If an invalid element type is provided.
         """
         self.is_valid(element_type, throw_error=True)
+        if element_name not in self._parent[element_type]:
+            msg = f"Parent for {element_name} not found."
+            raise ValueError(msg)
         return self._parent[element_type][element_name]
 
 
@@ -193,4 +214,7 @@ class ElementHandler:
             If an invalid element type is provided.
         """
         self.is_valid(element_type, throw_error=True)
+        if element_name not in self._connection[element_type]:
+            msg = f"Connection for {element_name} not found."
+            raise ValueError(msg)
         return self._connection[element_type][element_name]

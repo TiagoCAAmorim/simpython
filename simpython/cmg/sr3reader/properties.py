@@ -30,7 +30,22 @@ class PropertyHandler:
 
     Methods
     -------
-
+    read(self)
+        Reads property information from the sr3 file.
+    get(self, element=None, name=None)
+        Gets property or property list.
+    get_components_list(self)
+        Returns a list of components.
+    description(self, property_name)
+        Returns a dictionary with property attributes.
+    dimensionality(self, property_name)
+        Returns the dimensionality of a property.
+    unit(self, property_name)
+        Returns the current unit of a property.
+    conversion(self, property_name)
+        Returns the unit conversion of a property.
+    set_alias(self, old, new, return_error=True)
+        Sets an alias for an existing property.
     """
 
 

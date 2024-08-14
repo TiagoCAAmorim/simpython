@@ -26,9 +26,23 @@ class DateHandler:
 
     Attributes
     ----------
+    file : str
+        SR3 file object.
 
     Methods
     -------
+    read()
+        Reads date information from the SR3 file.
+    get_timesteps(element_type=None)
+        Get a list of time-steps for the specified element type.
+    get_days(element_type=None)
+        Get a list of days for the specified element type.
+    get_dates(element_type=None)
+        Get a list of dates for the specified element type.
+    day2date(day)
+        Returns the date associated with the given day.
+    date2day(date)
+        Returns the day associated with the given date.
     """
 
     def __init__(self, sr3_file, auto_read=True):

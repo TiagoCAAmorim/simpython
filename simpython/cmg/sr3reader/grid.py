@@ -23,9 +23,21 @@ class GridHandler:
 
     Attributes
     ----------
+    file : object
+        The SR3 file object.
+    dates : object
+        The dates object.
 
     Methods
     -------
+    read()
+        Reads grid information.
+    has_fracture()
+        Checks if the grid has fractures.
+    get_size(key=None)
+        Gets the grid size.
+    get_property(name=None)
+        Gets the grid property by name.
     """
 
     def __init__(self, sr3_file, dates, auto_read=True):
