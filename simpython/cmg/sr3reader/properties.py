@@ -11,8 +11,9 @@ PropertyHandler
 
 Usage Example:
 --------------
-property_handler = PropertyHandler()
-description("OILRATSC")
+property_handler = PropertyHandler(sr3_file, units_handler, grid_handler)
+qo_str = property_handler.unit("OILRATSC")
+gain, offset = property_handler.conversion("OILRATSC")
 """
 
 import re
@@ -23,10 +24,17 @@ class PropertyHandler:
     """
     A class to handle properties.
 
-    Attributes
+    Parameters
     ----------
-    _properties : dict
-        A dictionary to store property data.
+    sr3_file : sr3reader.Sr3Handler
+        SR3 file object.
+    units : sr3reader.UnitsHandler
+        Units handler object.
+    grid : sr3reader.GridHandler
+        Grid handler object.
+    auto_read : bool, optional
+        If True, reads date information from the SR3 file.
+        (default: True)
 
     Methods
     -------
@@ -53,9 +61,9 @@ class PropertyHandler:
         self._properties = {}
         self._component_list = {}
         self._element_properties = {k:{} for k in ElementHandler.valid_elements()}
-        self.file = sr3_file
-        self.units = units
-        self.grid = grid
+        self._file = sr3_file
+        self._units = units
+        self._grid = grid
 
         if auto_read:
             self.read()
@@ -63,8 +71,8 @@ class PropertyHandler:
 
     def read(self):
         """Reads property information from the sr3 file."""
-        property_table = self.file.get_table("General/NameRecordTable")
-        components_table = self.file.get_table("General/ComponentTable")
+        property_table = self._file.get_table("General/NameRecordTable")
+        components_table = self._file.get_table("General/ComponentTable")
 
         if components_table is not None:
             self._extract_components_table(components_table)
@@ -115,9 +123,9 @@ class PropertyHandler:
 
     def _extract_element_properties(self, element_type):
         if element_type == "grid":
-            properties = self.grid.get_property()
+            properties = self._grid.get_property()
         else:
-            data = self.file.get_element_table(
+            data = self._file.get_element_table(
                 element_type=element_type,
                 dataset_string="Variables"
             )
@@ -207,7 +215,7 @@ class PropertyHandler:
         return {
             "description": p["name"],
             "long description": p["long name"],
-            "unit": self.units.get_current(p["dimensionality"]),
+            "unit": self._units.get_current(p["dimensionality"]),
         }
 
 
@@ -245,7 +253,7 @@ class PropertyHandler:
             If property_name is not found.
         """
         d = self.dimensionality(property_name)
-        return self.units.get_current(d)
+        return self._units.get_current(d)
 
 
     def conversion(self, property_name):
@@ -262,7 +270,7 @@ class PropertyHandler:
             If property_name is not found.
         """
         d = self.dimensionality(property_name)
-        return self.units.conversion(d)
+        return self._units.conversion(d)
 
 
     def set_alias(self, old, new, return_error=True):

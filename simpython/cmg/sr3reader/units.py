@@ -11,7 +11,7 @@ UnitHandler
 
 Usage Example:
 --------------
-unit_handler = UnitHandler()
+unit_handler = UnitHandler(sr3_file)
 unit_handler.add("m", "cm", 100, 0)
 unit_handler.set_current("length", "cm")
 """
@@ -20,10 +20,13 @@ class UnitHandler:
     """
     A class to handle unit conversions and management.
 
-    Attributes
+    Parameters
     ----------
-    _unit_list : dict
-        A dictionary to store unit conversions.
+    sr3_file : sr3reader.Sr3Handler
+        SR3 file object.
+    auto_read : bool, optional
+        If True, reads date information from the SR3 file.
+        (default: True)
 
     Methods
     -------
@@ -42,7 +45,7 @@ class UnitHandler:
 
     def __init__(self, sr3_file, auto_read=True):
         self._unit_list = {}
-        self.file = sr3_file
+        self._file = sr3_file
         if auto_read:
             self.read()
 
@@ -222,7 +225,7 @@ class UnitHandler:
     def read(self):
         """Reads unit information from the sr3 file."""
 
-        units_table = self.file.get_table("General/UnitsTable")
+        units_table = self._file.get_table("General/UnitsTable")
         columns = zip(
             units_table["Index"],
             units_table["Dimensionality"],
@@ -239,7 +242,7 @@ class UnitHandler:
             for (number, name, internal_name, output_name) in columns
         }
 
-        conversion_table = self.file.get_table("General/UnitConversionTable")
+        conversion_table = self._file.get_table("General/UnitConversionTable")
         columns = zip(
             conversion_table["Dimensionality"],
             conversion_table["Unit Name"],

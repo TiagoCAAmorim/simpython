@@ -11,24 +11,26 @@ ElementHandler
 
 Usage Example:
 --------------
-element_handler = ElementHandler()
+element_handler = ElementHandler(sr3_file, units_handler, grid_handler)
+well_list = element_handler.get("well")
 """
-
-# from attrdict import AttrDict
 
 
 class ElementHandler:
     """
     A class to handle elements.
 
-    Attributes
+    Parameters
     ----------
-    file : str
-        The file path of the SR3 file.
-    units : str
-        The units of measurement used in the SR3 file.
-    grid : Grid
-        The grid object representing the simulation grid.
+    sr3_file : sr3reader.Sr3Handler
+        SR3 file object.
+    units : sr3reader.UnitsHandler
+        Units handler object.
+    grid : sr3reader.GridHandler
+        Grid handler object.
+    auto_read : bool, optional
+        If True, reads date information from the SR3 file.
+        (default: True)
 
     Methods
     -------
@@ -51,9 +53,9 @@ class ElementHandler:
         self._parent = {k:{} for k in ElementHandler.valid_elements()}
         self._connection = {k:{} for k in ElementHandler.valid_elements()}
         self._property = {k:{} for k in ElementHandler.valid_elements()}
-        self.file = sr3_file
-        self.units = units
-        self.grid = grid
+        self._file = sr3_file
+        self._units = units
+        self._grid = grid
 
         if auto_read:
             self.read()
@@ -102,10 +104,10 @@ class ElementHandler:
         if element_type == "grid":
             self._element["grid"] = {
                 "MATRIX":0,
-                "FRACTURE":self.grid.get_size("n_active_matrix")
+                "FRACTURE":self._grid.get_size("n_active_matrix")
                 }
         else:
-            dataset = self.file.get_element_table(
+            dataset = self._file.get_element_table(
                 element_type=element_type,
                 dataset_string="Origins"
             )
@@ -138,7 +140,7 @@ class ElementHandler:
 
     def _get_parents(self, element_type):
         if element_type in ["well", "group", "layer"]:
-            dataset = self.file.get_element_table(
+            dataset = self._file.get_element_table(
                 element_type=element_type,
                 dataset_string=f"{element_type.capitalize()}Table",
             )
@@ -180,7 +182,7 @@ class ElementHandler:
 
     def _get_connections(self, element_type):
         if element_type == "layer":
-            dataset = self.file.get_element_table(
+            dataset = self._file.get_element_table(
                 element_type=element_type,
                 dataset_string=f"{element_type.capitalize()}Table",
             )

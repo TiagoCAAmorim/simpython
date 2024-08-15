@@ -11,7 +11,7 @@ Sr3FileHandler
 
 Usage Example:
 --------------
-sr3_handler = Sr3Handler()
+sr3_handler = Sr3Handler(sr3_file_path)
 table = sr3_handler.get_table("General/UnitsTable")
 """
 
@@ -19,27 +19,14 @@ from pathlib import Path
 import h5py  # type: ignore
 
 
-# def _need_read_file(func):  # pylint: disable=no-self-argument
-#     def wrapper(self, *args, **kwargs):
-#         self.open()
-#         result = func(self, *args, **kwargs)  # pylint: disable=not-callable
-#         self.close()
-#         return result
-#     return wrapper
-
-
 class Sr3Handler:
     """
     A class to handle sr3 files.
 
-    Attributes
+    Parameters
     ----------
-    _file_path : str
-        File path.
-    self._open_count : int
-        Number of net open calls.
-    self._open_calls : int
-        Number of total open calls.
+    file_path : str or Path
+        Path to SR3 file.
 
     Methods
     -------
@@ -63,14 +50,14 @@ class Sr3Handler:
         if not self._file_path.is_file():
             raise FileNotFoundError(f"File not found: {self._file_path}")
 
-        self._f = None
+        self._file = None
         self._open_count = 0
         self._open_calls = 0
 
 
     def is_closed(self):
         """Check if sr3 file is closed."""
-        return self._f is None
+        return self._file is None
 
 
     def is_open(self):
@@ -81,7 +68,7 @@ class Sr3Handler:
     def open(self):
         """Manually open sr3 file."""
         if self.is_closed():
-            self._f = h5py.File(self._file_path)
+            self._file = h5py.File(self._file_path)
             self._open_calls += 1
             self._open_count = 0
         self._open_count += 1
@@ -95,8 +82,8 @@ class Sr3Handler:
             if force_close:
                 self._open_count = 1
             if self._open_count == 1:
-                self._f.close()
-                self._f = None
+                self._file.close()
+                self._file = None
             self._open_count -= 1
 
 
@@ -107,7 +94,7 @@ class Sr3Handler:
         sr3_elements = []
         def get_type(name):
             sr3_elements.append((name, type(self.get_table(name))))
-        self._f.visit(get_type)
+        self._file.visit(get_type)
 
         self.close()
         return sr3_elements
@@ -125,8 +112,8 @@ class Sr3Handler:
         self.open()
 
         table = None
-        if table_name in self._f:
-            table = self._f[table_name]
+        if table_name in self._file:
+            table = self._file[table_name]
 
         # self.close()
         return table

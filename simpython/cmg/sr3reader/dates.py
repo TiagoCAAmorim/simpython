@@ -11,7 +11,8 @@ DateHandler
 
 Usage Example:
 --------------
-date_handler = DateHandler()
+date_handler = DateHandler(sr3_file)
+well_dates = date_handler.get_dates("well")
 """
 
 from datetime import datetime, timedelta
@@ -24,10 +25,13 @@ class DateHandler:
     """
     A class to handle dates.
 
-    Attributes
+    Parameters
     ----------
-    file : str
+    sr3_file : sr3reader.Sr3Handler
         SR3 file object.
+    auto_read : bool, optional
+        If True, reads date information from the SR3 file.
+        (default: True)
 
     Methods
     -------
@@ -54,14 +58,14 @@ class DateHandler:
         self._timesteps = {k:np.array([]) for k in ElementHandler.valid_elements()}
         self._timesteps['all'] = np.array([])
 
-        self.file = sr3_file
+        self._file = sr3_file
         if auto_read:
             self.read()
 
 
     def read(self):
         """Reads date information."""
-        time_table = self.file.get_table("General/MasterTimeTable")
+        time_table = self._file.get_table("General/MasterTimeTable")
         self._read_master_time_table(time_table)
         for element_type in ElementHandler.valid_elements():
             self._get_timesteps(element_type)
@@ -95,7 +99,7 @@ class DateHandler:
         if element_type == "grid":
             self._timesteps[element_type] = self._get_grid_timesteps()
         else:
-            dataset = self.file.get_element_table(
+            dataset = self._file.get_element_table(
                 element_type=element_type,
                 dataset_string="Timesteps"
             )
@@ -103,11 +107,11 @@ class DateHandler:
 
 
     def _get_grid_timesteps(self):
-        dataset = self.file.get_table("SpatialProperties")
+        dataset = self._file.get_table("SpatialProperties")
         grid_timestep_list = []
-        group_type = type(self.file.get_table("General"))
+        group_type = type(self._file.get_table("General"))
         for key in dataset.keys():
-            sub_dataset = self.file.get_table(f"SpatialProperties/{key}")
+            sub_dataset = self._file.get_table(f"SpatialProperties/{key}")
             if isinstance(sub_dataset, group_type):
                 grid_timestep_list.append(int(key))
         return np.array(grid_timestep_list)

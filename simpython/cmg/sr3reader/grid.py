@@ -11,7 +11,8 @@ GridHandler
 
 Usage Example:
 --------------
-grid_handler = GridHandler()
+grid_handler = GridHandler(sr3_file, dates_handler)
+ni, nj, nk = grid_handler.get_size("nijk")
 """
 
 import numpy as np
@@ -21,12 +22,15 @@ class GridHandler:
     """
     A class to handle grids.
 
-    Attributes
+    Parameters
     ----------
-    file : object
-        The SR3 file object.
-    dates : object
-        The dates object.
+    sr3_file : sr3reader.Sr3Handler
+        SR3 file object.
+    dates : sr3reader.DateHandler
+        Date handler object.
+    auto_read : bool, optional
+        If True, reads date information from the SR3 file.
+        (default: True)
 
     Methods
     -------
@@ -43,8 +47,8 @@ class GridHandler:
     def __init__(self, sr3_file, dates, auto_read=True):
         self._properties = []
         self._size = ()
-        self.file = sr3_file
-        self.dates = dates
+        self._file = sr3_file
+        self._dates = dates
 
         if auto_read:
             self.read()
@@ -88,7 +92,7 @@ class GridHandler:
 
 
     def _extract_grid_sizes(self):
-        dataset = self.file.get_table("SpatialProperties/000000/GRID")
+        dataset = self._file.get_table("SpatialProperties/000000/GRID")
         ni = dataset["IGNTID"][0]
         nj = dataset["IGNTJD"][0]
         nk = dataset["IGNTKD"][0]
@@ -98,7 +102,7 @@ class GridHandler:
         n_active_fracture = 0
         if dataset["IPSTCS"][-1] > ni * nj * nk:
             n_active_matrix = np.where(
-                self.file.get_table("SpatialProperties/000000/GRID/IPSTCS") > ni * nj * nk
+                self._file.get_table("SpatialProperties/000000/GRID/IPSTCS") > ni * nj * nk
             )[0][0]
             n_active_fracture = n_active - n_active_matrix
             n_cells = 2 * n_cells
@@ -142,7 +146,7 @@ class GridHandler:
 
 
     def _extract_properties(self):
-        dataset = self.file.get_table("SpatialProperties/Statistics")
+        dataset = self._file.get_table("SpatialProperties/Statistics")
         grid_property_list = {
             name.decode(): {
                 "min": min_,
@@ -159,12 +163,12 @@ class GridHandler:
 
         n_active = self._size["n_active"]
         n_cells = self._size["n_cells"]
-        _dataset_type = type(self.file.get_table("General/HistoryTable"))
+        _dataset_type = type(self._file.get_table("General/HistoryTable"))
 
         def _list_grid_properties(timestep_str, set_timestep=None):
-            dataset = self.file.get_table(f"SpatialProperties/{timestep_str}")
+            dataset = self._file.get_table(f"SpatialProperties/{timestep_str}")
             for key in dataset.keys():
-                sub_dataset = self.file.get_table(f"SpatialProperties/{timestep_str}/{key}")
+                sub_dataset = self._file.get_table(f"SpatialProperties/{timestep_str}/{key}")
                 if not isinstance(sub_dataset, _dataset_type):
                     continue
                 key = key.replace("%2F", "/")
@@ -197,7 +201,7 @@ class GridHandler:
                     grid_property_list[key]["is_internal"] = True
 
         _list_grid_properties("000000/GRID", 0)
-        for ts in self.dates.get_timesteps("grid"):
+        for ts in self._dates.get_timesteps("grid"):
             _list_grid_properties(str(ts).zfill(6))
         for p in grid_property_list.values():
             p["timesteps"] = list(p["timesteps"])
