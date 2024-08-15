@@ -727,10 +727,11 @@ class TestSr3Reader(unittest.TestCase):
         test_file = Path("tests/sr3/base_case_3a.sr3")
         sr3 = Sr3Reader(test_file)
 
-        file_read = sr3.get_data(element_type="well",
-                                      property_names="BHP",
-                                      element_names="P11",
-                                      days=[30., 1085., 2162.])
+        file_read = sr3.data.get(
+            element_type="well",
+            properties="BHP",
+            elements="P11",
+            days=[30., 1085., 2162.])
         true_result = [60627.83967735492 / 98.0665,
                        55779.152843383265 / 98.0665,
                        52595.77029111726 / 98.0665]
@@ -740,9 +741,9 @@ class TestSr3Reader(unittest.TestCase):
             old="OILRATSC",
             new="QO",
             return_error=False)
-        file_read = sr3.get_data(element_type="well",
-                                      property_names=["QO","BHP"],
-                                      element_names=["P14","P11"],
+        file_read = sr3.data.get(element_type="well",
+                                      properties=["QO","BHP"],
+                                      elements=["P14","P11"],
                                       days=[30., 1085., 2162.])
         true_result = [0.0,
                        6325.951742655704,
@@ -761,22 +762,22 @@ class TestSr3Reader(unittest.TestCase):
                        52595.77029111726 / 98.0665]
         _test_equal_lists(self, true_result, list(file_read[:,4]))
 
-        file_read = sr3.get_data(element_type="group",
-                                      property_names=["NP"],
-                                      element_names=["PLAT1-PRO"],
+        file_read = sr3.data.get(element_type="group",
+                                      properties=["NP"],
+                                      elements=["PLAT1-PRO"],
                                       days=[(2.*1001.0+1008.99)/3.])
         true_result = (2.*166546.69278864737+241094.6563692809)/3.
         self.assertAlmostEqual(true_result, float(list(file_read[:,1])[0]))
 
         sr3.units.set_current(dimensionality="well liquid volume", unit="MMbbl")
-        file_read = sr3.get_data(element_type="group",
-                                      property_names=["NP"],
-                                      element_names=["PLAT1-PRO"],
+        file_read = sr3.data.get(element_type="group",
+                                      properties=["NP"],
+                                      elements=["PLAT1-PRO"],
                                       days=[(2.*1001.0+1008.99)/3.])
         self.assertAlmostEqual(true_result * 6.2898108E-6, float(list(file_read[:,1])[0]))
 
-        file_read = sr3.get_series_order(property_names=["QO","BHP"],
-                                      element_names=["P14","P11"])
+        file_read = sr3.data.get_series_order(properties=["QO","BHP"],
+                                      elements=["P14","P11"])
         true_result = [
             ("P14", "QO"),
             ("P14", "BHP"),
@@ -791,16 +792,16 @@ class TestSr3Reader(unittest.TestCase):
         test_file = Path("tests/sr3/base_case_3a.sr3")
         sr3 = Sr3Reader(test_file)
 
-        file_read = sr3.get_grid_data(
-            property_names="NET/GROSS",
-            element_names="MATRIX",
+        file_read = sr3.data.get_grid_data(
+            properties="NET/GROSS",
+            elements="MATRIX",
             day=0.)
         for i in range(sr3.grid.get_size("n_active")):
             self.assertTrue(file_read[i] - 1 < 0.00001)
 
-        file_read = sr3.get_grid_data(
-            property_names="PRES",
-            element_names="MATRIX",
+        file_read = sr3.data.get_grid_data(
+            properties="PRES",
+            elements="MATRIX",
             day=30.)
         file_read_list = list(file_read[:10,0])
         true_result = [
@@ -819,19 +820,19 @@ class TestSr3Reader(unittest.TestCase):
         for i in range(10):
             self.assertTrue(abs(round(true_result[i], 2) - round(file_read_list[i],2)) < 0.01)
 
-        file_read = sr3.get_data(
+        file_read = sr3.data.get(
             element_type="grid",
-            property_names=["PRES","SO"],
-            element_names="MATRIX",
+            properties=["PRES","SO"],
+            elements="MATRIX",
             days=30.)
         file_read_list = list(file_read[:10,0])
         for i in range(10):
             self.assertTrue(abs(round(true_result[i], 2) - round(file_read_list[i],2)) < 0.01)
 
 
-        file_read = sr3.get_grid_data(
-            property_names=["SO","PRES","VISO","Z(CO2)"],
-            element_names="MATRIX",
+        file_read = sr3.data.get_grid_data(
+            properties=["SO","PRES","VISO","Z(CO2)"],
+            elements="MATRIX",
             day=10.)
         file_read_list = list(file_read[:10,2])
         true_result = [

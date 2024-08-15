@@ -136,8 +136,8 @@ class PropertyHandler:
         return self._replace_components(properties)
 
 
-    def get(self, element=None, name=None):
-        """Get property or property list.
+    def get(self, element=None, name=None, throw_error=True):
+        """Get property number or property dict.
 
         Parameters
         ----------
@@ -145,7 +145,7 @@ class PropertyHandler:
             Element type.
             Returns master properties table if None.
             (default : None)
-        name : str, optional
+        name : str or [str], optional
             Property name.
             Returns all element properties if None.
             (default : None)
@@ -165,10 +165,16 @@ class PropertyHandler:
         ElementHandler.is_valid(element, throw_error=True)
         if name is None:
             return self._element_properties[element]
-        if name not in self._element_properties[element]:
+
+        if isinstance(name, list):
+            return {k: self.get(element, k, throw_error) for k in name}
+
+        if name in self._element_properties[element]:
+            return self._element_properties[element][name]
+        if throw_error:
             msg = f"Property {name} not found for element {element}."
             raise ValueError(msg)
-        return self._element_properties[element][name]
+        return None
 
 
     def get_components_list(self):
