@@ -16,6 +16,9 @@ unit_handler.add("m", "cm", 100, 0)
 unit_handler.set_current("length", "cm")
 """
 
+import re
+
+
 class UnitHandler:
     """
     A class to handle unit conversions and management.
@@ -140,6 +143,21 @@ class UnitHandler:
         raise TypeError(msg)
 
 
+    def _transform_dimensions(self, dimensions):
+        parts = dimensions.split('-')
+        if len(parts) > 2:
+            msg = "Invalid input format. Too many '-'s."
+            raise ValueError(msg)
+
+        def extract_integers(s):
+            return [int(num) for num in re.findall(r'\d+', s)]
+
+        numerator = extract_integers(parts[0]) if parts[0] else []
+        denominator = extract_integers(parts[1]) if len(parts) > 1 else []
+
+        return numerator, denominator
+
+
     def get_current(self, dimensionality=None):
         """Gets the current unit for a given dimensionality string.
 
@@ -148,8 +166,8 @@ class UnitHandler:
         dimensionality : str, optional
             Base dimensionality or compound dimensionality to evaluate.
             Compound dimensionality expected format:
-            base dimensionalities numbers, '|' as separator
-            and '/' as division (ex.: '1|3/2').
+            base dimensionalities numbers, '|' as multiplication
+            and '-' as division (ex.: '1|3-2').
             If none, returns all current units.
             (default: None)
         """
@@ -161,18 +179,15 @@ class UnitHandler:
             d_num = self._dimensionality2number(dimensionality)
             return self._unit_list[d_num]["current"]
 
-        unit = ""
-        if dimensionality[0] == "-":
+        numerator, denominator = self._transform_dimensions(dimensionality)
+        if len(numerator) == 0:
             unit = "1"
-        d = ""
-        for c in dimensionality:
-            if c == "|":
-                unit = unit + self._unit_list[int(d)]["current"]
-                d = ""
-            elif c == "-":
-                unit += "/"
-            else:
-                d = d + c
+        else:
+            unit = ".".join([self._unit_list[n]["current"] for n in numerator])
+        if len(denominator) > 0:
+            unit += "/"
+            unit += ".".join([self._unit_list[n]["current"] for n in denominator])
+
         return unit
 
 

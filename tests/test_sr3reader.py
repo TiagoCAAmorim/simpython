@@ -615,6 +615,15 @@ class TestSr3Reader(unittest.TestCase):
         file_read = sr3.units.get_current("mass")
         self.assertEqual("g", file_read)
 
+        file_read = sr3.units.get_current("7")
+        self.assertEqual("g", file_read)
+        file_read = sr3.units.get_current("7-8")
+        self.assertEqual("g/gmole", file_read)
+        file_read = sr3.units.get_current("-7")
+        self.assertEqual("1/g", file_read)
+        file_read = sr3.units.get_current("")
+        self.assertEqual("", file_read)
+
         sr3.units.add(old="day", new="week", gain=1./7., offset=0.0)
         sr3.units.set_current(dimensionality="well rate time",unit="week")
         file_read = sr3.properties.unit(property_name="OILRATSC")
@@ -699,6 +708,12 @@ class TestSr3Reader(unittest.TestCase):
             element_type="well",
             element_name="P13")
         true_result = "P-PLAT1-PRO"
+        self.assertEqual(true_result, file_read)
+
+        file_read = sr3.elements.get_parent(
+            element_type="grid",
+            element_name="MATRIX")
+        true_result = ""
         self.assertEqual(true_result, file_read)
 
         file_read = sr3.elements.get_connection(
