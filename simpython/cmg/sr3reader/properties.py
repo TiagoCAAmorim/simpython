@@ -136,7 +136,7 @@ class PropertyHandler:
         return self._replace_components(properties)
 
 
-    def get(self, element=None, name=None, throw_error=True):
+    def get(self, element_type=None, name=None, throw_error=True):
         """Get property number or property dict.
 
         Parameters
@@ -157,22 +157,22 @@ class PropertyHandler:
         ValueError
             If property name is not found.
         """
-        if element is None:
+        if element_type is None:
             if name is not None:
                 msg = "Element type must be defined if a property name is provided."
                 raise ValueError(msg)
             return self._properties
-        ElementHandler.is_valid(element, throw_error=True)
+        ElementHandler.is_valid(element_type, throw_error=True)
         if name is None:
-            return self._element_properties[element]
+            return self._element_properties[element_type]
 
         if isinstance(name, list):
-            return {k: self.get(element, k, throw_error) for k in name}
+            return {k: self.get(element_type, k, throw_error) for k in name}
 
-        if name in self._element_properties[element]:
-            return self._element_properties[element][name]
+        if name in self._element_properties[element_type]:
+            return self._element_properties[element_type][name]
         if throw_error:
-            msg = f"Property {name} not found for element {element}."
+            msg = f"Property {name} not found for '{element_type}'."
             raise ValueError(msg)
         return None
 

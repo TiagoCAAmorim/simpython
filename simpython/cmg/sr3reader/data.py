@@ -18,6 +18,7 @@ well_bhp = data_handler.get("well", property="BHP")
 # from collections import OrderedDict
 
 import numpy as np
+import xarray as xr
 from scipy import interpolate  # type: ignore
 
 
@@ -51,83 +52,72 @@ class DataHandler:
         self._grid = sr3_reader.grid
 
 
+    def _get_raw_timeseries(self, dataset, element_type, property_name, elements):
+        property_index = self._properties.get(element_type)[property_name]
+        elements_index = [self._elements.get(element_type)[e] for e in elements]
+        elements_index.sort()
+        return dataset[:, property_index, elements_index]
+
+
+    def _get_interpolated_timeseries(self, raw_data, element_type, days):
+        all_days = self._dates.get_days(element_type)
+        y = []
+        for i in range(raw_data.shape[1]):
+            y.append(np.interp(days, all_days, raw_data[:, i]).reshape(-1, 1))
+        return np.hstack(y)
+
+
+    def _get_ordered_elements(self, element_type, elements):
+        if element_type == "special":
+            return [""]
+        elements_index = [self._elements.get(element_type)[e] for e in elements]
+        paired_elements = list(zip(elements_index, elements))
+        paired_elements.sort()
+        _, elements_ = zip(*paired_elements)
+        return elements_
+
+
+    def _get_single_property(self, dataset, element_type, property_name, elements, days):
+        raw_data = self._get_raw_timeseries(dataset, element_type, property_name, elements)
+        data = self._get_interpolated_timeseries(raw_data, element_type, days)
+
+        gain, offset = self._properties.conversion(property_name)
+        data = data * gain + offset
+
+        elements_ = self._get_ordered_elements(element_type, elements)
+        data_array = xr.DataArray(
+            data,
+            dims=["day", "element"],
+            coords={"day": days, "element": list(elements_)})
+
+        for k, v in self._properties.description(property_name).items():
+            data_array.attrs[k] = v
+        return data_array
+
+
+    def _get_timeseries(self, element_type, properties, elements, days):
+        dataset = self._file.get_element_table(
+            element_type=element_type,
+            dataset_string="Data"
+        )
+
+        xr_dataset = xr.Dataset()
+        for p in properties:
+            data = self._get_single_property(dataset, element_type, p, elements, days)
+            xr_dataset[p] = data
+
+        xr_dataset.attrs["element_type"] = element_type
+        xr_dataset.attrs["file"] = self._file.get_filepath()
+
+        return xr_dataset
+
+
     def _concat(self, arr1, arr2):
         if arr1.ndim == 1:
             arr1 = arr1.reshape(-1, 1)
         if arr2.ndim == 1:
             arr2 = arr2.reshape(-1, 1)
         return np.hstack((arr1, arr2))
-
-
-    def _get_data_matrix(self, dataset, index1, index2):
-        def _ordered_x(x):
-            x_ordered = list(set(x)).copy()
-            x_ordered.sort()
-            return x_ordered
-
-        x1 = _ordered_x(index1)
-        x2 = _ordered_x(index2)
-
-        indexes = []
-        if len(x1) > len(x2):
-            data = dataset[:, x1, x2[0]]
-            indexes.extend([(xi, x2[0]) for xi in x1])
-            for x in x2[1:]:
-                data = self._concat(data, dataset[:, x1, x])
-                indexes.extend([(xi, x) for xi in x1])
-        else:
-            data = dataset[:, x1[0], x2]
-            indexes.extend([(x1[0], xi) for xi in x2])
-            for x in x1[1:]:
-                data = self._concat(data, dataset[:, x, x2])
-                indexes.extend([(x, xi) for xi in x2])
-
-        original_index = []
-        for p2 in index2:
-            for p1 in index1:
-                original_index.append((p1, p2))
-        order = [indexes.index(x) for x in original_index]
-
-        return data[:, order]
-
-
-    def _get_raw_data(self, element_type, properties, elements=None):
-        self._elements.is_valid(element_type, throw_error=True)
-
-        if isinstance(properties, str):
-            properties = [properties]
-        if isinstance(elements, str):
-            elements = [elements]
-        if elements is None:
-            elements = self._elements.get(element_type).keys()
-
-        properties_dict = self._properties.get(element_type)
-        properties_i = [properties_dict[p] for p in properties]
-
-        elements_dict=self._elements.get(element_type)
-        elements_i = [elements_dict[e] for e in elements]
-
-        dataset = self._file.get_element_table(
-            element_type=element_type,
-            dataset_string="Data"
-        )
-
-        data = self._get_data_matrix(
-            dataset=dataset,
-            index1=properties_i,
-            index2=elements_i
-        )
-        return self._data_unit_conversion(data, properties)
-
-
-    def _get_time_data(self, element_type, index):
-        if index == "dates":
-            return self._dates.get_dates(element_type=element_type)
-        if index == "days":
-            return self._dates.get_days(element_type=element_type)
-        if index == "timesteps":
-            return self._dates.get_timesteps(element_type=element_type)
-        raise ValueError(f"Invalid index: {index}.")
 
 
     def _remove_duplicates(self, input_list):
@@ -163,23 +153,50 @@ class DataHandler:
         return data
 
 
-    def _get_interp_data(self, days, element_type, properties, elements):
-        raw_data = self._get_raw_data(
-            element_type=element_type,
-            properties=properties,
-            elements=elements,
-        )
-        all_days = self._get_time_data(element_type, "days")
-        data = np.array(days)
-        for i in range(raw_data.shape[1]):
-            interp = interpolate.interp1d(
-                all_days,
-                raw_data[:, i],
-                kind="linear"
-            )
-            y = interp(days)
-            data = self._concat(data, y)
-        return data
+    def _validade_input(self, element_type,  properties, elements, days):
+        self._elements.is_valid(element_type, throw_error=True)
+
+        if isinstance(properties, str):
+            properties = [properties]
+        for p in properties:
+            if p not in self._properties.get(element_type):
+                msg = f"Property {p} not found for '{element_type}'."
+                raise ValueError(msg)
+
+        if elements is None:
+            elements = list(self._elements.get(element_type).keys())
+        elif isinstance(elements, str):
+            elements = [elements]
+        for e in elements:
+            if e not in self._elements.get(element_type):
+                msg = f"Element {e} not found for '{element_type}'."
+                raise ValueError(msg)
+
+        if element_type != "grid":
+            if days is None:
+                days = self._dates.get_days(element_type=element_type)
+            if min(days) < 0:
+                raise ValueError("Negative days are not valid.")
+            if max(days) > self._dates.get_days(element_type=element_type)[-1]:
+                msg = f"No data beyond {self._dates.get_days(element_type)[-1]} days. "
+                msg += f"{max(days)} days is not valid."
+                raise ValueError(msg)
+        else:
+            if days is None:
+                days = 0
+            elif isinstance(days, list):
+                if len(days) > 1:
+                    msg = "Only one day is allowed for 'grid'."
+                    raise ValueError(msg)
+                days = days[0]
+            if days < 0:
+                raise ValueError("Negative days are not valid.")
+            if days > self._dates.get_days(element_type=element_type)[-1]:
+                msg = f"No data beyond {self._dates.get_days(element_type)[-1]} days. "
+                msg += f"{max(days)} days is not valid."
+                raise ValueError(msg)
+
+        return properties, elements, days
 
 
     def get(self,
@@ -212,54 +229,23 @@ class DataHandler:
             If element_type is grid and
             day is not a single number.
         """
-        self._elements.is_valid(element_type, throw_error=True)
-        if isinstance(properties, str):
-            properties = [properties]
-        if elements is None:
-            elements = self._elements.get(element_type).keys()
-        if isinstance(elements, str):
-            elements = [elements]
-
-        if element_type == "grid":
-            if days is None:
-                msg = "day must be set for 'grid'."
-                raise ValueError(msg)
-            if isinstance(days, list):
-                if len(days) > 1:
-                    msg = "Only a single day must be set for 'grid'."
-                    raise ValueError(msg)
-                days = days[0]
-            if not self._grid.has_fracture() and elements != ["MATRIX"]:
-                msg = "Matrix only grid."
-                raise ValueError(msg)
-            return self.get_grid_data(
-                properties=properties,
-                day=days,
-                elements=elements)
-
-        if days is None:
-            days = self._get_time_data(element_type, "days")
-        return self._get_interp_data(
-            days=days,
+        properties, elements, days = self._validade_input(
             element_type=element_type,
             properties=properties,
-            elements=elements)
+            elements=elements,
+            days=days)
 
+        if element_type == "grid":
+            return self._get_grid_data(
+                properties=properties,
+                elements=elements,
+                day=days)
 
-    def get_series_order(self, properties, elements=None):
-        """Returns tuple with the order of the properties requested"""
-        if elements is None:
-            elements = [""]
-        if isinstance(properties, str):
-            properties = [properties]
-        if isinstance(elements, str):
-            elements = [elements]
-
-        original_index = []
-        for element in elements:
-            for property_ in properties:
-                original_index.append((element, property_))
-        return original_index
+        return self._get_timeseries(
+            element_type=element_type,
+            properties=properties,
+            elements=elements,
+            days=days)
 
 
     def _get_single_grid_property(self,
@@ -435,7 +421,7 @@ class DataHandler:
         return data_a + alfa * (data_b - data_a)
 
 
-    def get_grid_data(self,
+    def _get_grid_data(self,
                       properties,
                       day=None,
                       elements=None,

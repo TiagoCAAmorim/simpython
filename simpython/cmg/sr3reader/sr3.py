@@ -40,6 +40,8 @@ class Sr3Handler:
         Manually close sr3 file.
     get_hdf_elements():
         Returns dict with all groups and databases in file.
+    get_filepath():
+        Returns file path
     get_table(table_name):
         Returns table from sr3 file.
     """
@@ -98,6 +100,11 @@ class Sr3Handler:
 
         self.close()
         return sr3_elements
+
+
+    def get_filepath(self):
+        """Returns file path"""
+        return self._file_path
 
 
     def get_table(self, table_name):
