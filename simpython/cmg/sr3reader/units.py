@@ -143,7 +143,7 @@ class UnitHandler:
         raise TypeError(msg)
 
 
-    def _transform_dimensions(self, dimensions):
+    def _transform_dimensionality(self, dimensions):
         parts = dimensions.split('-')
         if len(parts) > 2:
             msg = "Invalid input format. Too many '-'s."
@@ -179,7 +179,7 @@ class UnitHandler:
             d_num = self._dimensionality2number(dimensionality)
             return self._unit_list[d_num]["current"]
 
-        numerator, denominator = self._transform_dimensions(dimensionality)
+        numerator, denominator = self._transform_dimensionality(dimensionality)
         if len(numerator) == 0:
             unit = "1"
         else:
@@ -213,27 +213,23 @@ class UnitHandler:
             return (1.0, 0.0)
         gain = 1.0
         offset = 0.0
-        inverse = False
-        d = ""
-        for c in dimensionality:
-            if c == "|":
-                unit = self._unit_list[int(d)]["current"]
-                conversion_ = self._unit_list[int(d)]["conversion"]
-                gain_new, offset_new = conversion_[unit]
-                d = ""
-                if inverse:
-                    gain /= gain_new
-                    offset = 0.0
-                else:
-                    gain *= gain_new
-                    if is_delta:
-                        offset = 0.0
-                    else:
-                        offset = offset * gain_new + offset_new
-            elif c == "-":
-                inverse = True
+
+        numerator, denominator = self._transform_dimensionality(dimensionality)
+        for n in numerator:
+            unit = self._unit_list[n]["current"]
+            conversion_ = self._unit_list[n]["conversion"]
+            gain_new, offset_new = conversion_[unit]
+            gain *= gain_new
+            if is_delta:
+                offset = 0.0
             else:
-                d = d + c
+                offset = offset * gain_new + offset_new
+        for n in denominator:
+            unit = self._unit_list[n]["current"]
+            conversion_ = self._unit_list[n]["conversion"]
+            gain_new, offset_new = conversion_[unit]
+            gain /= gain_new
+            offset = 0.0
         return (gain, offset)
 
 
