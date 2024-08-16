@@ -42,13 +42,13 @@ class DataHandler:
 
     """
 
-    def __init__(self, sr3_file, dates, elements, properties, units, grid):
-        self._file = sr3_file
-        self._dates = dates
-        self._elements = elements
-        self._properties = properties
-        self._units = units
-        self._grid = grid
+    def __init__(self, sr3_reader):
+        self._file = sr3_reader.file
+        self._dates = sr3_reader.dates
+        self._elements = sr3_reader.elements
+        self._properties = sr3_reader.properties
+        self._units = sr3_reader.units
+        self._grid = sr3_reader.grid
 
 
     def _concat(self, arr1, arr2):

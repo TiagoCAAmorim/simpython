@@ -2,14 +2,11 @@
 Implements class Sr3Reader
 """
 
-# import numpy as np
-# from scipy import interpolate  # type: ignore
-
+from .sr3 import Sr3Handler
+from .dates import DateHandler
 from .units import UnitHandler
 from .grid import GridHandler
 from .properties import PropertyHandler
-from .sr3 import Sr3Handler
-from .dates import DateHandler
 from .elements import ElementHandler
 from .data import DataHandler
 
@@ -35,16 +32,10 @@ class Sr3Reader:
 
     Methods
     -------
-    read():
-        Reads the contents of the grid file.
-    write(output_file_path):
-        Writes data into a grid file.
-    get_elements(element_type):
-        Returns a list of the elements
-        associated to the element type.
-    get_properties(element_type):
-        Returns a list of the properties
-        associated to the element type.
+    read()
+        Reads the contents of the sr3 file.
+    set_usual_units()
+        Sets some usual units and property aliases.
     """
 
 
@@ -55,8 +46,8 @@ class Sr3Reader:
         file_path : str
             Path to grid file.
         usual_units : bool, optional
-            Adds some extra units
-            and changes current units.
+            Adds some unit aliases
+            and changes some of the current units.
             (default: True)
 
         Raises
@@ -72,8 +63,7 @@ class Sr3Reader:
         self.grid = GridHandler(self.file, self.dates, auto_read=auto_read)
         self.properties = PropertyHandler(self.file, self.units, self.grid, auto_read=auto_read)
         self.elements = ElementHandler(self.file, self.units, self.grid, auto_read=auto_read)
-        self.data = DataHandler(self.file, self.dates, self.elements,
-                                self.properties, self.units, self.grid)
+        self.data = DataHandler(self)
 
         if usual_units and auto_read:
             self.set_usual_units()
