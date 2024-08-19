@@ -17,6 +17,7 @@ gain, offset = property_handler.conversion("OILRATSC")
 """
 
 import re
+from simpython.common import utils
 from .elements import ElementHandler
 
 
@@ -166,7 +167,7 @@ class PropertyHandler:
         if name is None:
             return self._element_properties[element_type]
 
-        if isinstance(name, list):
+        if utils.is_vector(name):
             return {k: self.get(element_type, k, throw_error) for k in name}
 
         if name in self._element_properties[element_type]:

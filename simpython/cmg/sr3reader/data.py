@@ -12,14 +12,13 @@ DataHandler
 Usage Example:
 --------------
 data_handler = DataHandler()
-well_bhp = data_handler.get("well", property="BHP")
+wells_bhp = data_handler.get("well", property="BHP")
 """
-
-# from collections import OrderedDict
 
 import numpy as np
 import xarray as xr
-from scipy import interpolate  # type: ignore
+
+from simpython.common import utils
 
 
 class DataHandler:
@@ -28,15 +27,8 @@ class DataHandler:
 
     Parameters
     ----------
-    sr3_file : sr3reader.Sr3Handler
-        SR3 file object.
-
-    dates : sr3reader.DateHandler
-        Date handler object.
-    units : sr3reader.UnitsHandler
-        Units handler object.
-    grid : sr3reader.GridHandler
-        Grid handler object.
+    sr3_reader : sr3reader.Sr3Reader
+        SR3 reader object.
 
     Methods
     -------
@@ -59,8 +51,7 @@ class DataHandler:
         return dataset[:, property_index, elements_index]
 
 
-    def _get_interpolated_timeseries(self, raw_data, element_type, days):
-        all_days = self._dates.get_days(element_type)
+    def _get_interpolated_timeseries(self, raw_data, all_days, days):
         y = []
         for i in range(raw_data.shape[1]):
             y.append(np.interp(days, all_days, raw_data[:, i]).reshape(-1, 1))
@@ -77,9 +68,11 @@ class DataHandler:
         return elements_
 
 
-    def _get_single_property(self, dataset, element_type, property_name, elements, days):
+    def _get_single_timeseries_property(self, dataset, element_type, property_name, elements, days):
+        all_days = self._dates.get_days(element_type)
+
         raw_data = self._get_raw_timeseries(dataset, element_type, property_name, elements)
-        data = self._get_interpolated_timeseries(raw_data, element_type, days)
+        data = self._get_interpolated_timeseries(raw_data, all_days, days)
 
         gain, offset = self._properties.conversion(property_name)
         data = data * gain + offset
@@ -96,18 +89,24 @@ class DataHandler:
 
 
     def _get_timeseries(self, element_type, properties, elements, days):
-        dataset = self._file.get_element_table(
-            element_type=element_type,
-            dataset_string="Data"
-        )
-
         xr_dataset = xr.Dataset()
-        for p in properties:
-            data = self._get_single_property(dataset, element_type, p, elements, days)
-            xr_dataset[p] = data
-
         xr_dataset.attrs["element_type"] = element_type
         xr_dataset.attrs["file"] = self._file.get_filepath()
+
+        xr_dataset['day'] = days
+        xr_dataset['date'] = self._dates.day2date(days)
+
+        dataset = self._file.get_element_table(
+            element_type=element_type,
+            dataset_string="Data")
+        for prop in properties:
+            data = self._get_single_timeseries_property(
+                dataset,
+                element_type,
+                prop,
+                elements,
+                days)
+            xr_dataset[prop] = data
 
         return xr_dataset
 
@@ -184,7 +183,7 @@ class DataHandler:
         else:
             if days is None:
                 days = 0
-            elif isinstance(days, list):
+            elif utils.is_vector(days):
                 if len(days) > 1:
                     msg = "Only one day is allowed for 'grid'."
                     raise ValueError(msg)

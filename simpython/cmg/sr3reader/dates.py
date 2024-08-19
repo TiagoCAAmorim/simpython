@@ -17,9 +17,11 @@ well_dates = date_handler.get_dates("well")
 
 from datetime import datetime, timedelta
 import numpy as np
-from scipy import interpolate  # type: ignore
+from scipy import interpolate
 
+from simpython.common import utils
 from .elements import ElementHandler
+
 
 class DateHandler:
     """
@@ -199,7 +201,7 @@ class DateHandler:
                 kind="linear"
             )
 
-        if isinstance(day, list):
+        if utils.is_vector(day):
             vectorized_datetime = np.vectorize(datetime.fromtimestamp)
             return vectorized_datetime(interp_day2date(day))
         return datetime.fromtimestamp(float(interp_day2date(day)))
@@ -213,7 +215,7 @@ class DateHandler:
         date : datetime.datetime or [datetime.datetime]
             Date or list of dates to be evaluated.
         """
-        if isinstance(date, list):
+        if utils.is_iterable_not_str(date):
             v_timestamp = np.vectorize(lambda t: t.timestamp())
             date = v_timestamp(date)
         else:
