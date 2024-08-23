@@ -121,7 +121,7 @@ class ElementHandler:
 
 
     def get(self, element_type):
-        """Get list of elements.
+        """Get dict of elements numbers.
 
         Parameters
         ----------
@@ -219,3 +219,46 @@ class ElementHandler:
             msg = f"Connection for {element_name} not found."
             raise ValueError(msg)
         return self._connection[element_type][element_name]
+
+
+    def _get_direct_children(self, element_type, element_name):
+        parents = self._parent[element_type]
+        return [k for k, v in parents.items() if v == element_name]
+
+
+    def get_children(self, element_type, element_name, deep_search=True):
+        """Get children of a group or well.
+
+        Parameters
+        ----------
+        element_type : str
+            Element type of the children: group,
+            well or layer.
+        element_name : str
+            Parent group or well.
+        deep_search : bool, optional
+            Whether to get only direct children.
+            (default: True)
+
+        Raises
+        ------
+        ValueError
+            If an invalid element type is provided.
+        ValueError
+            If an invalid element name is provided.
+        """
+        if element_type in ["group", "layer"]:
+            children = self._get_direct_children(element_type, element_name)
+            if deep_search and element_type == "group":
+                for child in children:
+                    children += self.get_children(element_type, child, deep_search=True)
+            return children
+
+        children = self._get_direct_children("group", element_name)
+        if len(children) == 0:
+            return self._get_direct_children("well", element_name)
+        else:
+            wells = []
+            for child in children:
+                wells += self.get_children("well", child)
+            return wells

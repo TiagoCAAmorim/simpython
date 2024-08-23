@@ -40,6 +40,7 @@ def _test_equal_lists(self, true_result, file_read, partial_true_result=False):
 class TestSr3Reader(unittest.TestCase):
     """Tests Sr3Reader functionalities"""
 
+# MARK: Elements
     def test_read_elements(self):
         """Tests reading the elements of a file"""
 
@@ -137,7 +138,7 @@ class TestSr3Reader(unittest.TestCase):
         file_read = sr3.properties.get_components_list().values()
         _test_equal_lists(self, true_result, file_read)
 
-
+# MARK: Properties
     def test_read_properties(self):
         """Tests reading the properties of a file"""
 
@@ -574,7 +575,7 @@ class TestSr3Reader(unittest.TestCase):
         file_read = sr3.properties.get("special").keys()
         _test_equal_lists(self, true_result, file_read)
 
-
+# MARK: Units
     def test_read_units(self):
         """Tests reading the units"""
 
@@ -645,7 +646,7 @@ class TestSr3Reader(unittest.TestCase):
         with self.assertRaises(ValueError):
             sr3.properties.set_alias(old="OILRATSC", new="OILRATRC")
 
-
+# MARK: Dates
     def test_read_times(self):
         """Tests reading times and dates"""
 
@@ -688,7 +689,7 @@ class TestSr3Reader(unittest.TestCase):
         true_result = [735.]
         _test_equal_lists(self, true_result, file_read)
 
-
+# MARK: Element hierarchy
     def test_read_element_hierarchy(self):
         """Tests reading element hierarchy"""
 
@@ -725,7 +726,64 @@ class TestSr3Reader(unittest.TestCase):
         true_result = 99
         self.assertEqual(true_result, file_read)
 
+        file_read = sr3.elements.get_children(
+            element_type="group",
+            element_name="FIELD-INJ")
+        true_result = [
+            "Default-Group-INJ",
+            "I-PLAT1-INJ",
+            "I-PLAT-TLD-INJ",
+            "P-PLAT1-INJ",
+            "P-PLAT-TLD-INJ",
+            "PLAT1-INJ",
+            "PLAT-TLD-INJ"
+        ]
+        _test_equal_lists(self, true_result, file_read)
 
+        file_read = sr3.elements.get_children(
+            element_type="group",
+            element_name="PLAT1-PRO")
+        true_result = ["I-PLAT1-PRO", "P-PLAT1-PRO"]
+        _test_equal_lists(self, true_result, file_read)
+
+        file_read = sr3.elements.get_children(
+            element_type="group",
+            element_name="Default-Group-PRO")
+        true_result = []
+        self.assertEqual(true_result, file_read)
+
+        file_read = sr3.elements.get_children(
+            element_type="well",
+            element_name="PLAT1-PRO")
+        true_result = sr3.elements.get("well").keys()
+        _test_equal_lists(self, true_result, file_read)
+
+        file_read = sr3.elements.get_children(
+            element_type="well",
+            element_name="FIELD-PRO")
+        true_result = sr3.elements.get("well").keys()
+        _test_equal_lists(self, true_result, file_read)
+
+        file_read = sr3.elements.get_children(
+            element_type="well",
+            element_name="PLAT1-INJ")
+        true_result = []
+        _test_equal_lists(self, true_result, file_read)
+
+        file_read = sr3.elements.get_children(
+            element_type="well",
+            element_name="I-PLAT1-PRO")
+        true_result = [k for k in sr3.elements.get("well").keys() if k[0]=="I"]
+        _test_equal_lists(self, true_result, file_read)
+
+        file_read = sr3.elements.get_children(
+            element_type="layer",
+            element_name="P11")
+        true_result = [k for k in sr3.elements.get("layer").keys() if k[:3]=="P11"]
+        _test_equal_lists(self, true_result, file_read)
+
+
+# MARK: Grid sizes
     def test_read_grid_size(self):
         """Tests reading grid sizes"""
 
@@ -740,7 +798,7 @@ class TestSr3Reader(unittest.TestCase):
         true_result = 67241
         self.assertEqual(true_result, file_read)
 
-
+# MARK: Timeseries
     def test_read_timeseries(self):
         """Tests reading timeseries"""
 
@@ -827,6 +885,7 @@ class TestSr3Reader(unittest.TestCase):
                        2677.2224149999997]
         _test_equal_lists(self, true_result, list(file_read_))
 
+# MARK: Gridmaps
     def test_read_gridmaps(self):
         """Tests reading grid properties"""
 

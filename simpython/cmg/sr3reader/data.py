@@ -43,6 +43,7 @@ class DataHandler:
         self._units = sr3_reader.units
         self._grid = sr3_reader.grid
 
+# MARK: Timeseries Data
 
     def _get_raw_timeseries(self, dataset, element_type, property_name, elements):
         property_index = self._properties.get(element_type)[property_name]
@@ -110,6 +111,7 @@ class DataHandler:
 
         return xr_dataset
 
+# MARK: Grid Data
 
     def _concat(self, arr1, arr2):
         if arr1.ndim == 1:
@@ -203,7 +205,7 @@ class DataHandler:
             properties,
             elements=None,
             days=None):
-        """Returns data for the required element type properties
+        """Returns data for the required element type properties.
 
         Parameters
         ----------
