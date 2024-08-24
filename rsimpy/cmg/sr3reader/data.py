@@ -17,6 +17,7 @@ wells_bhp = data_handler.get("well", property="BHP")
 
 import numpy as np
 import xarray as xr
+import pandas as pd
 
 from rsimpy.common import utils
 
@@ -94,8 +95,8 @@ class DataHandler:
         xr_dataset.attrs["element_type"] = element_type
         xr_dataset.attrs["file"] = self._file.get_filepath()
 
-        xr_dataset['day'] = days
-        xr_dataset['date'] = self._dates.day2date(days)
+        xr_dataset["day"] = days
+        xr_dataset["date"] = self._dates.day2date(days)
 
         dataset = self._file.get_element_table(
             element_type=element_type,
@@ -161,7 +162,7 @@ class DataHandler:
             properties = [properties]
         for p in properties:
             if p not in self._properties.get(element_type):
-                msg = f"Property {p} not found for '{element_type}'."
+                msg = f'Property {p} not found for "{element_type}".'
                 raise ValueError(msg)
 
         if elements is None:
@@ -170,7 +171,7 @@ class DataHandler:
             elements = [elements]
         for e in elements:
             if e not in self._elements.get(element_type):
-                msg = f"Element {e} not found for '{element_type}'."
+                msg = f'Element {e} not found for "{element_type}".'
                 raise ValueError(msg)
 
         if element_type != "grid":
@@ -187,7 +188,7 @@ class DataHandler:
                 days = 0
             elif utils.is_vector(days):
                 if len(days) > 1:
-                    msg = "Only one day is allowed for 'grid'."
+                    msg = 'Only one day is allowed for "grid".'
                     raise ValueError(msg)
                 days = days[0]
             if days < 0:
@@ -258,7 +259,7 @@ class DataHandler:
         if isinstance(elements, str):
             elements = [elements]
         if any(e not in ["MATRIX","FRACTURE"] for e in elements):
-            msg = f"Invalid element type: {', '.join(elements)}. Expected: MATRIX, FRACTURE."
+            msg = f'Invalid element type: "{", ".join(elements)}". Expected: MATRIX, FRACTURE.'
             raise ValueError(msg)
         if not self._grid.has_fracture() and elements != ["MATRIX"]:
             msg = "Matrix only grid."
@@ -313,7 +314,7 @@ class DataHandler:
                                    default=0):
         if elements is None:
             elements = ["MATRIX"]
-        ni, nj, nk = self._grid.get_size('nijk')
+        ni, nj, nk = self._grid.get_size("nijk")
 
         dtype = values.dtype
         default = np.array(default).astype(dtype)
@@ -330,7 +331,7 @@ class DataHandler:
             return new_array[ni * nj * nk:]
         if elements == ["MATRIX", "FRACTURE"]:
             return new_array
-        raise ValueError(f'Invalid elements: {", ".join(elements)}')
+        raise ValueError(f'Invalid elements: {", ".join(elements)}. Expected: "MATRIX" and/or "FRACTURE".')
 
 
     def _get_multiple_grid_properties(self,
@@ -481,3 +482,51 @@ class DataHandler:
                 elements=elements,
                 default=default)
         return data
+
+    def to_csv(self,
+               element_type,
+               properties,
+               elements=None,
+               days=None,
+               filename=None):
+        """Saves data to a CSV file.
+
+        Parameters
+        ----------
+        element type : str
+            Element type to be evaluated.
+        properties : [str]
+            Properties to be evaluated.
+        elements : [str], optional
+            List of elements to be evaluated.
+            Returns all elements if None.
+            (default: None)
+        days : [float], optional
+            List of days to return data.
+            Returns all timesteps if None.
+            (default: None)
+        filename : str, optional
+            Filename to save the data.
+            If None, the data is not saved.
+            (default: None)
+        """
+        xr_dataset = self.get(
+            element_type=element_type,
+            properties=properties,
+            elements=elements,
+            days=days)
+        if filename is not None:
+            time_data = np.array([xr_dataset["day"].values, xr_dataset["date"].values])
+            df = pd.DataFrame(time_data.T, columns=["day", "date"])
+
+            df['date'] = pd.to_datetime(df['date'])
+            df['date'] = df['date'].dt.strftime('%Y-%m-%d %H:%M:%S.%f')
+
+            columns = [("day","",""), ("date","","")]
+            for prop in properties:
+                data = xr_dataset[prop].values
+                for i, e in enumerate(xr_dataset["element"].values):
+                    df[f"{prop}_{e}"] = data[:, i]
+                    columns.append((prop, e, xr_dataset[prop].attrs["unit"]))
+            df.columns = pd.MultiIndex.from_tuples(columns)
+            df.to_csv(filename, index=False)

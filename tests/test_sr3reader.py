@@ -885,6 +885,15 @@ class TestSr3Reader(unittest.TestCase):
                        2677.2224149999997]
         _test_equal_lists(self, true_result, list(file_read_))
 
+        sr3.units.set_current(dimensionality="well liquid volume", unit="bbl")
+        sr3.data.to_csv(
+            element_type="well",
+            properties=["QO","BHP","NP"],
+            elements=["P11","P13"],
+            filename='test.csv')
+        self.assertTrue(Path('test.csv').is_file())
+        Path('test.csv').unlink()
+
 # MARK: Gridmaps
     def test_read_gridmaps(self):
         """Tests reading grid properties"""
