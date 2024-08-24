@@ -28,7 +28,7 @@ Wells:
     I11-W
     I12
     I12-W
-    13
+    I13
     I13-W
     I14
     I14-W
@@ -58,13 +58,11 @@ Groups:
     I-PLAT1
     I-PLA-TLD
     P-PLAT1
-    P-PLAT-TLDPLAT1
+    P-PLAT-TLD
+    PLAT1
     PLAT-TLD
 
 Sectors:
     FIELD
 
 Special History
-
-
-Mod test
