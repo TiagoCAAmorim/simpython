@@ -17,7 +17,7 @@ gain, offset = property_handler.conversion("OILRATSC")
 """
 
 import re
-from simpython.common import utils
+from rsimpy.common import utils
 from .elements import ElementHandler
 
 

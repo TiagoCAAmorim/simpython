@@ -10,7 +10,7 @@ import numpy as np
 from scipy.stats import norm, truncnorm, lognorm, triang  # type: ignore # noqa # pylint: disable=unused-import
 
 import context  # noqa # pylint: disable=unused-import
-from simpython.common import template
+from rsimpy.common import template
 
 
 def process_temporary_file(text, verbose=False, variables_df=None,

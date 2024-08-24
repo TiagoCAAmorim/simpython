@@ -11,7 +11,7 @@ from scipy import stats  # type: ignore
 import numpy as np  # type: ignore # noqa: F401
 import pandas as pd  # type: ignore # noqa: F401
 
-from simpython.common import file_utils  # type: ignore # pylint: disable=import-error,wrong-import-position
+from rsimpy.common import file_utils  # type: ignore # pylint: disable=import-error,wrong-import-position
 
 
 class TemplateProcessor:
