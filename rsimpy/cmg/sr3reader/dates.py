@@ -19,7 +19,7 @@ from datetime import datetime, timedelta
 import numpy as np
 from scipy import interpolate
 
-from simpython.common import utils
+from rsimpy.common import utils
 from .elements import ElementHandler
 
 

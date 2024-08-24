@@ -8,7 +8,7 @@ import unittest
 import numpy as np
 
 import context  # noqa # pylint: disable=unused-import
-from simpython.cmg import gridfile
+from rsimpy.cmg import gridfile
 
 
 class TestGridFile(unittest.TestCase):

@@ -8,7 +8,7 @@ from datetime import datetime
 import unittest
 
 import context  # noqa # pylint: disable=unused-import
-from simpython.cmg.sr3reader import Sr3Reader
+from rsimpy.cmg.sr3reader import Sr3Reader
 
 
 def only_in_first(list_1, list_2):

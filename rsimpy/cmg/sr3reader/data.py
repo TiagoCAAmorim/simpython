@@ -18,7 +18,7 @@ wells_bhp = data_handler.get("well", property="BHP")
 import numpy as np
 import xarray as xr
 
-from simpython.common import utils
+from rsimpy.common import utils
 
 
 class DataHandler:
