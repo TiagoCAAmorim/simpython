@@ -58,8 +58,6 @@ class TemplateProcessor:
     build_all_combinations(variable_dict, csv_file_name=None,
                            clear_folder=False, zip_file_name=None, verbose=False):
         Creates files based on all combination of values.
-
-
     """
 
     def __init__(self, template_path, verbose=False, output_file_path=None,

@@ -2,11 +2,10 @@
 Python code and helpers for my PHD research
 
 * **cmg**: collection of modules to read/write CMG simulation files.
-    * **sr3reader**: holds class Sr3Reader that reads SR3 results files.
-    * **gridfile**: reads/writes ascii grid files with the *ALL* format.
+    * **sr3reader.Sr3Reader**: class that reads SR3 results files.
+    * **gridfile.GridFile**: class that reads/writes ascii grid files with the *ALL* format.
 * **common**: other modules
-    * **template**: generates text files based on a template.
-
+    * **template.TemplateProcessor**: class that generates text files based on a template.
 
 ## Examples
 
@@ -20,6 +19,7 @@ sr3 = Sr3Reader(sr3_file_path)
 
 well_ names = sr3.elements.get("well").keys()
 group_names = sr3.elements.get("group").keys()
+is_2phi2k = "FRACTURE" in sr3.elements.get("grid").keys()
 
 well_timeseries_names = sr3.properties.get("well").keys()
 grid_properties_names = sr3.properties.get("grid").keys()
@@ -41,7 +41,7 @@ elapsed_values = elapsed_data["ELAPSED"].sel(element="").values
 grid_data = sr3.data.get("grid", ["SO","PRES","VISO","Z(CO2)"], "MATRIX", days=10.)
 ```
 
-### Sr3Reader
+### GridFile
 
 ```python
 from simpython.cmg.gridfile import GridFile
