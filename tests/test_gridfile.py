@@ -6,6 +6,7 @@ import tempfile
 import shutil
 import unittest
 import numpy as np
+import numpy.testing as npt
 
 import context  # noqa # pylint: disable=unused-import
 from rsimpy.cmg import gridfile
@@ -129,16 +130,18 @@ class TestGridFile(unittest.TestCase):
             self.assertEqual(data.n2ijk(8),
                             (3,1,2),
                             "Coordinate should be (3,1,2)")
+            npt.assert_array_equal(data.n2ijk([3,8]),
+                                   np.array([(1,2,1),(3,1,2)]))
 
             self.assertEqual(data.ijk2n((3,1,2)),
                             8,
                             "Cell number should be 8")
-            self.assertEqual(data.ijk2n(3,1,2),
-                            8,
-                            "Cell number should be 8")
-            self.assertEqual(data.ijk2n(ni,nj,nk),
+            self.assertEqual(data.ijk2n((ni,nj,nk)),
                             data.get_number_values()-1,
-                            "Cell number should be number of values-1")
+                            "Cell number should be number of values - 1")
+            npt.assert_array_equal(data.ijk2n(((3,1,2), (1,2,1))),
+                            (8, 3),
+                            "Cell numbers should be 8 and 3")
 
             with tempfile.NamedTemporaryFile(suffix='.geo') as temp_file:
                 data.write(file_path=temp_file.name, coord_range=((2,3),(1,2),(2,3)))
