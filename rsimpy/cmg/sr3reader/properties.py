@@ -82,6 +82,8 @@ class PropertyHandler:
         for k in ElementHandler.valid_elements():
             self._element_properties[k] = self._extract_element_properties(k)
 
+        self._grid.set_properties(self._replace_components(self._grid.get_property()))
+
 
     def _extract_property_table(self, dataset):
         self._properties = {}
