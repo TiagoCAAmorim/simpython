@@ -305,8 +305,9 @@ class DataHandler:
 
         data_array = xr.DataArray(
             data,
-            dims=["index", "day_index"],
-            coords={"index": self._grid.get_cell_indexes(property_name), "day_index": list(range(len(days)))})
+            dims=["index", "day"],
+            coords={"index": self._grid.get_cell_indexes(property_name),
+                    "day": days})
 
         for k, v in self._properties.description(property_name).items():
             data_array.attrs[k] = v

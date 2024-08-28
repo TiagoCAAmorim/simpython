@@ -906,7 +906,7 @@ class TestSr3Reader(unittest.TestCase):
             properties="NET/GROSS",
             elements="MATRIX",
             days=0.)
-        file_read_ = file_read["NET/GROSS"].sel(day_index=0).values
+        file_read_ = file_read["NET/GROSS"].sel(day=0.).values
         for i in range(sr3.grid.get_size("n_active")):
             self.assertAlmostEqual(file_read_[i], 1)
 
@@ -915,7 +915,7 @@ class TestSr3Reader(unittest.TestCase):
             properties="PRES",
             elements="MATRIX",
             days=30.)
-        file_read_ = file_read["PRES"].sel(day_index=0).values
+        file_read_ = file_read["PRES"].sel(day=30.).values
         file_read_list = list(file_read_[:10])
         true_result = [
             63489.766,
@@ -938,7 +938,7 @@ class TestSr3Reader(unittest.TestCase):
             properties=["PRES","SO"],
             elements="MATRIX",
             days=[0., 30.])
-        file_read_ = file_read["PRES"].sel(day_index=1).values
+        file_read_ = file_read["PRES"].sel(day=30.).values
         file_read_list = list(file_read_[:10])
         for i in range(10):
             self.assertAlmostEqual(round(true_result[i], 3), round(file_read_list[i],3))
@@ -948,7 +948,7 @@ class TestSr3Reader(unittest.TestCase):
             properties=["SO","PRES","VISO","Z(CO2)"],
             elements="MATRIX",
             days=10.)
-        file_read_ = file_read["VISO"].sel(day_index=0).values
+        file_read_ = file_read["VISO"].sel(day=10.).values
         file_read_list = list(file_read_[:10])
         true_result = [
             (2 * 0.38856095 + 0.38856095) / 3,
