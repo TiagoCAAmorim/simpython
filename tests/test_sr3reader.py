@@ -906,15 +906,17 @@ class TestSr3Reader(unittest.TestCase):
             properties="NET/GROSS",
             elements="MATRIX",
             days=0.)
+        file_read_ = file_read["NET/GROSS"].sel(day_index=0).values
         for i in range(sr3.grid.get_size("n_active")):
-            self.assertTrue(file_read[i] - 1 < 0.00001)
+            self.assertAlmostEqual(file_read_[i], 1)
 
         file_read = sr3.data.get(
             element_type="grid",
             properties="PRES",
             elements="MATRIX",
             days=30.)
-        file_read_list = list(file_read[:10,0])
+        file_read_ = file_read["PRES"].sel(day_index=0).values
+        file_read_list = list(file_read_[:10])
         true_result = [
             63489.766,
             63396.96,
@@ -929,24 +931,25 @@ class TestSr3Reader(unittest.TestCase):
         ]
         true_result = [t / 98.0665 for t in true_result]
         for i in range(10):
-            self.assertTrue(abs(round(true_result[i], 2) - round(file_read_list[i],2)) < 0.01)
+            self.assertAlmostEqual(round(true_result[i], 3), round(file_read_list[i],3))
 
         file_read = sr3.data.get(
             element_type="grid",
             properties=["PRES","SO"],
             elements="MATRIX",
-            days=30.)
-        file_read_list = list(file_read[:10,0])
+            days=[0., 30.])
+        file_read_ = file_read["PRES"].sel(day_index=1).values
+        file_read_list = list(file_read_[:10])
         for i in range(10):
-            self.assertTrue(abs(round(true_result[i], 2) - round(file_read_list[i],2)) < 0.01)
-
+            self.assertAlmostEqual(round(true_result[i], 3), round(file_read_list[i],3))
 
         file_read = sr3.data.get(
             element_type="grid",
             properties=["SO","PRES","VISO","Z(CO2)"],
             elements="MATRIX",
             days=10.)
-        file_read_list = list(file_read[:10,2])
+        file_read_ = file_read["VISO"].sel(day_index=0).values
+        file_read_list = list(file_read_[:10])
         true_result = [
             (2 * 0.38856095 + 0.38856095) / 3,
             (2 * 0.3883772 + 0.3883772) / 3,
@@ -960,7 +963,7 @@ class TestSr3Reader(unittest.TestCase):
             (2 * 0.39111543 + 0.39111543) / 3,
         ]
         for i in range(10):
-            self.assertTrue(abs(round(true_result[i], 4) - round(file_read_list[i],4)) < 1E-4)
+            self.assertAlmostEqual(true_result[i], file_read_list[i])
 
 
 if __name__ == "__main__":

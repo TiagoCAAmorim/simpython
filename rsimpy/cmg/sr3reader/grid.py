@@ -39,14 +39,18 @@ class GridHandler:
     has_fracture()
         Checks if the grid has fractures.
     get_size(key=None)
-        Gets the grid size.
+        Gets grid sizes.
     get_property(name=None)
-        Gets the grid property by name.
+        Gets dict with property atributes by name.
+    is_complete(name):
+        Check if property is complete.
+    is_internal(name):
+        Check if property is internal.
     """
 
     def __init__(self, sr3_file, dates, auto_read=True):
         self._properties = []
-        self._size = ()
+        self._sizes = ()
         self._file = sr3_file
         self._dates = dates
 
@@ -56,20 +60,25 @@ class GridHandler:
 
     def read(self):
         """Reads grid information."""
-        self._size = self._extract_grid_sizes()
+        self._sizes = self._extract_grid_sizes()
         self._properties = self._extract_properties()
+
+
+    def set_properties(self, properties):
+        """Sets properties dict"""
+        self._properties = properties
 
 
     def has_fracture(self):
         """Check if grid has fractures."""
-        return self._size["n_active_fracture"] > 0
+        return self._sizes["n_active_fracture"] > 0
 
 
     def get_size(self, key=None):
         """Get grid size.
 
         Available keys:
-            ni, nj, nk, nijk, n_cells,
+            ni, nj, nk, nijk, n_matrix, n_cells,
             n_active, n_active_matrix, n_active_fracture
 
         Parameters
@@ -85,10 +94,12 @@ class GridHandler:
                 If key is not found.
         """
         if key is None:
-            return self._size
-        if key not in self._size:
-            raise ValueError(f"Key {key} not found.")
-        return self._size[key]
+            return self._sizes
+        if key not in self._sizes:
+            msg = f'Key "{key}" not found. Avaliable keys: '
+            msg += ", ".join(list(self._sizes.keys()))
+            raise ValueError(msg)
+        return self._sizes[key]
 
 
     def _extract_grid_sizes(self):
@@ -100,6 +111,7 @@ class GridHandler:
         n_active = dataset["IPSTCS"].size
         n_active_matrix = n_active
         n_active_fracture = 0
+        n_matrix = n_cells
         if dataset["IPSTCS"][-1] > ni * nj * nk:
             n_active_matrix = np.where(
                 self._file.get_table("SpatialProperties/000000/GRID/IPSTCS") > ni * nj * nk
@@ -114,12 +126,13 @@ class GridHandler:
             "n_active": int(n_active),
             "n_active_matrix": int(n_active_matrix),
             "n_active_fracture": int(n_active_fracture),
+            "n_matrix": int(n_matrix),
             "n_cells": int(n_cells)
         }
 
 
     def get_property(self, name=None):
-        """Get grid property by name.
+        """Gets dict with property atributes by name.
 
         Atributes
         ---------
@@ -145,6 +158,38 @@ class GridHandler:
         return self._properties[name]
 
 
+    def is_complete(self, name):
+        """Check if property is complete.
+
+        Parameters
+        ----------
+        name : str
+            Property name.
+
+        Returns
+        -------
+        bool
+            True if property is complete.
+        """
+        return self._properties[name]["is_complete"]
+
+
+    def is_internal(self, name):
+        """Check if property is internal.
+
+        Parameters
+        ----------
+        name : str
+            Property name.
+
+        Returns
+        -------
+        bool
+            True if property is internal.
+        """
+        return self._properties[name]["is_internal"]
+
+
     def _extract_properties(self):
         dataset = self._file.get_table("SpatialProperties/Statistics")
         grid_property_list = {
@@ -161,8 +206,8 @@ class GridHandler:
             )
         }
 
-        n_active = self._size["n_active"]
-        n_cells = self._size["n_cells"]
+        n_active = self._sizes["n_active"]
+        n_cells = self._sizes["n_cells"]
         _dataset_type = type(self._file.get_table("General/HistoryTable"))
 
         def _list_grid_properties(timestep_str, set_timestep=None):
@@ -173,7 +218,8 @@ class GridHandler:
                     continue
                 key = key.replace("%2F", "/")
                 if key not in grid_property_list:
-                    raise ValueError(f"{key} not listed previously!")
+                    msg = f"{key} not listed previously!"
+                    raise ValueError(msg)
 
                 size = sub_dataset.size
                 if size not in [n_cells, n_active]:
@@ -207,3 +253,137 @@ class GridHandler:
             p["timesteps"] = list(p["timesteps"])
             p["timesteps"].sort()
         return grid_property_list
+
+
+    def get_cell_indexes(self, property_name, elements=None):
+        """Returns cell indexes for the given property.
+
+            Parameters
+            ----------
+            property_name : str
+                Property name.
+            elements : list, optional
+                List of elements to return: 'MATRIX' or 'FRACTURE'.
+                If None, returns all elements.
+
+            Returns
+            -------
+            list
+                List of cell indexes.
+
+            Raises
+            ------
+            ValueError
+                If property name is not found.
+        """
+        if property_name not in self._properties:
+            raise ValueError(f"Property {property_name} not found.")
+
+        if elements is None:
+            elements = ["MATRIX"]
+            if self.has_fracture():
+                elements.append("FRACTURE")
+        elif isinstance(elements, str):
+            elements = [elements]
+        for e in elements:
+            if e not in ["MATRIX", "FRACTURE"]:
+                msg = f'Invalid element: {e}.'
+                raise ValueError(msg)
+        if "FRACTURE" in elements and not self.has_fracture():
+            msg = "Grid does not have fractures."
+            raise ValueError(msg)
+
+        if self.is_complete(property_name):
+            if elements == ["MATRIX"]:
+                return list(range(self._sizes["n_matrix"]))
+            if elements == ["FRACTURE"]:
+                return list(range(self._sizes["n_matrix"], self._sizes["n_cells"]))
+            return list(range(self._sizes["n_cells"]))
+
+        indexes_ = self._file.get_table("SpatialProperties/000000/GRID/IPSTCS")
+        frac_index = self._sizes["n_active_matrix"]
+        if elements == ["MATRIX"]:
+            return indexes_[:frac_index]
+        if elements == ["FRACTURE"]:
+            return indexes_[frac_index:-1]
+        return indexes_[:]
+
+
+    def n2ijk(self, n):
+        """Returns (i,j,k) coordinates of the n-th cell.
+
+            Parameters
+            ----------
+            n : int
+                Cell number, from 0 to number of values-1.
+
+            Raises
+            ------
+            ValueError
+                If an incorrect cell number is provided.
+            ValueError
+                If shape is not defined.
+        """
+        if n < 0:
+            msg = "Cells number must be greater than or equal to 0."
+            raise ValueError(msg)
+
+        ni, nj, nk = self._sizes["nijk"]
+
+        if n > ni*nj*nk:
+            msg = "Cells number must be smaller than number of values."
+            raise ValueError(msg)
+
+        k = int(n/(ni*nj)) + 1
+        j = int( (n/ni - (k-1)*nj)) + 1
+        i = n - (k-1)*ni*nj - (j-1)*ni + 1
+        return i, j, k
+
+
+    def ijk2n(self, i, j=None, k=None):
+        """Returns cell number of the (i,j,k) cell.
+
+            Parameters
+            ----------
+            i : int or list/tuple
+                i direction coordinate or list/tuple
+                with (i,j,k) coordinates.
+            j : int, optional
+                j direction coordinate. Assumes i contains
+                all coordinates if None is provided.
+                (default: None)
+            k : int, optional
+                k direction coordinate. Assumes i contains
+                all coordinates if None is provided.
+                (default: None)
+
+            Raises
+            ------
+            ValueError
+                If an incorrect coordinate is provided.
+            ValueError
+                If shape is not defined.
+        """
+        if (j is None) and (k is None):
+            if len(i) != 3:
+                msg = f"Expected 3 coordinates, found {len(i)}."
+                raise ValueError(msg)
+            i, j, k = i
+        if (j is not None) and (k is None):
+            msg = "Coordinates must be provided as a tuple/list or separate arguments."
+            raise ValueError(msg)
+        if (j is None) and (k is not None):
+            msg = "Coordinates must be provided as a tuple/list or separate arguments."
+            raise ValueError(msg)
+
+        if (i < 1) or (j < 1) or (k < 1):
+            msg = "Coordinates number must be greater than or equal to 1."
+            raise ValueError(msg)
+
+        ni, nj, nk = self._sizes["nijk"]
+
+        if (i > ni) or (j > nj) or (k > nk):
+            msg = "Coordinates number must be smaller than or equal to grid sizes."
+            raise ValueError(msg)
+
+        return (k - 1)*ni*nj + (j - 1)*ni + i - 1
