@@ -894,8 +894,8 @@ class TestSr3Reader(unittest.TestCase):
         self.assertTrue(Path('test.csv').is_file())
         Path('test.csv').unlink()
 
-# MARK: Gridmaps
-    def test_read_gridmaps(self):
+# MARK: Grid properties
+    def test_read_grid(self):
         """Tests reading grid properties"""
 
         test_file = Path("tests/sr3/base_case_3a.sr3")

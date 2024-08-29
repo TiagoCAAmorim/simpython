@@ -208,8 +208,6 @@ class GridHandler:
         return self._sizes[key]
 
 
-
-
     def get_property(self, name=None):
         """Gets dict with property atributes by name.
 
@@ -267,8 +265,6 @@ class GridHandler:
             True if property is internal.
         """
         return self._properties[name]["is_internal"]
-
-
 
 
     def get_cell_indexes(self, property_name, elements=None):

@@ -30,18 +30,22 @@ def is_vector(obj):
 
 @staticmethod
 def _n2ijk(nijk, n):
-    """Returns (i,j,k) coordinates of the n-th cell."""
+    """Returns (i,j,k) coordinates of the n-th cell.
+
+       cell index starts from 1.
+    """
     n_ = np.array(n)
-    if np.any(n_ < 0):
-        msg = "Cell number must be positive."
+    if np.any(n_ < 1):
+        msg = "Cell number must be greater than zero."
         raise ValueError(msg)
 
     ni, nj, nk = nijk
 
-    if np.any(n_ > ni*nj*nk - 1):
-        msg = "Cell number must be smaller than number of values - 1."
+    if np.any(n_ > ni*nj*nk):
+        msg = "Cell number must be smaller than number of values."
         raise ValueError(msg)
 
+    n_ -= 1
     k = (n_ // (ni * nj)) + 1
     j = ((n_ // ni) - (k - 1) * nj) + 1
     i = n_ - (k - 1) * ni * nj - (j - 1) * ni + 1
@@ -68,4 +72,4 @@ def _ijk2n(nijk, ijk):
         msg = "Coordinates number must be smaller than or equal to grid sizes."
         raise ValueError(msg)
 
-    return (ijk_[:,2] - 1)*ni*nj + (ijk_[:,1] - 1)*ni + ijk_[:,0] - 1
+    return (ijk_[:,2] - 1)*ni*nj + (ijk_[:,1] - 1)*ni + ijk_[:,0]
