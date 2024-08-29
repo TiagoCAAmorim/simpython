@@ -910,6 +910,13 @@ class TestSr3Reader(unittest.TestCase):
         for i in range(sr3.grid.get_size("n_active")):
             self.assertAlmostEqual(file_read_[i], 1)
 
+        with self.assertRaises(ValueError):
+            file_read = sr3.data.get(
+                element_type="grid",
+                properties="NET/GROSS",
+                elements="MATRIX",
+                days=30.)
+
         file_read = sr3.data.get(
             element_type="grid",
             properties="PRES",

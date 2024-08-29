@@ -297,6 +297,12 @@ class DataHandler:
 
     def _get_single_grid_property(self, property_name, elements, days):
         ts_list = self._get_grid_timesteps_list(days)
+        for ts in ts_list:
+            if ts not in self._grid.get_property(property_name)["timesteps"]:
+                msg = f"Grid property {property_name} does not "
+                msg += f"have values for timestep {ts}."
+                raise ValueError(msg)
+
         raw_data = self._get_raw_grid_property(property_name, elements, ts_list)
         data = self._get_interpolated_grid_property(raw_data, ts_list, days)
 
