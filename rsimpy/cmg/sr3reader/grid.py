@@ -58,6 +58,7 @@ class GridHandler:
         if auto_read:
             self.read()
 
+# MARK: Read Data
 
     def read(self):
         """Reads grid information."""
@@ -66,137 +67,34 @@ class GridHandler:
         self._properties = self._extract_properties()
 
 
-    def set_properties(self, properties):
-        """Sets properties dict"""
-        self._properties = properties
-
-
-    def has_fracture(self):
-        """Check if grid has fractures."""
-        return self._sizes["n_active_fracture"] > 0
-
-
-    def get_size(self, key=None):
-        """Get grid size.
-
-        Available keys:
-            ni, nj, nk: total number of cells per coordinate
-            nijk: tuple with (ni, nj, nk)
-            n_cells: total number of cells
-            n_matrix: total number of cells in matrix
-            n_fracture: total number of cells in fracture
-            n_active: number of active cells
-            n_active_matrix: number of active cells in matrix
-            n_active_fracture: number of active cells in fracture
-
-        Parameters
-        ----------
-        key : str, optional
-            Size key.
-            If none, returns all grid sizes.
-            (default: None)
-
-        Raises
-        ------
-            ValueError
-                If key is not found.
-        """
-        if key is None:
-            return self._sizes
-        if key not in self._sizes:
-            msg = f'Key "{key}" not found. Avaliable keys: '
-            msg += ", ".join(list(self._sizes.keys()))
-            raise ValueError(msg)
-        return self._sizes[key]
-
-
     def _extract_grid_sizes(self):
         dataset = self._file.get_table("SpatialProperties/000000/GRID")
-        ni = dataset["IGNTID"][0]
-        nj = dataset["IGNTJD"][0]
-        nk = dataset["IGNTKD"][0]
-        n_cells = ni * nj * nk
-        n_matrix = n_cells
+        ni = int(dataset["IGNTID"][0])
+        nj = int(dataset["IGNTJD"][0])
+        nk = int(dataset["IGNTKD"][0])
+        n_cells = ni*nj*nk
         n_active = self._active_index.size
-        n_active_matrix = n_active
-        n_active_fracture = 0
         n_fracture = 0
+        n_active_fracture = 0
+
         if self._active_index[-1] > n_cells:
             n_active_matrix = np.where(self._active_index > n_cells)[0][0]
             n_active_fracture = n_active - n_active_matrix
+            n_fracture = n_cells
             n_cells = 2 * n_cells
-            n_fracture = n_matrix
+
         return {
-            "ni": int(ni),
-            "nj": int(nj),
-            "nk": int(nk),
+            "ni": ni,
+            "nj": nj,
+            "nk": nk,
             "nijk": (ni, nj, nk),
-            "n_active": int(n_active),
-            "n_active_matrix": int(n_active_matrix),
-            "n_active_fracture": int(n_active_fracture),
-            "n_matrix": int(n_matrix),
-            "n_fracture": int(n_fracture),
-            "n_cells": int(n_cells)
+            "n_cells": n_cells,
+            "n_matrix": ni*nj*nk,
+            "n_fracture": n_fracture,
+            "n_active": n_active,
+            "n_active_matrix": n_active,
+            "n_active_fracture": n_active_fracture
         }
-
-
-    def get_property(self, name=None):
-        """Gets dict with property atributes by name.
-
-        Atributes
-        ---------
-        name : str
-            Property name.
-            If None, returns all properties.
-            (default: None)
-
-        Returns
-        -------
-        dict
-            Property data.
-
-        Raises
-        ------
-            ValueError
-                If property name is not found.
-        """
-        if name is None:
-            return self._properties
-        if name not in self._properties:
-            raise ValueError(f"Property {name} not found.")
-        return self._properties[name]
-
-
-    def is_complete(self, name):
-        """Check if property is complete.
-
-        Parameters
-        ----------
-        name : str
-            Property name.
-
-        Returns
-        -------
-        bool
-            True if property is complete.
-        """
-        return self._properties[name]["is_complete"]
-
-
-    def is_internal(self, name):
-        """Check if property is internal.
-
-        Parameters
-        ----------
-        name : str
-            Property name.
-
-        Returns
-        -------
-        bool
-            True if property is internal.
-        """
-        return self._properties[name]["is_internal"]
 
 
     def _extract_properties(self):
@@ -264,6 +162,115 @@ class GridHandler:
         return grid_property_list
 
 
+# MARK: Getters and Setters
+
+    def set_properties(self, properties):
+        """Sets properties dict"""
+        self._properties = properties
+
+
+    def has_fracture(self):
+        """Check if grid has fractures."""
+        return self._sizes["n_active_fracture"] > 0
+
+
+    def get_size(self, key=None):
+        """Get grid size.
+
+        Available keys:
+            ni, nj, nk: total number of cells per coordinate
+            nijk: tuple with (ni, nj, nk)
+            n_cells: total number of cells
+            n_matrix: total number of cells in matrix
+            n_fracture: total number of cells in fracture
+            n_active: number of active cells
+            n_active_matrix: number of active cells in matrix
+            n_active_fracture: number of active cells in fracture
+
+        Parameters
+        ----------
+        key : str, optional
+            Size key.
+            If none, returns all grid sizes.
+            (default: None)
+
+        Raises
+        ------
+            ValueError
+                If key is not found.
+        """
+        if key is None:
+            return self._sizes
+        if key not in self._sizes:
+            msg = f'Key "{key}" not found. Avaliable keys: '
+            msg += ", ".join(list(self._sizes.keys()))
+            raise ValueError(msg)
+        return self._sizes[key]
+
+
+
+
+    def get_property(self, name=None):
+        """Gets dict with property atributes by name.
+
+        Atributes
+        ---------
+        name : str
+            Property name.
+            If None, returns all properties.
+            (default: None)
+
+        Returns
+        -------
+        dict
+            Property data.
+
+        Raises
+        ------
+            ValueError
+                If property name is not found.
+        """
+        if name is None:
+            return self._properties
+        if name not in self._properties:
+            raise ValueError(f"Property {name} not found.")
+        return self._properties[name]
+
+
+    def is_complete(self, name):
+        """Check if property is complete.
+
+        Parameters
+        ----------
+        name : str
+            Property name.
+
+        Returns
+        -------
+        bool
+            True if property is complete.
+        """
+        return self._properties[name]["is_complete"]
+
+
+    def is_internal(self, name):
+        """Check if property is internal.
+
+        Parameters
+        ----------
+        name : str
+            Property name.
+
+        Returns
+        -------
+        bool
+            True if property is internal.
+        """
+        return self._properties[name]["is_internal"]
+
+
+
+
     def get_cell_indexes(self, property_name, elements=None):
         """Returns cell indexes for the given property.
 
@@ -308,7 +315,9 @@ class GridHandler:
             elements = ["MATRIX"]
             if self.has_fracture():
                 elements.append("FRACTURE")
-        elif isinstance(elements, str):
+            return elements
+
+        if isinstance(elements, str):
             elements = [elements]
         for e in elements:
             if e not in ["MATRIX", "FRACTURE"]:
