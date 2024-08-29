@@ -903,10 +903,20 @@ class TestSr3Reader(unittest.TestCase):
 
         file_read = sr3.data.get(
             element_type="grid",
+            properties="BLOCKDEPTH",
+            days=0.)
+        file_read_ = file_read["BLOCKDEPTH"].sel(day=0.).values
+        self.assertEqual(len(file_read_), sr3.grid.get_size("n_cells"))
+        file_read_ = file_read["index"].values
+        self.assertEqual(file_read_[-1], sr3.grid.get_size("n_cells")-1)
+
+        file_read = sr3.data.get(
+            element_type="grid",
             properties="NET/GROSS",
             elements="MATRIX",
             days=0.)
         file_read_ = file_read["NET/GROSS"].sel(day=0.).values
+        self.assertEqual(len(file_read_), sr3.grid.get_size("n_active_matrix"))
         for i in range(sr3.grid.get_size("n_active")):
             self.assertAlmostEqual(file_read_[i], 1)
 
@@ -936,9 +946,9 @@ class TestSr3Reader(unittest.TestCase):
             63547.914,
             64793.88,
         ]
-        true_result = [t / 98.0665 for t in true_result]
+        true_result = [round(t / 98.0665, 3) for t in true_result]
         for i in range(10):
-            self.assertAlmostEqual(round(true_result[i], 3), round(file_read_list[i],3))
+            self.assertAlmostEqual(true_result[i], round(file_read_list[i],3))
 
         file_read = sr3.data.get(
             element_type="grid",
@@ -948,7 +958,7 @@ class TestSr3Reader(unittest.TestCase):
         file_read_ = file_read["PRES"].sel(day=30.).values
         file_read_list = list(file_read_[:10])
         for i in range(10):
-            self.assertAlmostEqual(round(true_result[i], 3), round(file_read_list[i],3))
+            self.assertAlmostEqual(true_result[i], round(file_read_list[i],3))
 
         file_read = sr3.data.get(
             element_type="grid",

@@ -49,8 +49,9 @@ class GridHandler:
     """
 
     def __init__(self, sr3_file, dates, auto_read=True):
-        self._properties = []
         self._sizes = ()
+        self._properties = []
+        self._active_index = []
         self._file = sr3_file
         self._dates = dates
 
@@ -60,6 +61,7 @@ class GridHandler:
 
     def read(self):
         """Reads grid information."""
+        self._active_index = self._file.get_table("SpatialProperties/000000/GRID/IPSTCS")
         self._sizes = self._extract_grid_sizes()
         self._properties = self._extract_properties()
 
@@ -78,8 +80,14 @@ class GridHandler:
         """Get grid size.
 
         Available keys:
-            ni, nj, nk, nijk, n_matrix, n_cells,
-            n_active, n_active_matrix, n_active_fracture
+            ni, nj, nk: total number of cells per coordinate
+            nijk: tuple with (ni, nj, nk)
+            n_cells: total number of cells
+            n_matrix: total number of cells in matrix
+            n_fracture: total number of cells in fracture
+            n_active: number of active cells
+            n_active_matrix: number of active cells in matrix
+            n_active_fracture: number of active cells in fracture
 
         Parameters
         ----------
@@ -108,16 +116,16 @@ class GridHandler:
         nj = dataset["IGNTJD"][0]
         nk = dataset["IGNTKD"][0]
         n_cells = ni * nj * nk
-        n_active = dataset["IPSTCS"].size
+        n_matrix = n_cells
+        n_active = self._active_index.size
         n_active_matrix = n_active
         n_active_fracture = 0
-        n_matrix = n_cells
-        if dataset["IPSTCS"][-1] > ni * nj * nk:
-            n_active_matrix = np.where(
-                self._file.get_table("SpatialProperties/000000/GRID/IPSTCS") > ni * nj * nk
-            )[0][0]
+        n_fracture = 0
+        if self._active_index[-1] > n_cells:
+            n_active_matrix = np.where(self._active_index > n_cells)[0][0]
             n_active_fracture = n_active - n_active_matrix
             n_cells = 2 * n_cells
+            n_fracture = n_matrix
         return {
             "ni": int(ni),
             "nj": int(nj),
@@ -127,6 +135,7 @@ class GridHandler:
             "n_active_matrix": int(n_active_matrix),
             "n_active_fracture": int(n_active_fracture),
             "n_matrix": int(n_matrix),
+            "n_fracture": int(n_fracture),
             "n_cells": int(n_cells)
         }
 
@@ -278,7 +287,23 @@ class GridHandler:
         """
         if property_name not in self._properties:
             raise ValueError(f"Property {property_name} not found.")
+        elements = self._validate_elements(elements)
 
+        if self.is_complete(property_name):
+            index = np.array(range(self._sizes["n_cells"]))
+            frac_index = self._sizes["n_matrix"]
+        else:
+            index = self._active_index
+            frac_index = self._sizes["n_active_matrix"]
+
+        if elements == ["MATRIX"]:
+            return index[:frac_index]
+        if elements == ["FRACTURE"]:
+            return index[frac_index:-1]
+        return index[:]
+
+
+    def _validate_elements(self, elements):
         if elements is None:
             elements = ["MATRIX"]
             if self.has_fracture():
@@ -292,21 +317,7 @@ class GridHandler:
         if "FRACTURE" in elements and not self.has_fracture():
             msg = "Grid does not have fractures."
             raise ValueError(msg)
-
-        if self.is_complete(property_name):
-            if elements == ["MATRIX"]:
-                return list(range(self._sizes["n_matrix"]))
-            if elements == ["FRACTURE"]:
-                return list(range(self._sizes["n_matrix"], self._sizes["n_cells"]))
-            return list(range(self._sizes["n_cells"]))
-
-        indexes_ = self._file.get_table("SpatialProperties/000000/GRID/IPSTCS")
-        frac_index = self._sizes["n_active_matrix"]
-        if elements == ["MATRIX"]:
-            return indexes_[:frac_index]
-        if elements == ["FRACTURE"]:
-            return indexes_[frac_index:-1]
-        return indexes_[:]
+        return elements
 
 
     def n2ijk(self, n):
