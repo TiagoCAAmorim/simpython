@@ -50,7 +50,8 @@ class DataHandler:
             element_type,
             properties,
             elements=None,
-            days=None):
+            days=None,
+            active_only=True):
         """Returns data for the required element type properties.
 
         Parameters
@@ -67,6 +68,10 @@ class DataHandler:
             List of days to return data.
             Returns all timesteps if None.
             (default: None)
+        active_only : bool, optional
+            If True, returns only active cells.
+            Ignored if element_type is not grid.
+            (default: True)
 
         Raises
         ------
@@ -86,7 +91,8 @@ class DataHandler:
             return self._get_grid_data(
                 properties=properties,
                 elements=elements,
-                days=days)
+                days=days,
+                active_only=active_only)
 
         return self._get_timeseries(
             element_type=element_type,
@@ -295,7 +301,7 @@ class DataHandler:
         return np.hstack(data)
 
 
-    def _get_single_grid_property(self, property_name, elements, days):
+    def _get_single_grid_property(self, property_name, elements, days, active_only):
         ts_list = self._get_grid_timesteps_list(days)
         for ts in ts_list:
             if ts not in self._grid.get_property(property_name)["timesteps"]:
@@ -309,11 +315,18 @@ class DataHandler:
         gain, offset = self._properties.conversion(property_name)
         data = data * gain + offset
 
+        is_complete = self._grid.is_complete(property_name)
+        if active_only:
+            data = self._grid_data_to_active(is_complete, data, elements)
+            index = self._grid.get_cell_indexes(False, elements)
+        else:
+            data = self._grid_data_to_complete(is_complete, data, elements)
+            index = self._grid.get_cell_indexes(True, elements)
+
         data_array = xr.DataArray(
             data,
             dims=["index", "day"],
-            coords={"index": self._grid.get_cell_indexes(property_name),
-                    "day": days})
+            coords={"index": index, "day": days})
 
         for k, v in self._properties.description(property_name).items():
             data_array.attrs[k] = v
@@ -322,7 +335,7 @@ class DataHandler:
         return data_array
 
 
-    def _get_grid_data(self, properties, elements, days):
+    def _get_grid_data(self, properties, elements, days, active_only):
         xr_dataset = xr.Dataset()
         xr_dataset.attrs["element_type"] = "grid"
         xr_dataset.attrs["file"] = self._file.get_filepath()
@@ -334,274 +347,39 @@ class DataHandler:
             data = self._get_single_grid_property(
                 prop,
                 elements,
-                days)
+                days,
+                active_only)
             xr_dataset[prop] = data
 
         return xr_dataset
 
 
+    def _grid_data_to_complete(self, is_complete, values, elements, default=0):
+        if is_complete:
+            return values
 
-    # def _concat(self, arr1, arr2):
-    #     if arr1.ndim == 1:
-    #         arr1 = arr1.reshape(-1, 1)
-    #     if arr2.ndim == 1:
-    #         arr2 = arr2.reshape(-1, 1)
-    #     return np.hstack((arr1, arr2))
+        n = self._grid.get_size("n_cells")
+        dtype = values.dtype
+        default = np.array(default).astype(dtype)
+        new_shape = (n,) + values.shape[1:]
+        new_array = np.full(new_shape, default)
 
+        index = self._grid.get_cell_indexes(False, elements)
+        new_array[index - 1] = values
 
-    # def _remove_duplicates(self, input_list):
-    #     seen = set()
-    #     unique_list = []
-    #     for item in input_list:
-    #         if item not in seen:
-    #             unique_list.append(item)
-    #             seen.add(item)
-    #     return unique_list
-
-
-    # def _data_unit_conversion(self,
-    #                           data,
-    #                           properties):
-    #     if isinstance(properties, str):
-    #         properties = [properties]
-
-    #     is_1d = len(data.shape) == 1
-
-    #     n_data_columns = 1 if is_1d else data.shape[1]
-    #     n_properties = 1 if is_1d else len(properties)
-    #     n_elements = int(n_data_columns / n_properties)
-    #     for i_property, p in enumerate(properties):
-    #         gain, offset = self._properties.conversion(p)
-    #         if gain != 1.0 or offset != 0.0:
-    #             for i_element in range(n_elements):
-    #                 k = i_property + i_element * n_properties
-    #                 if is_1d:
-    #                     data[:] = data[:] * gain + offset
-    #                 else:
-    #                     data[:, k] = data[:, k] * gain + offset
-    #     return data
-
-    # def _get_single_grid_property(self,
-    #                               property_name,
-    #                               ts=None,
-    #                               elements=None):
-    #     properties_ = self._properties.get("grid")
-    #     if properties_[property_name]["is_internal"]:
-    #         ts = "000000/GRID"
-    #     else:
-    #         if ts is None:
-    #             ts = 0
-    #         if ts not in properties_[property_name]["timesteps"]:
-    #             msg = f"Grid property {property_name} does not "
-    #             msg += f"have values for timestep {ts}."
-    #             raise ValueError(msg)
-    #         ts = str(ts).zfill(6)
-
-    #     p_name_ = properties_[property_name]["original_name"]
-    #     data = self._file.get_element_table(
-    #         element_type="grid",
-    #         dataset_string=f"{ts}/{p_name_}",
-    #     )
-    #     data = data[:]
-    #     self._data_unit_conversion(data=data,
-    #                                properties=[property_name])
-
-    #     if not self._grid.has_fracture():
-    #         return data[:]
-    #     if elements == ["MATRIX", "FRACTURE"]:
-    #         return data[:]
-
-    #     size = self._properties.get("grid", property_name)["size"]
-    #     if size == self._grid.get_size("n_active"):
-    #         cell_index = self._grid.get_size("n_active_matrix")
-    #     elif size == self._grid.get_size("n_cells"):
-    #         cell_index = int(self._grid.get_size("n_cells") / 2)
-    #     else:
-    #         msg = f"Invalid size for property {property_name}: {size}. "
-    #         msg += f"Expected: {self._grid.get_size('n_active')} "
-    #         msg += f"or {self._grid.get_size('n_cells')}."
-    #         raise ValueError(msg)
-
-    #     if elements == ["MATRIX"]:
-    #         return data[: cell_index]
-    #     if elements == ["FRACTURE"]:
-    #         return data[cell_index:]
+        if elements == ["MATRIX"]:
+            return new_array[:self._grid.get_size("n_matrix")]
+        if elements == ["FRACTURE"]:
+            return new_array[self._grid.get_size("n_matrix"):]
+        return new_array
 
 
-    # def _grid_data_to_complete(self,
-    #                            values,
-    #                             elements=None,
-    #                             default=0):
-    #     if elements is None:
-    #         elements = ["MATRIX"]
-    #     ni, nj, nk = self._grid.get_size("nijk")
+    def _grid_data_to_active(self, is_complete, values, elements):
+        if not is_complete:
+            return values
 
-    #     dtype = values.dtype
-    #     default = np.array(default).astype(dtype)
-    #     new_array = np.full((ni * nj * nk * 2,), default)
+        return values[self._grid.get_cell_indexes(False, elements) - 1]
 
-    #     indexes = self._get_single_grid_property(
-    #         property_name="IPSTCS", ts=0, elements=elements
-    #     )
-    #     new_array[indexes - 1] = values.reshape(-1)
-
-    #     if elements == ["MATRIX"]:
-    #         return new_array[:ni * nj * nk]
-    #     if elements == ["FRACTURE"]:
-    #         return new_array[ni * nj * nk:]
-    #     if elements == ["MATRIX", "FRACTURE"]:
-    #         return new_array
-    #     raise ValueError(f'Invalid elements: {", ".join(elements)}. Expected: "MATRIX" and/or "FRACTURE".')
-
-
-    # def _get_multiple_grid_properties(self,
-    #                                   properties,
-    #                                   ts=None,
-    #                                   elements=None):
-    #     is_complete = {
-    #         p: self._properties.get("grid")[p]["is_complete"] for p in properties
-    #     }
-    #     any_complete = any(v for v in is_complete.values())
-    #     data = self._get_single_grid_property(
-    #         property_name=properties[0], ts=ts, elements=elements
-    #     )
-    #     if any_complete and not is_complete[properties[0]]:
-    #         data = self._get_grid_data_to_complete(
-    #             values=data, elements=elements
-    #         )
-    #     data = data.reshape(-1, 1)
-    #     for p in properties[1:]:
-    #         data_new = self._get_single_grid_property(
-    #             property_name=p, ts=ts, elements=elements
-    #         )
-    #         if any_complete and not is_complete[p]:
-    #             data_new = self._get_grid_data_to_complete(
-    #                 values=data_new, elements=elements
-    #             )
-    #         data = self._concat(data, data_new)
-    #     return data
-
-
-    # def _get_grid_data_interpolated(self,
-    #                                 properties,
-    #                                 day,
-    #                                 elements):
-    #     def _get_timesteps_for_interpolation(day):
-    #         ts_index = np.where(self._dates.get_days("grid") == day)[0]
-    #         if len(ts_index) > 0:
-    #             ts = self._dates.get_timesteps("grid")[ts_index[0]]
-    #             return ts_index[0], ts, ts
-    #         ts_index = np.where(self._dates.get_days("grid") > day)[0][0]
-    #         ts_a = self._dates.get_timesteps("grid")[ts_index - 1]
-    #         ts_b = self._dates.get_timesteps("grid")[ts_index]
-    #         return ts_index, ts_a, ts_b
-    #     ts_index, ts_a, ts_b = _get_timesteps_for_interpolation(day)
-
-    #     def _cannot_interpolate_grid_data(properties, ts):
-    #         if isinstance(properties, str):
-    #             property_ = self._properties.get("grid")[properties]
-    #             if property_["is_internal"]:
-    #                 return False
-    #             if ts in property_["timesteps"]:
-    #                 return False
-    #             return True
-    #         not_ok_list = []
-    #         for p in properties:
-    #             if _cannot_interpolate_grid_data(p, ts):
-    #                 not_ok_list.append(p)
-    #         return not_ok_list
-
-    #     cannot_interpolate = self._remove_duplicates(
-    #         _cannot_interpolate_grid_data(properties, ts_a)
-    #         + _cannot_interpolate_grid_data(properties, ts_b)
-    #     )
-    #     if len(cannot_interpolate) > 0:
-    #         msg = "Cannot interpolate the following "
-    #         msg += f"properties at {day} days: "
-    #         msg += f"{', '.join(cannot_interpolate)}."
-    #         raise ValueError(msg)
-
-    #     if ts_a == ts_b:
-    #         return self._get_multiple_grid_properties(
-    #                 properties=properties,
-    #                 ts=ts_a,
-    #                 elements=elements)
-
-    #     data_a = self._get_multiple_grid_properties(
-    #         properties=properties,
-    #         ts=ts_a,
-    #         elements=elements)
-    #     data_b = self._get_multiple_grid_properties(
-    #         properties=properties,
-    #         ts=ts_b,
-    #         elements=elements)
-
-    #     day_a = self._dates.get_days("grid")[ts_index - 1]
-    #     day_b = self._dates.get_days("grid")[ts_index]
-
-    #     alfa = (day - day_a) / (day_b - day_a)
-    #     return data_a + alfa * (data_b - data_a)
-
-
-    # def _get_grid_data(self,
-    #                   properties,
-    #                   day=None,
-    #                   elements=None,
-    #                   return_complete=False,
-    #                   default=0):
-    #     """Returns grid data
-
-    #     Parameters
-    #     ----------
-    #     properties : [str]
-    #         Properties to be evaluated.
-    #     elements : [str], optional
-    #         List of elements to be evaluated.
-    #         Returns all elements if None.
-    #         (default: None)
-    #     days : [float], optional
-    #         List of days to return data.
-    #         Returns all timesteps if None.
-    #         (default: None)
-    #     return_complete: [bool], optional
-    #         Returns array with values for
-    #         all cells.
-    #         (default: False)
-    #     default: [int/float], optional
-    #         Value to be used in the inactive
-    #         cells.
-    #         (default: 0)
-
-    #     Raises
-    #     ------
-    #     ValueError
-    #         If property_name is not found.
-    #     """
-    #     if elements is None:
-    #         elements = ["MATRIX"]
-    #     elif isinstance(elements, str):
-    #         elements = [elements]
-    #     if isinstance(properties, str):
-    #         properties = [properties]
-    #     if day is None:
-    #         day = 0
-    #     elif day < 0:
-    #         raise ValueError("Negative days are not valid.")
-    #     elif day > self._dates.get_days("grid")[-1]:
-    #         msg = f"No data beyond {self._dates.get_days('grid')[-1]} days. "
-    #         msg += f"{day} days is not valid."
-    #         raise ValueError(msg)
-
-    #     data= self._get_grid_data_interpolated(
-    #         properties=properties,
-    #         day=day,
-    #         elements=elements)
-    #     if return_complete:
-    #         return self._get_grid_data_to_complete(
-    #             data,
-    #             elements=elements,
-    #             default=default)
-    #     return data
 
 # MARK: Save Data
 

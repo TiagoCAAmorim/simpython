@@ -267,13 +267,13 @@ class GridHandler:
         return self._properties[name]["is_internal"]
 
 
-    def get_cell_indexes(self, property_name, elements=None):
+    def get_cell_indexes(self, is_complete, elements=None):
         """Returns cell indexes for the given property.
 
             Parameters
             ----------
-            property_name : str
-                Property name.
+            is_complete : bool
+                If property is complete.
             elements : list, optional
                 List of elements to return: 'MATRIX' or 'FRACTURE'.
                 If None, returns all elements.
@@ -288,12 +288,10 @@ class GridHandler:
             ValueError
                 If property name is not found.
         """
-        if property_name not in self._properties:
-            raise ValueError(f"Property {property_name} not found.")
         elements = self._validate_elements(elements)
 
-        if self.is_complete(property_name):
-            index = np.array(range(self._sizes["n_cells"]))
+        if is_complete:
+            index = np.array(range(1, self._sizes["n_cells"]+1))
             frac_index = self._sizes["n_matrix"]
         else:
             index = self._active_index

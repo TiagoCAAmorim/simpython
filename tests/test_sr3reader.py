@@ -798,6 +798,10 @@ class TestSr3Reader(unittest.TestCase):
         true_result = 67241
         self.assertEqual(true_result, file_read)
 
+        file_read = sr3.grid.get_size("n_cells")
+        true_result = 47 * 39 * 291
+        self.assertEqual(true_result, file_read)
+
 # MARK: Timeseries
     def test_read_timeseries(self):
         """Tests reading timeseries"""
@@ -901,25 +905,67 @@ class TestSr3Reader(unittest.TestCase):
         test_file = Path("tests/sr3/base_case_3a.sr3")
         sr3 = Sr3Reader(test_file)
 
-        file_read = sr3.data.get(
-            element_type="grid",
-            properties="BLOCKDEPTH",
-            days=0.,
-            active_only=False)
-        file_read_ = file_read["BLOCKDEPTH"].sel(day=0.).values
-        self.assertEqual(len(file_read_), sr3.grid.get_size("n_cells"))
-        file_read_ = file_read["index"].values
-        self.assertEqual(file_read_[-1], sr3.grid.get_size("n_cells")-1)
 
         file_read = sr3.data.get(
             element_type="grid",
-            properties="NET/GROSS",
-            elements="MATRIX",
-            days=0.)
+            properties=["BLOCKDEPTH", "NET/GROSS"],
+            days=0.,
+            active_only=False)
+
+        file_read_ = file_read["index"].values
+        self.assertEqual(file_read_[-1], sr3.grid.get_size("n_cells"))
+
+        file_read_ = file_read["BLOCKDEPTH"].sel(day=0.).values
+        self.assertEqual(len(file_read_), sr3.grid.get_size("n_cells"))
+
+        true_result = [
+            5257.2,
+            5342.5,
+            5428.7,
+            5513.8,
+            5589.9,
+            5651.9,
+            5703.2,
+            5818.1,
+            5818.1,
+            5818.1
+        ]
+        for i in range(10):
+            self.assertAlmostEqual(true_result[i], round(file_read_[i],1))
+
         file_read_ = file_read["NET/GROSS"].sel(day=0.).values
-        self.assertEqual(len(file_read_), sr3.grid.get_size("n_active_matrix"))
+        for i in range(10):
+            self.assertAlmostEqual(0., file_read_[i])
+
+
+        file_read = sr3.data.get(
+            element_type="grid",
+            properties=["BLOCKDEPTH", "NET/GROSS"],
+            days=0.,
+            active_only=True)
+
+        file_read_ = file_read["BLOCKDEPTH"].sel(day=0.).values
+        self.assertEqual(len(file_read_), sr3.grid.get_size("n_active"))
+
+        true_result = [
+            5507.3,
+            5494.4,
+            5515.1,
+            5484.5,
+            5509.3,
+            5541.7,
+            5464.5,
+            5485.2,
+            5515.4,
+            5688.3
+        ]
+        for i in range(10):
+            self.assertAlmostEqual(true_result[i], round(file_read_[i],1))
+
+        file_read_ = file_read["NET/GROSS"].sel(day=0.).values
         for i in range(sr3.grid.get_size("n_active")):
             self.assertAlmostEqual(file_read_[i], 1)
+
 
         with self.assertRaises(ValueError):
             file_read = sr3.data.get(
@@ -928,13 +974,14 @@ class TestSr3Reader(unittest.TestCase):
                 elements="MATRIX",
                 days=30.)
 
+
         file_read = sr3.data.get(
             element_type="grid",
             properties="PRES",
             elements="MATRIX",
             days=30.)
+
         file_read_ = file_read["PRES"].sel(day=30.).values
-        file_read_list = list(file_read_[:10])
         true_result = [
             63489.766,
             63396.96,
@@ -949,17 +996,19 @@ class TestSr3Reader(unittest.TestCase):
         ]
         true_result = [round(t / 98.0665, 3) for t in true_result]
         for i in range(10):
-            self.assertAlmostEqual(true_result[i], round(file_read_list[i],3))
+            self.assertAlmostEqual(true_result[i], round(file_read_[i],3))
+
 
         file_read = sr3.data.get(
             element_type="grid",
             properties=["PRES","SO"],
             elements="MATRIX",
             days=[0., 30.])
+
         file_read_ = file_read["PRES"].sel(day=30.).values
-        file_read_list = list(file_read_[:10])
         for i in range(10):
-            self.assertAlmostEqual(true_result[i], round(file_read_list[i],3))
+            self.assertAlmostEqual(true_result[i], round(file_read_[i],3))
+
 
         file_read = sr3.data.get(
             element_type="grid",
@@ -967,7 +1016,6 @@ class TestSr3Reader(unittest.TestCase):
             elements="MATRIX",
             days=10.)
         file_read_ = file_read["VISO"].sel(day=10.).values
-        file_read_list = list(file_read_[:10])
         true_result = [
             (2 * 0.38856095 + 0.38856095) / 3,
             (2 * 0.3883772 + 0.3883772) / 3,
@@ -981,7 +1029,7 @@ class TestSr3Reader(unittest.TestCase):
             (2 * 0.39111543 + 0.39111543) / 3,
         ]
         for i in range(10):
-            self.assertAlmostEqual(true_result[i], file_read_list[i])
+            self.assertAlmostEqual(true_result[i], file_read_[i])
 
 
 if __name__ == "__main__":
