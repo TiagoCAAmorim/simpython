@@ -123,7 +123,7 @@ class TestSr3Reader(unittest.TestCase):
         file_read = sr3.elements.get("layer").keys()
         _test_equal_lists(self, true_result, file_read, True)
 
-        true_result = ["MATRIX", "FRACTURE"]
+        true_result = ["MATRIX"]
         file_read = sr3.elements.get("grid").keys()
         _test_equal_lists(self, true_result, file_read)
 
@@ -904,7 +904,8 @@ class TestSr3Reader(unittest.TestCase):
         file_read = sr3.data.get(
             element_type="grid",
             properties="BLOCKDEPTH",
-            days=0.)
+            days=0.,
+            active_only=False)
         file_read_ = file_read["BLOCKDEPTH"].sel(day=0.).values
         self.assertEqual(len(file_read_), sr3.grid.get_size("n_cells"))
         file_read_ = file_read["index"].values

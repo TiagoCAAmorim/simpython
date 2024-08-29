@@ -103,7 +103,7 @@ class ElementHandler:
     def _get_elements(self, element_type):
         if element_type == "grid":
             self._element["grid"] = {"MATRIX":0}
-            if self._grid.has_fracture:
+            if self._grid.has_fracture():
                 self._element["grid"]["FRACTURE"] = self._grid.get_size("n_active_matrix")
         else:
             dataset = self._file.get_element_table(
