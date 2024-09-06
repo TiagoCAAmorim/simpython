@@ -127,21 +127,38 @@ class TestGridFile(unittest.TestCase):
             self.assertEqual(data.n2ijk(4),
                             (1,2,1),
                             "Coordinate should be (1,2,1)")
+            self.assertEqual(data.n2ijk(4, True),
+                            (1,2,1,'M'),
+                            "Coordinate should be (1,2,1,'M')")
+            self.assertEqual(data.n2ijk(4 + 24, True),
+                            (1,2,1,'F'),
+                            "Coordinate should be (1,2,1,'F')")
             self.assertEqual(data.n2ijk(9),
                             (3,1,2),
                             "Coordinate should be (3,1,2)")
             npt.assert_array_equal(data.n2ijk([4,9]),
                                    np.array([(1,2,1),(3,1,2)]))
+            npt.assert_array_equal(data.n2ijk([4+24,9], True),
+                                   np.array([(1,2,1,'F'),(3,1,2,'M')]))
 
             self.assertEqual(data.ijk2n((3,1,2)),
                             9,
                             "Cell number should be 9")
+            self.assertEqual(data.ijk2n((3,1,2,'M')),
+                            9,
+                            "Cell number should be 9")
+            self.assertEqual(data.ijk2n((3,1,2,'F')),
+                            9 + 3*2*4,
+                            "Cell number should be 33")
             self.assertEqual(data.ijk2n((ni,nj,nk)),
                             data.get_number_values(),
                             "Cell number should be number of values")
             npt.assert_array_equal(data.ijk2n(((3,1,2), (1,2,1))),
                             (9, 4),
                             "Cell numbers should be 9 and 4")
+            npt.assert_array_equal(data.ijk2n(((3,1,2,'M'), (1,2,1,'F'))),
+                            (9, 4 + 3*2*4),
+                            "Cell numbers should be 9 and 28")
 
             with tempfile.NamedTemporaryFile(suffix='.geo') as temp_file:
                 data.write(file_path=temp_file.name, coord_range=((2,3),(1,2),(2,3)))

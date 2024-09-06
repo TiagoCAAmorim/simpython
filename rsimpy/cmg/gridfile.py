@@ -170,13 +170,16 @@ class GridFile:
         return self._data['keyword']
 
 
-    def n2ijk(self, n):
+    def n2ijk(self, n, has_fractures=False):
         """Returns (i,j,k) coordinates of the n-th cell.
 
             Parameters
             ----------
             n : int or [int]
                 Cell number, from 0 to number of values-1.
+            has_fractures: bool, optional
+                Indicates if grid has fractures.
+                (default: False)
 
             Raises
             ------
@@ -188,7 +191,7 @@ class GridFile:
         if self.shape is None:
             msg = "Grid size is not defined."
             raise ValueError(msg)
-        return _n2ijk(self.shape, n)
+        return _n2ijk(self.shape, n, has_fractures)
 
 
     def ijk2n(self, ijk):
@@ -197,7 +200,10 @@ class GridFile:
             Parameters
             ----------
             ijk : list/tuple or [list/tuple]
-                (i,j,k) coordinates.
+                (i,j,k) coordinates. Grids with fractures
+                should have an additional element indicating
+                if the cell is matrix ('M') or fracture ('F').
+                E.g.: (i, j, k, 'M') or [(i, j, k, 'F'), ...]
 
             Raises
             ------

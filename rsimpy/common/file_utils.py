@@ -73,7 +73,7 @@ def save_to_csv(values, output_file_path, header=None):
     ----------
     values : Pandas.DataFrame-like input
         Data to be saved.
-    output_file_path : str
+    output_file_path : str or pathlib.Path
         Path of the new csv file.
     header : list of str, optional
         Names of the columns.
