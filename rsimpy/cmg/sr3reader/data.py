@@ -28,7 +28,7 @@ class DataHandler:
 
     Parameters
     ----------
-    sr3_reader : sr3reader.Sr3Reader
+    sr3_reader: sr3reader.Sr3Reader
         SR3 reader object.
 
     Methods
@@ -56,19 +56,19 @@ class DataHandler:
 
         Parameters
         ----------
-        element type : str
+        element type: str
             Element type to be evaluated.
-        properties : [str]
+        properties: [str]
             Properties to be evaluated.
-        elements : [str], optional
+        elements: [str], optional
             List of elements to be evaluated.
             Returns all elements if None.
             (default: None)
-        days : [float], optional
+        days: [float], optional
             List of days to return data.
             Returns all timesteps if None.
             (default: None)
-        active_only : bool, optional
+        active_only: bool, optional
             If True, returns only active cells.
             Ignored if element_type is not grid.
             (default: True)
@@ -86,19 +86,19 @@ class DataHandler:
             properties=properties,
             elements=elements,
             days=days)
-
         if element_type == "grid":
-            return self._get_grid_data(
+            xr_dataset = self._get_grid_data(
                 properties=properties,
                 elements=elements,
                 days=days,
                 active_only=active_only)
-
-        return self._get_timeseries(
-            element_type=element_type,
-            properties=properties,
-            elements=elements,
-            days=days)
+        else:
+            xr_dataset = self._get_timeseries(
+                element_type=element_type,
+                properties=properties,
+                elements=elements,
+                days=days)
+        return SimData(xr_dataset)
 
 
 # MARK: Validate Input
@@ -316,12 +316,11 @@ class DataHandler:
         data = data * gain + offset
 
         is_complete = self._grid.is_complete(property_name)
+        index = self._grid.get_cell_indexes(is_complete=not active_only, elements=elements)
         if active_only:
             data = self._grid_data_to_active(is_complete, data, elements)
-            index = self._grid.get_cell_indexes(False, elements)
         else:
             data = self._grid_data_to_complete(is_complete, data, elements)
-            index = self._grid.get_cell_indexes(True, elements)
 
         data_array = xr.DataArray(
             data,
@@ -338,8 +337,13 @@ class DataHandler:
     def _get_grid_data(self, properties, elements, days, active_only):
         xr_dataset = xr.Dataset()
         xr_dataset.attrs["element_type"] = "grid"
+        xr_dataset.attrs["element"] = elements
         xr_dataset.attrs["file"] = self._file.get_filepath()
+        xr_dataset.attrs["active_only"] = active_only
 
+        index = self._grid.get_cell_indexes(is_complete=not active_only, elements=elements)
+        xr_dataset["index"] = index
+        xr_dataset["cell"] = self._grid.n2ijk(index, as_string=True)
         xr_dataset["day"] = days
         xr_dataset["date"] = self._dates.day2date(days)
 
@@ -377,22 +381,24 @@ class DataHandler:
     def _grid_data_to_active(self, is_complete, values, elements):
         if not is_complete:
             return values
-
         return values[self._grid.get_cell_indexes(False, elements) - 1]
 
 
 # MARK: Save Data
 
     def to_csv(self,
+               filename,
                element_type,
                properties,
                elements=None,
-               days=None,
-               filename=None):
+               days=None):
         """Saves data to a CSV file.
 
         Parameters
         ----------
+        filename : str
+            Filename to save the data.
+            If None, the data is not saved.
         element type : str
             Element type to be evaluated.
         properties : [str]
@@ -405,28 +411,88 @@ class DataHandler:
             List of days to return data.
             Returns all timesteps if None.
             (default: None)
-        filename : str, optional
-            Filename to save the data.
-            If None, the data is not saved.
-            (default: None)
         """
-        xr_dataset = self.get(
+        sim_data = self.get(
             element_type=element_type,
             properties=properties,
             elements=elements,
             days=days)
-        if filename is not None:
-            time_data = np.array([xr_dataset["day"].values, xr_dataset["date"].values])
-            df = pd.DataFrame(time_data.T, columns=["day", "date"])
+        sim_data.to_csv(filename)
 
-            df['date'] = pd.to_datetime(df['date'])
-            df['date'] = df['date'].dt.strftime('%Y-%m-%d %H:%M:%S.%f')
 
-            columns = [("day","",""), ("date","","")]
-            for prop in properties:
-                data = xr_dataset[prop].values
-                for i, e in enumerate(xr_dataset["element"].values):
-                    df[f"{prop}_{e}"] = data[:, i]
-                    columns.append((prop, e, xr_dataset[prop].attrs["unit"]))
-            df.columns = pd.MultiIndex.from_tuples(columns)
-            df.to_csv(filename, index=False)
+# MARK: Simulation Data
+
+class SimData(xr.Dataset):
+    """Custom class to handle simulation data.
+
+    This class inherits from xarray.Dataset and provides
+    additional functionality to save data to a CSV file.
+
+    Parameters
+    ----------
+    xr.Dataset : xarray.Dataset
+        xarray dataset object.
+
+    Methods
+    -------
+    to_csv(filename)
+        Saves data to a CSV file.
+    """
+
+    def __init__(self, xr_dataset, *args, **kwargs):
+        super().__init__(xr_dataset, *args, **kwargs)
+
+        for attr in xr_dataset.attrs:
+            self.attrs[attr] = xr_dataset.attrs[attr]
+
+        for var in xr_dataset.data_vars:
+            self[var] = xr_dataset[var]
+
+        for coord in xr_dataset.coords:
+            self.coords[coord] = xr_dataset.coords[coord]
+
+
+    def _timeseries_to_df(self):
+        time_data = np.array([self["day"].values, self["date"].values])
+        df = pd.DataFrame(time_data.T, columns=["day", "date"])
+
+        df['date'] = pd.to_datetime(df['date'])
+        df['date'] = df['date'].dt.strftime('%Y-%m-%d %H:%M:%S.%f')
+
+        columns = [("day","",""), ("date","","")]
+        for prop in self.data_vars.keys():
+            data = self[prop].values
+            for i, e in enumerate(self["element"].values):
+                df[f"{prop}_{e}"] = data[:, i]
+                columns.append((prop, e, self[prop].attrs["unit"]))
+        df.columns = pd.MultiIndex.from_tuples(columns)
+        return df
+
+
+    def _grid_to_df(self):
+        cell_data = np.array([self["index"].values, self["cell"].values])
+        df = pd.DataFrame(cell_data.T, columns=["index", "cell"])
+
+        columns = [("index","",""), ("cell","","")]
+        for prop in self.data_vars.keys():
+            data = self[prop].values
+            for i, d in enumerate(self["day"].values):
+                df[f"{prop}_{d}"] = data[:, i]
+                columns.append((prop, d, self[prop].attrs["unit"]))
+        df.columns = pd.MultiIndex.from_tuples(columns)
+        return df
+
+
+    def to_csv(self, filename):
+        """Saves data to a CSV file.
+
+        Parameters
+        ----------
+        filename: str or pathlib.Path
+            Filename to save the data.
+        """
+        if self.attrs["element_type"] == "grid":
+            df = self._grid_to_df()
+        else:
+            df = self._timeseries_to_df()
+        df.to_csv(filename, index=False)

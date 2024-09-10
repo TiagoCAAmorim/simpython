@@ -889,14 +889,6 @@ class TestSr3Reader(unittest.TestCase):
                        2677.2224149999997]
         _test_equal_lists(self, true_result, list(file_read_))
 
-        sr3.units.set_current(dimensionality="well liquid volume", unit="bbl")
-        sr3.data.to_csv(
-            element_type="well",
-            properties=["QO","BHP","NP"],
-            elements=["P11","P13"],
-            filename='test.csv')
-        self.assertTrue(Path('test.csv').is_file())
-        Path('test.csv').unlink()
 
 # MARK: Grid properties
     def test_read_grid(self):
@@ -1030,6 +1022,44 @@ class TestSr3Reader(unittest.TestCase):
         ]
         for i in range(10):
             self.assertAlmostEqual(true_result[i], file_read_[i])
+
+# MARK: Save to CSV
+
+    def test_to_csv(self):
+        """Tests saving data to csv"""
+
+        test_file = Path("tests/sr3/base_case_3a.sr3")
+        sr3 = Sr3Reader(test_file)
+
+        file_read = sr3.data.get(
+            element_type="special",
+            properties="ELAPSED",
+            days=[30., 1085., 2162.])
+
+        file_read.to_csv('test_A.csv')
+        self.assertTrue(Path('test_A.csv').is_file())
+        Path('test_A.csv').unlink()
+
+
+        sr3.units.set_current(dimensionality="well liquid volume", unit="bbl")
+        sr3.data.to_csv(
+            filename='test_B.csv',
+            element_type="well",
+            properties=["QO","BHP","NP"],
+            elements=["P11","P13"])
+        self.assertTrue(Path('test_B.csv').is_file())
+        Path('test_B.csv').unlink()
+
+
+        file_read = sr3.data.get(
+            element_type="grid",
+            properties=["SO","PRES","VISO","Z(CO2)"],
+            elements="MATRIX",
+            days=[10., 20.])
+
+        file_read.to_csv('test_C.csv')
+        self.assertTrue(Path('test_C.csv').is_file())
+        Path('test_C.csv').unlink()
 
 
 if __name__ == "__main__":
