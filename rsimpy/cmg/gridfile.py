@@ -176,9 +176,13 @@ class GridFile:
             Parameters
             ----------
             n : int or [int]
-                Cell number, from 0 to number of values-1.
+                Cell number, from 1 to ni*nj*nk or
+                2*ni*nj*nk, if has_fractures is True.
             has_fractures: bool, optional
-                Indicates if grid has fractures.
+                Indicates if grid has fractures. If
+                True the coordinates will have an additional
+                element indicating if the cell is matrix ('M')
+                or fracture ('F').
                 (default: False)
 
             Raises
@@ -200,10 +204,12 @@ class GridFile:
             Parameters
             ----------
             ijk : list/tuple or [list/tuple]
-                (i,j,k) coordinates. Grids with fractures
-                should have an additional element indicating
-                if the cell is matrix ('M') or fracture ('F').
+                (i,j,k) coordinates or list of coordinates.
+                Grids with fractures must have an additional
+                element indicating if the cell is matrix
+                ('M') or fracture ('F').
                 E.g.: (i, j, k, 'M') or [(i, j, k, 'F'), ...]
+
 
             Raises
             ------
