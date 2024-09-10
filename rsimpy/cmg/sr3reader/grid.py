@@ -16,6 +16,7 @@ ni, nj, nk = grid_handler.get_size("nijk")
 """
 
 import numpy as np
+from rsimpy.common.utils import _n2ijk, _ijk2n
 
 
 class GridHandler:
@@ -323,13 +324,18 @@ class GridHandler:
         return elements
 
 
-    def n2ijk(self, n):
+    def n2ijk(self, n, as_string=False):
         """Returns (i,j,k) coordinates of the n-th cell.
 
             Parameters
             ----------
-            n : int
-                Cell number, from 0 to number of values-1.
+            n : int or [int]
+                Cell number, from 1 to ni*nj*nk or
+                2*ni*nj*nk, if has_fractures is True.
+            as_string : bool, optional
+                If True, returns the coordinates as
+                strings.
+                (default: False)
 
             Raises
             ------
@@ -338,38 +344,23 @@ class GridHandler:
             ValueError
                 If shape is not defined.
         """
-        if n < 0:
-            msg = "Cells number must be greater than or equal to 0."
-            raise ValueError(msg)
-
-        ni, nj, nk = self._sizes["nijk"]
-
-        if n > ni*nj*nk:
-            msg = "Cells number must be smaller than number of values."
-            raise ValueError(msg)
-
-        k = int(n/(ni*nj)) + 1
-        j = int( (n/ni - (k-1)*nj)) + 1
-        i = n - (k-1)*ni*nj - (j-1)*ni + 1
-        return i, j, k
+        ijk = _n2ijk(self._sizes["nijk"], n, self.has_fracture())
+        if as_string:
+            ijk = [','.join([str(c) for c in c]) for c in ijk]
+        return ijk
 
 
-    def ijk2n(self, i, j=None, k=None):
+    def ijk2n(self, ijk):
         """Returns cell number of the (i,j,k) cell.
 
             Parameters
             ----------
-            i : int or list/tuple
-                i direction coordinate or list/tuple
-                with (i,j,k) coordinates.
-            j : int, optional
-                j direction coordinate. Assumes i contains
-                all coordinates if None is provided.
-                (default: None)
-            k : int, optional
-                k direction coordinate. Assumes i contains
-                all coordinates if None is provided.
-                (default: None)
+            ijk : list/tuple or [list/tuple]
+                (i,j,k) coordinates or list of coordinates.
+                Grids with fractures must have an additional
+                element indicating if the cell is matrix
+                ('M') or fracture ('F').
+                E.g.: (i, j, k, 'M') or [(i, j, k, 'F'), ...]
 
             Raises
             ------
@@ -378,26 +369,4 @@ class GridHandler:
             ValueError
                 If shape is not defined.
         """
-        if (j is None) and (k is None):
-            if len(i) != 3:
-                msg = f"Expected 3 coordinates, found {len(i)}."
-                raise ValueError(msg)
-            i, j, k = i
-        if (j is not None) and (k is None):
-            msg = "Coordinates must be provided as a tuple/list or separate arguments."
-            raise ValueError(msg)
-        if (j is None) and (k is not None):
-            msg = "Coordinates must be provided as a tuple/list or separate arguments."
-            raise ValueError(msg)
-
-        if (i < 1) or (j < 1) or (k < 1):
-            msg = "Coordinates number must be greater than or equal to 1."
-            raise ValueError(msg)
-
-        ni, nj, nk = self._sizes["nijk"]
-
-        if (i > ni) or (j > nj) or (k > nk):
-            msg = "Coordinates number must be smaller than or equal to grid sizes."
-            raise ValueError(msg)
-
-        return (k - 1)*ni*nj + (j - 1)*ni + i - 1
+        return _ijk2n(self._sizes["nijk"], ijk)
