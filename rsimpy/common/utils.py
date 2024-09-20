@@ -32,7 +32,9 @@ def is_vector(obj):
 def _n2ijk(nijk, n, has_fractures=False):
     """Returns (i,j,k) coordinates of the n-th cell.
 
-       cell index starts from 1.
+    Cell index starts from 1.
+    If has_fractures is True, returns (i,j,k,element).
+    'element' is 1 for matrix and 2 for fractures.
     """
     n_ = np.array(n)
     if np.any(n_ < 1):
@@ -56,26 +58,30 @@ def _n2ijk(nijk, n, has_fractures=False):
 
     if not has_fractures:
         if is_iterable_not_str(n):
-            return np.array((i, j, k)).T
-        return i, j, k
+            return np.array((i, j, k)).T.astype(int)
+        return int(i), int(j), int(k)
 
-    element = np.where(k <= nk, 'M', 'F')
+    element = np.where(k <= nk, 1, 2)
     k = np.where(k <= nk, k, k - nk)
     if is_iterable_not_str(n):
-        return np.array((i, j, k, element)).T
-    return i, j, int(k), str(element)
+        return np.array((i, j, k, element)).T.astype(int)
+    return int(i), int(j), int(k), int(element)
 
 
 @staticmethod
 def _ijk2n(nijk, ijk):
-    """Returns cell number of the (i,j,k) cell."""
+    """Returns cell number of the (i,j,k) cell.
+
+    If has a 4th value, assumes the format (i,j,k,element).
+    'element' is 1 for matrix and 2 for fractures.
+    """
     ijk_ = np.array(ijk)
     if len(ijk_.shape) == 1:
         ijk_ = np.expand_dims(ijk_, axis=0)
 
     ni, nj, nk = nijk
     if ijk_.shape[1] == 4:
-        n0 = np.where(ijk_[:,3] == 'M', 0, ni*nj*nk)
+        n0 = np.where(ijk_[:,3] == 1, 0, ni*nj*nk)
         ijk_ = ijk_[:,:3].astype(int)
     else:
         n0 = np.zeros(ijk_.shape[0])
@@ -88,4 +94,8 @@ def _ijk2n(nijk, ijk):
         msg = "Coordinates number must be smaller than or equal to grid sizes."
         raise ValueError(msg)
 
-    return (ijk_[:,2] - 1)*ni*nj + (ijk_[:,1] - 1)*ni + ijk_[:,0] + n0
+    n = (ijk_[:,2] - 1)*ni*nj + (ijk_[:,1] - 1)*ni + ijk_[:,0] + n0
+
+    if is_iterable_not_str(ijk):
+        return n.astype(int)
+    return int(n)

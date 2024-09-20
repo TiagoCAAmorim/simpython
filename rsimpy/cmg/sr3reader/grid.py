@@ -359,8 +359,8 @@ class GridHandler:
                 (i,j,k) coordinates or list of coordinates.
                 Grids with fractures must have an additional
                 element indicating if the cell is matrix
-                ('M') or fracture ('F').
-                E.g.: (i, j, k, 'M') or [(i, j, k, 'F'), ...]
+                (1) or fracture (2).
+                E.g.: (i, j, k, 1) or [(i, j, k, 2), ...]
 
             Raises
             ------

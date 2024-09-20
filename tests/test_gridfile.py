@@ -128,26 +128,26 @@ class TestGridFile(unittest.TestCase):
                             (1,2,1),
                             "Coordinate should be (1,2,1)")
             self.assertEqual(data.n2ijk(4, True),
-                            (1,2,1,'M'),
-                            "Coordinate should be (1,2,1,'M')")
+                            (1,2,1,1),
+                            "Coordinate should be (1,2,1,1)")
             self.assertEqual(data.n2ijk(4 + 24, True),
-                            (1,2,1,'F'),
-                            "Coordinate should be (1,2,1,'F')")
+                            (1,2,1,2),
+                            "Coordinate should be (1,2,1,2)")
             self.assertEqual(data.n2ijk(9),
                             (3,1,2),
                             "Coordinate should be (3,1,2)")
             npt.assert_array_equal(data.n2ijk([4,9]),
                                    np.array([(1,2,1),(3,1,2)]))
             npt.assert_array_equal(data.n2ijk([4+24,9], True),
-                                   np.array([(1,2,1,'F'),(3,1,2,'M')]))
+                                   np.array([(1,2,1,2),(3,1,2,1)]))
 
             self.assertEqual(data.ijk2n((3,1,2)),
                             9,
                             "Cell number should be 9")
-            self.assertEqual(data.ijk2n((3,1,2,'M')),
+            self.assertEqual(data.ijk2n((3,1,2,1)),
                             9,
                             "Cell number should be 9")
-            self.assertEqual(data.ijk2n((3,1,2,'F')),
+            self.assertEqual(data.ijk2n((3,1,2,2)),
                             9 + 3*2*4,
                             "Cell number should be 33")
             self.assertEqual(data.ijk2n((ni,nj,nk)),
@@ -156,7 +156,7 @@ class TestGridFile(unittest.TestCase):
             npt.assert_array_equal(data.ijk2n(((3,1,2), (1,2,1))),
                             (9, 4),
                             "Cell numbers should be 9 and 4")
-            npt.assert_array_equal(data.ijk2n(((3,1,2,'M'), (1,2,1,'F'))),
+            npt.assert_array_equal(data.ijk2n(((3,1,2,1), (1,2,1,2))),
                             (9, 4 + 3*2*4),
                             "Cell numbers should be 9 and 28")
 

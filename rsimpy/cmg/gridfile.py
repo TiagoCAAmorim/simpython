@@ -181,8 +181,8 @@ class GridFile:
             has_fractures: bool, optional
                 Indicates if grid has fractures. If
                 True the coordinates will have an additional
-                element indicating if the cell is matrix ('M')
-                or fracture ('F').
+                element indicating if the cell is matrix (1)
+                or fracture (2).
                 (default: False)
 
             Raises
@@ -207,8 +207,8 @@ class GridFile:
                 (i,j,k) coordinates or list of coordinates.
                 Grids with fractures must have an additional
                 element indicating if the cell is matrix
-                ('M') or fracture ('F').
-                E.g.: (i, j, k, 'M') or [(i, j, k, 'F'), ...]
+                (1) or fracture (2).
+                E.g.: (i, j, k, 1) or [(i, j, k, 2), ...]
 
 
             Raises
