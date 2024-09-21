@@ -29,11 +29,11 @@ def is_vector(obj):
 
 
 @staticmethod
-def _n2ijk(nijk, n, has_fractures=False):
+def _n2ijk(nijk, n, has_fracture=False):
     """Returns (i,j,k) coordinates of the n-th cell.
 
     Cell index starts from 1.
-    If has_fractures is True, returns (i,j,k,element).
+    If has_fracture is True, returns (i,j,k,element).
     'element' is 1 for matrix and 2 for fractures.
     """
     n_ = np.array(n)
@@ -43,7 +43,7 @@ def _n2ijk(nijk, n, has_fractures=False):
 
     ni, nj, nk = nijk
 
-    if has_fractures:
+    if has_fracture:
         f = 2
     else:
         f = 1
@@ -56,7 +56,7 @@ def _n2ijk(nijk, n, has_fractures=False):
     j = ((n_ // ni) - (k - 1) * nj) + 1
     i = n_ - (k - 1) * ni * nj - (j - 1) * ni + 1
 
-    if not has_fractures:
+    if not has_fracture:
         if is_iterable_not_str(n):
             return np.array((i, j, k)).T.astype(int)
         return int(i), int(j), int(k)

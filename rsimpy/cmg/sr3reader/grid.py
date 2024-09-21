@@ -53,6 +53,7 @@ class GridHandler:
         self._sizes = ()
         self._properties = []
         self._active_index = []
+        self._complete_index = []
         self._file = sr3_file
         self._dates = dates
 
@@ -64,6 +65,7 @@ class GridHandler:
     def read(self):
         """Reads grid information."""
         self._active_index = self._file.get_table("SpatialProperties/000000/GRID/IPSTCS")[:]
+        self._complete_index = self._file.get_table("SpatialProperties/000000/GRID/ICSTPS")[:]
         self._sizes = self._extract_grid_sizes()
         self._properties = self._extract_properties()
 
@@ -291,23 +293,23 @@ class GridHandler:
     def get_cell_indexes(self, is_complete, elements=None):
         """Returns cell indexes for the given property.
 
-            Parameters
-            ----------
-            is_complete : bool
-                If property is complete.
-            elements : list, optional
-                List of elements to return: 'MATRIX' or 'FRACTURE'.
-                If None, returns all elements.
+        Parameters
+        ----------
+        is_complete : bool
+            If property is complete.
+        elements : list, optional
+            List of elements to return: 'MATRIX' or 'FRACTURE'.
+            If None, returns all elements.
 
-            Returns
-            -------
-            list
-                List of cell indexes.
+        Returns
+        -------
+        list
+            List of cell indexes.
 
-            Raises
-            ------
-            ValueError
-                If property name is not found.
+        Raises
+        ------
+        ValueError
+            If property name is not found.
         """
         elements = self._validate_elements(elements)
 
@@ -344,6 +346,25 @@ class GridHandler:
         return elements
 
 
+    def complete2active(self, complete_index):
+        """Converts complete cell index to active cell index.
+
+        Inactive cells will have index 0.
+        """
+        i = self._complete_index[np.array(complete_index)-1]
+        if isinstance(i, int):
+            return i[0]
+        return i
+
+
+    def active2complete(self, active_index):
+        """Converts active cell index to complete cell index."""
+        i = self._active_index[np.array(active_index)-1]
+        if isinstance(i, int):
+            return i[0]
+        return i
+
+
     def n2ijk(self, n, as_string=False):
         """Returns (i,j,k) coordinates of the n-th cell.
 
@@ -351,7 +372,7 @@ class GridHandler:
             ----------
             n : int or [int]
                 Cell number, from 1 to ni*nj*nk or
-                2*ni*nj*nk, if has_fractures is True.
+                2*ni*nj*nk, if has_fracture is True.
             as_string : bool, optional
                 If True, returns the coordinates as
                 strings.

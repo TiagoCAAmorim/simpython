@@ -802,6 +802,33 @@ class TestSr3Reader(unittest.TestCase):
         true_result = 47 * 39 * 291
         self.assertEqual(true_result, file_read)
 
+        file_read = sr3.grid.active2complete(1)
+        true_result = 373
+        self.assertEqual(true_result, file_read)
+
+        file_read = sr3.grid.active2complete([1])
+        true_result = [373]
+        self.assertEqual(true_result, file_read)
+
+        file_read = sr3.grid.active2complete([1,3])
+        true_result = [373, 2159]
+        for t,r in zip(true_result, file_read):
+            self.assertEqual(t, r)
+
+        file_read = sr3.grid.complete2active(2205)
+        true_result = 4
+        self.assertEqual(true_result, file_read)
+
+        file_read = sr3.grid.complete2active([2159])
+        true_result = [3]
+        self.assertEqual(true_result, file_read)
+
+        file_read = sr3.grid.complete2active([2159, 373])
+        true_result = [3, 1]
+        for t,r in zip(true_result, file_read):
+            self.assertEqual(t, r)
+
+
     def test_read_grid_size_2phi(self):
         """Tests reading grid sizes in 2phi model"""
 
