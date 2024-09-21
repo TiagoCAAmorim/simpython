@@ -96,6 +96,6 @@ def _ijk2n(nijk, ijk):
 
     n = (ijk_[:,2] - 1)*ni*nj + (ijk_[:,1] - 1)*ni + ijk_[:,0] + n0
 
-    if is_iterable_not_str(ijk):
-        return n.astype(int)
-    return int(n)
+    if isinstance(ijk[0], int):
+        return int(n[0])
+    return n.astype(int)
