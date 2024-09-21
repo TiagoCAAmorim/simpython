@@ -16,7 +16,7 @@ ni, nj, nk = grid_handler.get_size("nijk")
 """
 
 import numpy as np
-from rsimpy.common.utils import _n2ijk, _ijk2n
+from rsimpy.common.utils import _n2ijk, _ijk2n, _is_neighbor
 
 
 class GridHandler:
@@ -430,3 +430,23 @@ class GridHandler:
                 If shape is not defined.
         """
         return _ijk2n(self._sizes["nijk"], ijk)
+
+    def is_neighbor(self, ijk1, ijk2):
+        """Checks if cells as neighbors.
+
+            Parameters
+            ----------
+            ijk1 : list/tuple or [list/tuple]
+                (i,j,k) coordinates or list of coordinates.
+                Grids with fractures must have an additional
+                element indicating if the cell is matrix
+                (1) or fracture (2).
+                E.g.: (i, j, k, 1) or [(i, j, k, 2), ...]
+            ijk2 : same as ijk1
+
+            Raises
+            ------
+            ValueError
+                If shapes are different.
+        """
+        return _is_neighbor(ijk1, ijk2)

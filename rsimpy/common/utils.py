@@ -99,3 +99,15 @@ def _ijk2n(nijk, ijk):
     if isinstance(ijk[0], int):
         return int(n[0])
     return n.astype(int)
+
+
+@staticmethod
+def _is_neighbor(ijk1, ijk2):
+    """Checks if two cells are neighbors."""
+    ijk1 = np.array(ijk1)
+    ijk2 = np.array(ijk2)
+    if ijk1.shape != ijk2.shape:
+        raise ValueError("Both arguments must have the same shape.")
+    if len(ijk1.shape) == 1:
+        return np.sum(np.abs(ijk1-ijk2)) == 1
+    return np.sum(np.abs(ijk1-ijk2), axis=1) == 1
