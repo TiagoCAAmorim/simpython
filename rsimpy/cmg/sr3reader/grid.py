@@ -345,20 +345,39 @@ class GridHandler:
             raise ValueError(msg)
         return elements
 
-
-    def complete2active(self, complete_index):
+# MARK: Index Converters
+    def complete2active(self, complete_index=None):
         """Converts complete cell index to active cell index.
 
         Inactive cells will have index 0.
+
+        Attributes
+        ----------
+        complete_index : int or [int], optional
+            Complete cell index or list of indexes.
+            If None, uses all cell indexes.
+            (default: None)
         """
+        if complete_index is None:
+            return self._complete_index
         i = self._complete_index[np.array(complete_index)-1]
         if isinstance(i, int):
             return i[0]
         return i
 
 
-    def active2complete(self, active_index):
-        """Converts active cell index to complete cell index."""
+    def active2complete(self, active_index=None):
+        """Converts active cell index to complete cell index.
+
+        Attributes
+        ----------
+        active_index : int or [int], optional
+            Active cell index or list of indexes.
+            If None, uses all active cell indexes.
+            (default: None)
+        """
+        if active_index is None:
+            return self._active_index
         i = self._active_index[np.array(active_index)-1]
         if isinstance(i, int):
             return i[0]

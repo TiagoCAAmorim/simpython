@@ -823,8 +823,8 @@ class TestSr3Reader(unittest.TestCase):
         true_result = [3]
         self.assertEqual(true_result, file_read)
 
-        file_read = sr3.grid.complete2active([2159, 373])
-        true_result = [3, 1]
+        file_read = sr3.grid.complete2active([2159, 373, 100])
+        true_result = [3, 1, 0]
         for t,r in zip(true_result, file_read):
             self.assertEqual(t, r)
 
