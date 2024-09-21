@@ -63,7 +63,7 @@ class GridHandler:
 
     def read(self):
         """Reads grid information."""
-        self._active_index = self._file.get_table("SpatialProperties/000000/GRID/IPSTCS")
+        self._active_index = self._file.get_table("SpatialProperties/000000/GRID/IPSTCS")[:]
         self._sizes = self._extract_grid_sizes()
         self._properties = self._extract_properties()
 
@@ -74,12 +74,13 @@ class GridHandler:
         nj = int(dataset["IGNTJD"][0])
         nk = int(dataset["IGNTKD"][0])
         n_cells = ni*nj*nk
-        n_active = self._active_index.size
+        n_active = int(self._active_index.size)
+        n_active_matrix = n_active
         n_fracture = 0
         n_active_fracture = 0
 
         if self._active_index[-1] > n_cells:
-            n_active_matrix = np.where(self._active_index > n_cells)[0][0]
+            n_active_matrix = int(np.where(self._active_index > n_cells)[0][0])
             n_active_fracture = n_active - n_active_matrix
             n_fracture = n_cells
             n_cells = 2 * n_cells
@@ -93,7 +94,7 @@ class GridHandler:
             "n_matrix": ni*nj*nk,
             "n_fracture": n_fracture,
             "n_active": n_active,
-            "n_active_matrix": n_active,
+            "n_active_matrix": n_active_matrix,
             "n_active_fracture": n_active_fracture
         }
 
@@ -116,6 +117,7 @@ class GridHandler:
 
         n_active = self._sizes["n_active"]
         n_cells = self._sizes["n_cells"]
+        n_matrix = self._sizes["n_matrix"]
         _dataset_type = type(self._file.get_table("General/HistoryTable"))
 
         def _list_grid_properties(timestep_str, set_timestep=None):
@@ -130,7 +132,7 @@ class GridHandler:
                     raise ValueError(msg)
 
                 size = sub_dataset.size
-                if size not in [n_cells, n_active]:
+                if size not in [n_cells, n_active, n_matrix]:
                     _ = grid_property_list.pop(key)
                     continue
                 if "size" in grid_property_list[key]:
@@ -140,8 +142,11 @@ class GridHandler:
                         raise ValueError(msg)
                 else:
                     grid_property_list[key]["size"] = size
+                    grid_property_list[key]["matrix_or_frat_only"] = (
+                        sub_dataset.size == n_matrix
+                    )
                     grid_property_list[key]["is_complete"] = (
-                        sub_dataset.size == n_cells
+                        sub_dataset.size in [n_cells, n_matrix]
                     )
 
                 if set_timestep is None:
@@ -267,6 +272,21 @@ class GridHandler:
         """
         return self._properties[name]["is_internal"]
 
+    def is_matrix_or_fracture_only(self, name):
+        """Check if property is defined only in matrix or fracture cells.
+
+        Parameters
+        ----------
+        name : str
+            Property name.
+
+        Returns
+        -------
+        bool
+            True if property is defined only in matrix or fracture cells.
+        """
+        return self._properties[name]["matrix_or_frat_only"]
+
 
     def get_cell_indexes(self, is_complete, elements=None):
         """Returns cell indexes for the given property.
@@ -301,7 +321,7 @@ class GridHandler:
         if elements == ["MATRIX"]:
             return index[:frac_index]
         if elements == ["FRACTURE"]:
-            return index[frac_index:-1]
+            return index[frac_index:]
         return index[:]
 
 

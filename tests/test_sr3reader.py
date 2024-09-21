@@ -802,6 +802,32 @@ class TestSr3Reader(unittest.TestCase):
         true_result = 47 * 39 * 291
         self.assertEqual(true_result, file_read)
 
+    def test_read_grid_size_2phi(self):
+        """Tests reading grid sizes in 2phi model"""
+
+        test_file = Path("tests/sr3/imex_2phi2k.sr3")
+        sr3 = Sr3Reader(test_file)
+
+        file_read = sr3.grid.get_size("nijk")
+        true_result = (4, 2, 1)
+        self.assertEqual(true_result, file_read)
+
+        file_read = sr3.grid.get_size("n_active")
+        true_result = 14
+        self.assertEqual(true_result, file_read)
+
+        file_read = sr3.grid.get_size("n_active_matrix")
+        true_result = 7
+        self.assertEqual(true_result, file_read)
+
+        file_read = sr3.grid.get_size("n_active_fracture")
+        true_result = 7
+        self.assertEqual(true_result, file_read)
+
+        file_read = sr3.grid.get_size("n_cells")
+        true_result = 4 * 2 * 1 * 2
+        self.assertEqual(true_result, file_read)
+
 # MARK: Timeseries
     def test_read_timeseries(self):
         """Tests reading timeseries"""
@@ -1022,6 +1048,180 @@ class TestSr3Reader(unittest.TestCase):
         ]
         for i in range(10):
             self.assertAlmostEqual(true_result[i], file_read_[i])
+
+# MARK: Grid properties
+    def test_read_grid_2phi2k(self):
+        """Tests reading 2phi2k grid properties"""
+
+        test_file = Path("tests/sr3/imex_2phi2k.sr3")
+        sr3 = Sr3Reader(test_file)
+
+        file_read = sr3.data.get(
+            element_type="grid",
+            properties=["BLOCKDEPTH", "NET/GROSS"],
+            elements=["MATRIX", "FRACTURE"],
+            days=0.,
+            active_only=False)
+
+        file_read_ = file_read["index"].values
+        self.assertEqual(file_read_[-1], sr3.grid.get_size("n_cells"))
+
+        file_read_ = file_read["BLOCKDEPTH"].sel(day=0.).values
+        self.assertEqual(len(file_read_), sr3.grid.get_size("n_cells"))
+
+        true_result = [
+            3005.500,
+            3006.500,
+            3007.500,
+            3008.500,
+            3005.500,
+            3006.500,
+            3007.500,
+            3008.500,
+            3005.500,
+            3006.500,
+            3007.500,
+            3008.500,
+            3005.500,
+            3006.500,
+            3007.500,
+            3008.500
+        ]
+        for t,v in zip(true_result, file_read_):
+            self.assertAlmostEqual(t, round(v,1))
+
+
+        file_read = sr3.data.get(
+            element_type="grid",
+            properties=["BLOCKDEPTH", "NET/GROSS"],
+            days=0.,
+            active_only=True)
+
+        file_read_ = file_read["NET/GROSS"].sel(day=0.).values
+        for v in file_read_:
+            self.assertAlmostEqual(1., v)
+
+        file_read_ = file_read["BLOCKDEPTH"].sel(day=0.).values
+        self.assertEqual(len(file_read_), sr3.grid.get_size("n_active"))
+
+        true_result = [
+            # 3005.500,
+            3006.500,
+            3007.500,
+            3008.500,
+            3005.500,
+            3006.500,
+            3007.500,
+            3008.500,
+            # 3005.500,
+            3006.500,
+            3007.500,
+            3008.500,
+            3005.500,
+            3006.500,
+            3007.500,
+            3008.500
+        ]
+        for i in range(10):
+            self.assertAlmostEqual(true_result[i], round(file_read_[i],1))
+
+        file_read = sr3.data.get(
+            element_type="grid",
+            properties=["PRES", "SO"],
+            days=[0., 1096.],
+            active_only=True)
+
+        file_read_ = file_read["SO"].sel(day=1096.).values
+        true_result = [
+            0.53912,
+            0.52874,
+            0.51399,
+            0.64481,
+            0.62339,
+            0.63017,
+            0.62788,
+            0.52435,
+            0.51081,
+            0.48366,
+            0.64181,
+            0.61585,
+            0.62052,
+            0.61545
+        ]
+
+        for t,v in zip(true_result, file_read_):
+            self.assertAlmostEqual(t, round(v,5))
+
+        file_read = sr3.data.get(
+            element_type="grid",
+            properties=["PRES", "SO"],
+            elements="MATRIX",
+            days=[0., 1096.],
+            active_only=True)
+        file_read_ = file_read["SO"].sel(day=1096.).values
+        for t,v in zip(true_result[:7], file_read_):
+            self.assertAlmostEqual(t, round(v,5))
+
+        file_read = sr3.data.get(
+            element_type="grid",
+            properties=["PRES", "SO"],
+            elements="FRACTURE",
+            days=[0., 1096.],
+            active_only=True)
+        file_read_ = file_read["SO"].sel(day=1096.).values
+        for t,v in zip(true_result[7:], file_read_):
+            self.assertAlmostEqual(t, round(v,5))
+
+
+        file_read = sr3.data.get(
+            element_type="grid",
+            properties=["PRES", "SO"],
+            days=[0., 1096.],
+            active_only=False)
+
+        file_read_ = file_read["SO"].sel(day=1096.).values
+        true_result = [
+            0.0,
+            0.53912,
+            0.52874,
+            0.51399,
+            0.64481,
+            0.62339,
+            0.63017,
+            0.62788,
+            0.0,
+            0.52435,
+            0.51081,
+            0.48366,
+            0.64181,
+            0.61585,
+            0.62052,
+            0.61545
+        ]
+
+        for t,v in zip(true_result, file_read_):
+            self.assertAlmostEqual(t, round(v,5))
+
+        file_read = sr3.data.get(
+            element_type="grid",
+            properties=["PRES", "SO"],
+            elements="MATRIX",
+            days=[0., 1096.],
+            active_only=False)
+        file_read_ = file_read["SO"].sel(day=1096.).values
+        for t,v in zip(true_result[:8], file_read_):
+            self.assertAlmostEqual(t, round(v,5))
+
+        file_read = sr3.data.get(
+            element_type="grid",
+            properties=["PRES", "SO"],
+            elements="FRACTURE",
+            days=[0., 1096.],
+            active_only=False)
+        file_read_ = file_read["SO"].sel(day=1096.).values
+        for t,v in zip(true_result[8:], file_read_):
+            self.assertAlmostEqual(t, round(v,5))
+
 
 # MARK: Save to CSV
 

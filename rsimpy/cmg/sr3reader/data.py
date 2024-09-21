@@ -232,10 +232,13 @@ class DataHandler:
     def _get_single_raw_grid_property(self, property_name, elements, ts):
         data = self._get_grid_dataset(property_name, ts)
 
+        if self._grid.has_fracture() and self._grid.is_matrix_or_fracture_only(property_name):
+            data = np.vstack([data, data])
+
         if elements == ["MATRIX", "FRACTURE"]:
-            return data[:]
+            return data
         if not self._grid.has_fracture():
-            return data[:]
+            return data
 
         fracture_index = self._get_property_fracture_index(property_name)
         if elements == ["MATRIX"]:
@@ -257,8 +260,8 @@ class DataHandler:
 
 
     def _get_property_fracture_index(self, property_name):
-        if self._properties.is_complete(property_name):
-            return int(self._grid.get_size("n_cells") / 2)
+        if self._grid.is_complete(property_name):
+            return self._grid.get_size("n_cells") // 2
         return self._grid.get_size("n_active_matrix")
 
 
