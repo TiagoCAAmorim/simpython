@@ -387,6 +387,21 @@ class DataHandler:
         return values[self._grid.get_cell_indexes(False, elements) - 1]
 
 
+    def to_complete(self, values, default=0):
+        """Converts active only iterable to complete."""
+        return self._grid_data_to_complete(
+            is_complete=False,
+            values=values,
+            elements=None,
+            default=default)
+
+    def to_active(self, values):
+        """Converts complete iterable to active only."""
+        return self._grid_data_to_active(
+            is_complete=True,
+            values=values,
+            elements=None,)
+
 # MARK: Save Data
 
     def to_csv(self,
