@@ -23,8 +23,8 @@ transmissibilities = conn_handler.get_transmissibilities()
 #   - Initialize with -1.
 
 
-from matplotlib import pyplot as plt
 import numpy as np
+from .coordinates import GridCoordHandler
 
 
 EPSILON = 1 # m
@@ -115,19 +115,48 @@ class ConnectionsHandler:
         return self._connections
 
 
-    def get_transmissibilities(self):
+    def get_transmissibilities(self, connections=None, add_areas=False, force_recalc=False):
         """
-        Get the transmissibilities for all connections.
+        Calculates the transmissibility for each connection.
+
+        Tran = 1 / (1/Ti + 1/Tj)
+        Ti = Ki * NTGi * A.Di / Di.Di
+        A.Di = Ax * Dix + Ay * Diy + Az * Diz
+        Di.Di = Dix^2 + Diy^2 + Diz^2
+
+        Ki: Permeability of cell i.
+        NTGi: Net-to-gross ratio of cell i (does not apply for K connections).
+        A: Area of the common face.
+        Di: Distance between the center of the cell and the center of the corresponding face.
+        Ax, Ay, Az: X-,Y- and Z- projections of the mutual interface area of cell i and cell j
+        Dix, Diy,Diz: X-, Y- and Z-components of the distance between the center of cell i.
+        and the center of the relevant face of cell i.
+
+        Parameters:
+        connections (np.ndarray): Array of shape (n_connections, 3) where each row
+            contains the two connected cells ("+" face and "-" face) and the
+            connection type (1=I, 2=J, 3=K, 4=Mat-Frac). For connections with
+            type 4, the cell order is matrix cell and fracture cell. If None,
+            the function will use all connections read from the SR3 file.
+        add_areas (bool): If True, the function will calculate the area of the common face
+            with a more precise method.
+        force_recalc (bool): If True, the function will recalculate the transmissibilities
+            even if they were previously calculated.
 
         Returns:
-        --------
-        transmissibilities: np.ndarray
-            Array with shape (n_connections,) containing the transmissibility
-            for each connection.
+        np.ndarray: Array of shape (n_connections,) containing the transmissibility
+            for each connection."
         """
-        if self._transmissibilities is None:
-            self._transmissibilities = self.get_transmissibility(self.get_connections())
-        return self._transmissibilities
+        if connections is None:
+            if self._transmissibilities is None or force_recalc:
+                connections = self.get_connections()
+                self._transmissibilities = self._get_transmissibilities(
+                    connections=connections, add_areas=add_areas)
+            return self._transmissibilities
+
+        return self._get_transmissibilities(
+            connections=connections, add_areas=add_areas)
+
 
 # MARK: Setters
     def set_epsilon(self, epsilon):
@@ -287,7 +316,7 @@ class ConnectionsHandler:
         return ad/dd
 
 
-    def get_transmissibility(self, connections, add_areas=False):
+    def _get_transmissibilities(self, connections, add_areas=False):
         """Calculates the transmissibility for each connection.
 
         Tran = 1 / (1/Ti + 1/Tj)
@@ -456,98 +485,27 @@ class ConnectionsHandler:
         return a
 
 
-    def print_sconnect(self, connections):
+    def print_sconnect(self, connections, transmissibilities=None):
         """Prints the connection information in the SCONNECT format."""
         cell1 = self._grid.n2ijk(connections[:,0])
         cell2 = self._grid.n2ijk(connections[:,1])
         cell1_str = ConnectionsHandler._join_array(cell1)
         cell2_str = ConnectionsHandler._join_array(cell2)
-        if transmissibility is None:
-            transmissibility = self.get_transmissibility(connections)
+        if transmissibilities is None:
+            transmissibilities = self.get_transmissibilities(connections)
         s = []
-        for c1, c2, t in zip(cell1_str, cell2_str, transmissibility):
+        for c1, c2, t in zip(cell1_str, cell2_str, transmissibilities):
             s.append(f' {c1}   {c2}   {t}')
         return s
 
 
 # MARK: Plotting
-    @staticmethod
-    def plot_planes(faces, labels=None):
-        """Plot a panel with the faces projected to the XYZ planes."""
-        fig, axis = plt.subplots(2, 2, figsize=(10, 10))
-        axis = axis.flatten()
-
-        def plot_face(ax, coordinates, x_axis=0, y_axis=1,
-                    x_axis_label='X', y_axis_label='Y', label=None,
-                    invert_yaxis=False):
-            closed_coordinates = np.vstack([coordinates, coordinates[0]])
-            ax.plot(closed_coordinates[:, x_axis], closed_coordinates[:, y_axis],
-                    marker='o', label=label)
-            ax.set_xlabel(x_axis_label)
-            ax.set_ylabel(y_axis_label)
-            if invert_yaxis:
-                ax.invert_yaxis()
-            ax.grid(True)
-            ax.legend()
-
-        x_axis = [0, 0, 1]
-        y_axis = [1, 2, 2]
-        x_label = ['X', 'X', 'Y']
-        y_label = ['Y', 'Z', 'Z']
-
-        for x, y, x_label, y_label, ax in zip(x_axis, y_axis, x_label, y_label, axis[:3]):
-            for i,face in enumerate(faces):
-                if labels is not None:
-                    label = str(labels[i])
-                else:
-                    label = f'{i}'
-                if len(face.shape) == 3:
-                    face = face[0]
-                plot_face(ax, face, x, y, x_label, y_label, label, invert_yaxis=y_label=='Z')
-
-        for spine in axis[-1].spines.values():
-            spine.set_visible(False)
-        axis[-1].grid(False)
-        axis[-1].set_xticks([])
-        axis[-1].set_yticks([])
-
-        def plot_3d(ax, coordinates):
-            if len(coordinates.shape) == 3:
-                coordinates = coordinates[0]
-            x = coordinates[:, 0]
-            y = coordinates[:, 1]
-            z = coordinates[:, 2]
-
-            # x and y arrays must consist of at least 3 unique points
-            # if len(np.unique(coordinates[:,[0,1]], axis=0)) > 2:
-            try:
-                ax.plot_trisurf(x, y, z, alpha=0.3)
-            except Exception as e: # pylint: disable=broad-except
-                print(e)
-
-            ax.scatter(x, y, z, marker='o')
-
-            ax.set_xlabel('X')
-            ax.set_ylabel('Y')
-            ax.set_zlabel('Z')
-
-            ax.set_box_aspect([1.0, 1.0, 0.7])
-            ax.invert_zaxis()
-
-        ax_3d = fig.add_subplot(2, 2, 4, projection='3d')
-        for face in faces:
-            plot_3d(ax_3d, face)
-
-        plt.tight_layout()
-        plt.show()
-
-
     def plot_connection(self, connection):
         """Plot the connection between two cells."""
         face1 = self._grid.coordinates.get(connection[0], 2*connection[-1]-1)
         face2 = self._grid.coordinates.get(connection[1], 2*connection[-1]-2)
         common = self._get_common_face(connection)
-        ConnectionsHandler.plot_planes(
+        return GridCoordHandler.plot_planes(
             faces=[face1, face2, common],
             labels=[
                 self._grid.n2ijk(connection[0]),

@@ -15,7 +15,9 @@ coord_handler = GridCoordHandler(sr3_file, sr3_grid)
 face_coordinates = coord_handler.get([12,34], face='I-')
 """
 
+from matplotlib import pyplot as plt
 import numpy as np
+
 
 # Nodes of the cell faces
 NODE_NUM = {
@@ -200,3 +202,75 @@ class GridCoordHandler:
     def get_center(self, cells, face=None):
         """Get coordinates of the center of a cell or cell face."""
         return np.mean(self.get(cells, face), axis=1)
+
+
+# MARK: Plotting
+    @staticmethod
+    def plot_planes(faces, labels=None):
+        """Plot a panel with the faces projected to the XYZ planes."""
+        fig, axes = plt.subplots(2, 2, figsize=(10, 10))
+        axes = axes.flatten()
+
+        def plot_face(ax, coordinates, x_axis=0, y_axis=1,
+                    x_axis_label='X', y_axis_label='Y', label=None,
+                    invert_yaxis=False):
+            closed_coordinates = np.vstack([coordinates, coordinates[0]])
+            ax.plot(closed_coordinates[:, x_axis], closed_coordinates[:, y_axis],
+                    marker='o', label=label)
+            ax.set_xlabel(x_axis_label)
+            ax.set_ylabel(y_axis_label)
+            if invert_yaxis:
+                ax.invert_yaxis()
+            ax.grid(True)
+            ax.legend()
+
+        x_axis = [0, 0, 1]
+        y_axis = [1, 2, 2]
+        x_label = ['X', 'X', 'Y']
+        y_label = ['Y', 'Z', 'Z']
+
+        for x, y, x_label, y_label, ax in zip(x_axis, y_axis, x_label, y_label, axes[:3]):
+            for i,face in enumerate(faces):
+                if labels is not None:
+                    label = str(labels[i])
+                else:
+                    label = f'{i}'
+                if len(face.shape) == 3:
+                    face = face[0]
+                plot_face(ax, face, x, y, x_label, y_label, label, invert_yaxis=y_label=='Z')
+
+        for spine in axes[-1].spines.values():
+            spine.set_visible(False)
+        axes[-1].grid(False)
+        axes[-1].set_xticks([])
+        axes[-1].set_yticks([])
+
+        def plot_3d(ax, coordinates):
+            if len(coordinates.shape) == 3:
+                coordinates = coordinates[0]
+            x = coordinates[:, 0]
+            y = coordinates[:, 1]
+            z = coordinates[:, 2]
+
+            # x and y arrays must consist of at least 3 unique points
+            # if len(np.unique(coordinates[:,[0,1]], axis=0)) > 2:
+            try:
+                ax.plot_trisurf(x, y, z, alpha=0.3)
+            except Exception as e: # pylint: disable=broad-except
+                print(e)
+
+            ax.scatter(x, y, z, marker='o')
+
+            ax.set_xlabel('X')
+            ax.set_ylabel('Y')
+            ax.set_zlabel('Z')
+
+            ax.set_box_aspect([1.0, 1.0, 0.7])
+            ax.invert_zaxis()
+
+        ax_3d = fig.add_subplot(2, 2, 4, projection='3d')
+        for face in faces:
+            plot_3d(ax_3d, face)
+
+        plt.tight_layout()
+        return axes

@@ -6,6 +6,7 @@ from pathlib import Path
 from collections import Counter
 from datetime import datetime
 import unittest
+import matplotlib.pyplot as plt
 
 import numpy as np
 
@@ -1374,6 +1375,47 @@ class TestSr3Reader(unittest.TestCase):
 
         for t,v in zip(true_result, file_read_):
             self.assertAlmostEqual(np.log(round(t,5)), np.log(round(v,5)))
+
+
+    def test_print_transmissibilities(self):
+        """Tests printing grid connections transmissibilities"""
+
+        test_file = Path("tests/sr3/mini_section/base_case_bo_section.sr3")
+        sr3 = Sr3Reader(test_file)
+
+        connections = sr3.connections.get_connections()
+        file_read_ = sr3.connections.print_sconnect(connections)
+
+        self.assertEqual(len(file_read_), connections.shape[0])
+
+
+    def test_plot_faces(self):
+        """Tests plotting faces"""
+
+        test_file = Path("tests/sr3/mini_section/base_case_bo_section.sr3")
+        sr3 = Sr3Reader(test_file)
+
+        faces = sr3.grid.coordinates.get(cells=[5,6,7,8], face='K-')
+        axes = sr3.grid.coordinates.plot_planes(faces)
+
+        self.assertEqual(axes.shape[0], 4, "Expected 4 axes.")
+
+        for i in range(4):
+            self.assertIsNotNone(axes[i], f"Axis[{i}] was not created.")
+
+        # plt.savefig('./_faces.png')
+        plt.close()
+
+        connections = sr3.connections.get_connections()
+        axes = sr3.connections.plot_connection(connections[1])
+
+        self.assertEqual(axes.shape[0], 4, "Expected 4 axes.")
+
+        for i in range(4):
+            self.assertIsNotNone(axes[i], f"Axis[{i}] was not created.")
+
+        # plt.savefig('./_connection.png')
+        plt.close()
 
 
 if __name__ == "__main__":
