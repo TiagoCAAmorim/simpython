@@ -1314,14 +1314,17 @@ class TestSr3Reader(unittest.TestCase):
         test_file = Path("tests/sr3/dat_mini3d/mini3d.sr3")
         sr3 = Sr3Reader(test_file)
 
-        file_read_ = sr3.grid.coordinates.get(cells=1, face='K-')
+        file_read_ = sr3.grid.coordinates.get(cells=[1,sr3.grid.get_size('n_cells')], face='K-')
         true_result = [
-             781346.8879,  781154.2190,  781132.4973,  781326.4533,
+            [ 781346.8879,  781154.2190,  781132.4973,  781326.4533,
             7277248.0147, 7277273.3975, 7277074.1553, 7277048.2540,
-               5307.6133,    5312.0649,    5312.0737,    5304.7095
+               5307.6133,    5312.0649,    5312.0737,    5304.7095],
+            [ 781108.1643,  780912.6731,  780887.9641,  781085.6613,
+            7276875.5967, 7276901.7247, 7276703.0108, 7276676.1817,
+               5317.7378,    5327.2085,    5332.0103,    5318.0859]
         ]
         true_result = np.array(true_result)
-        true_result = true_result.reshape((3,4)).T
+        true_result = true_result.reshape((2,3,4)).swapaxes(1,2)
 
         for t,v in zip(true_result.flatten(), file_read_.flatten()):
             self.assertAlmostEqual(t, round(v,5))

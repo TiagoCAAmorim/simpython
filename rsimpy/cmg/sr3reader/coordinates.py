@@ -109,13 +109,9 @@ class GridCoordHandler:
             ijk = grid.n2ijk(np.arange(1, ni*nj*nk+1))
 
             blocks[:, 0] = ijk[:,0] + (ijk[:,1]-1)*(ni+1) + (ijk[:,2]-1)*(ni+1)*(nj+1)
-            blocks[:, 1] = blocks[:, 0] + 1
-            blocks[:, 3] = blocks[:, 0] + ni + 1
-            blocks[:, 2] = blocks[:, 3] + 1
             blocks[:, 4] = blocks[:, 0] + (ni+1)*(nj+1)
-            blocks[:, 5] = blocks[:, 4] + 1
-            blocks[:, 7] = blocks[:, 4] + ni + 1
-            blocks[:, 6] = blocks[:, 7] + 1
+            blocks[:, [3,7]] = blocks[:, [0,4]] + ni + 1
+            blocks[:, [1,2,5,6]] = blocks[:, [0,3,4,7]] + 1
 
             if grid.get_size('n_cells') > ni*nj*nk:
                 blocks = np.concatenate([blocks, blocks])
