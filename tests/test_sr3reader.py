@@ -1311,6 +1311,8 @@ class TestSr3Reader(unittest.TestCase):
 
 
     def test_read_grid_coordinates_regular(self):
+        """Tests reading grid coordinates on a regular grid"""
+
         test_file = Path("tests/sr3/dat_mini3d/mini3d.sr3")
         sr3 = Sr3Reader(test_file)
 
@@ -1328,6 +1330,50 @@ class TestSr3Reader(unittest.TestCase):
 
         for t,v in zip(true_result.flatten(), file_read_.flatten()):
             self.assertAlmostEqual(t, round(v,5))
+
+
+    def test_read_connections(self):
+        """Tests reading grid connections"""
+
+        test_file = Path("tests/sr3/mini_section/base_case_bo_section.sr3")
+        sr3 = Sr3Reader(test_file)
+
+        file_read_ = sr3.connections.get_connections()
+        true_result = [
+            [3, 4, 2],
+            [6, 3, 2],
+            [3, 7, 3],
+            [4, 8, 3],
+            [5, 6, 2],
+            [6, 7, 2],
+            [7, 8, 2]
+        ]
+        true_result = np.array(true_result)
+
+        for t,v in zip(true_result.flatten(), file_read_.flatten()):
+            self.assertEqual(t, v)
+
+
+    def test_calc_transmissibilities(self):
+        """Tests calculating grid connections transmissibilities"""
+
+        test_file = Path("tests/sr3/mini_section/base_case_bo_section.sr3")
+        sr3 = Sr3Reader(test_file)
+
+        file_read_ = sr3.connections.get_transmissibilities()
+        true_result = [
+            1.90275126e+02,
+            6.55115580e+00,
+            1.19244010e+05,
+            1.16153341e+05,
+            9.36358173e+01,
+            3.55410101e+02,
+            4.84339698e+02
+            ]
+        true_result = np.array(true_result)
+
+        for t,v in zip(true_result, file_read_):
+            self.assertAlmostEqual(np.log(round(t,5)), np.log(round(v,5)))
 
 
 if __name__ == "__main__":

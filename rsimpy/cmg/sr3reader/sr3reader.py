@@ -9,6 +9,7 @@ from .grid import GridHandler
 from .properties import PropertyHandler
 from .elements import ElementHandler
 from .data import DataHandler
+from .connections import ConnectionsHandler
 
 
 class Sr3Reader:
@@ -64,6 +65,7 @@ class Sr3Reader:
         self.properties = PropertyHandler(self.file, self.units, self.grid, auto_read=auto_read)
         self.elements = ElementHandler(self.file, self.units, self.grid, auto_read=auto_read)
         self.data = DataHandler(self)
+        self.connections = ConnectionsHandler(self)
 
         if usual_units and auto_read:
             self.set_usual_units()

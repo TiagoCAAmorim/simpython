@@ -45,6 +45,10 @@ class GridCoordHandler:
     ----------
     sr3_file : sr3reader.Sr3Handler
         SR3 file object.
+    sr3_grid : sr3reader.GridHandler
+        Grid object.
+    auto_read : bool, optional
+        If True, reads coordinates data from sr3 file. Default is False.
 
     Methods
     -------
