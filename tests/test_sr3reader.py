@@ -7,6 +7,8 @@ from collections import Counter
 from datetime import datetime
 import unittest
 
+import numpy as np
+
 import context  # noqa # pylint: disable=unused-import
 from rsimpy.cmg.sr3reader import Sr3Reader
 
@@ -1251,7 +1253,6 @@ class TestSr3Reader(unittest.TestCase):
 
 
 # MARK: Save to CSV
-
     def test_to_csv(self):
         """Tests saving data to csv"""
 
@@ -1287,6 +1288,43 @@ class TestSr3Reader(unittest.TestCase):
         file_read.to_csv('test_C.csv')
         self.assertTrue(Path('test_C.csv').is_file())
         Path('test_C.csv').unlink()
+
+
+# MARK: Grid coordinates
+    def test_read_grid_coordinates(self):
+        """Tests reading grid coordinates"""
+
+        test_file = Path("tests/sr3/mini_section/base_case_bo_section.sr3")
+        sr3 = Sr3Reader(test_file)
+
+        file_read_ = sr3.grid.coordinates.get(cells=4, face='K-')
+        true_result = [
+            1934.6487, 1739.5813, 1718.9533, 1913.0129,
+            9392.0850, 9416.2911, 9217.9083, 9194.1446,
+            5503.5630, 5494.1958, 5461.7588, 5472.3262
+        ]
+        true_result = np.array(true_result)
+        true_result = true_result.reshape((3,4)).T
+
+        for t,v in zip(true_result.flatten(), file_read_.flatten()):
+            self.assertAlmostEqual(t, round(v,5))
+
+
+    def test_read_grid_coordinates_regular(self):
+        test_file = Path("tests/sr3/dat_mini3d/mini3d.sr3")
+        sr3 = Sr3Reader(test_file)
+
+        file_read_ = sr3.grid.coordinates.get(cells=1, face='K-')
+        true_result = [
+             781346.8879,  781154.2190,  781132.4973,  781326.4533,
+            7277248.0147, 7277273.3975, 7277074.1553, 7277048.2540,
+               5307.6133,    5312.0649,    5312.0737,    5304.7095
+        ]
+        true_result = np.array(true_result)
+        true_result = true_result.reshape((3,4)).T
+
+        for t,v in zip(true_result.flatten(), file_read_.flatten()):
+            self.assertAlmostEqual(t, round(v,5))
 
 
 if __name__ == "__main__":

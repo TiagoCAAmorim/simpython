@@ -18,6 +18,7 @@ ni, nj, nk = grid_handler.get_size("nijk")
 import numpy as np
 from rsimpy.common.utils import _n2ijk, _ijk2n, _is_neighbor
 
+from .coordinates import GridCoordHandler
 
 class GridHandler:
     """
@@ -59,6 +60,11 @@ class GridHandler:
 
         if auto_read:
             self.read()
+
+        self.coordinates = GridCoordHandler(
+            sr3_file=self._file,
+            sr3_grid=self,
+            auto_read=auto_read)
 
 # MARK: Read Data
 
