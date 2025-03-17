@@ -206,7 +206,7 @@ class GridCoordHandler:
 
 # MARK: Plotting
     @staticmethod
-    def plot_planes(faces, labels=None):
+    def plot_planes(faces, labels=None, marker='o', verbose=False):
         """Plot a panel with the faces projected to the XYZ planes."""
         fig, axes = plt.subplots(2, 2, figsize=(10, 10))
         axes = axes.flatten()
@@ -216,13 +216,14 @@ class GridCoordHandler:
                     invert_yaxis=False):
             closed_coordinates = np.vstack([coordinates, coordinates[0]])
             ax.plot(closed_coordinates[:, x_axis], closed_coordinates[:, y_axis],
-                    marker='o', label=label)
+                    marker=marker, label=label)
             ax.set_xlabel(x_axis_label)
             ax.set_ylabel(y_axis_label)
             if invert_yaxis:
                 ax.invert_yaxis()
             ax.grid(True)
-            ax.legend()
+            if labels is not None:
+                ax.legend()
 
         x_axis = [0, 0, 1]
         y_axis = [1, 2, 2]
@@ -237,7 +238,7 @@ class GridCoordHandler:
                     label = f'{i}'
                 if len(face.shape) == 3:
                     face = face[0]
-                plot_face(ax, face, x, y, x_label, y_label, label, invert_yaxis=y_label=='Z')
+                plot_face(ax, face, x, y, x_label, y_label, label, invert_yaxis=(y_label=='Z'))
 
         for spine in axes[-1].spines.values():
             spine.set_visible(False)
@@ -257,9 +258,11 @@ class GridCoordHandler:
             try:
                 ax.plot_trisurf(x, y, z, alpha=0.3)
             except Exception as e: # pylint: disable=broad-except
-                print(e)
+                if verbose:
+                    print(e)
 
-            ax.scatter(x, y, z, marker='o')
+            if marker != '':
+                ax.scatter(x, y, z, marker='o')
 
             ax.set_xlabel('X')
             ax.set_ylabel('Y')

@@ -108,10 +108,16 @@ class ConnectionsHandler:
 
 
 # MARK: Getters
-    def get_connections(self):
+    def get_connections(self, as_active=False):
         """Get all cell connections from the SR3 file."""
         if self._connections is None:
             self.read()
+        if as_active:
+            out = np.zeros_like(self._connections)
+            out[:,0] = self._grid.complete2active(self._connections[:,0])
+            out[:,1] = self._grid.complete2active(self._connections[:,1])
+            out[:,2] = self._connections[:,2]
+            return out
         return self._connections
 
 

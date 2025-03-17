@@ -1355,6 +1355,22 @@ class TestSr3Reader(unittest.TestCase):
             self.assertEqual(t, v)
 
 
+        file_read_ = sr3.connections.get_connections(as_active=True)
+        true_result = [
+            [1, 2, 2],
+            [4, 1, 2],
+            [1, 5, 3],
+            [2, 6, 3],
+            [3, 4, 2],
+            [4, 5, 2],
+            [5, 6, 2]
+        ]
+        true_result = np.array(true_result)
+
+        for t,v in zip(true_result.flatten(), file_read_.flatten()):
+            self.assertEqual(t, v)
+
+
     def test_calc_transmissibilities(self):
         """Tests calculating grid connections transmissibilities"""
 
