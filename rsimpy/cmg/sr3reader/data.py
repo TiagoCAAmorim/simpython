@@ -442,6 +442,8 @@ class SimData(xr.Dataset):
         Saves data to a CSV file.
     """
 
+    __slots__ = ()  # No additional attributes beyond those in xarray.Dataset
+
     def __init__(self, xr_dataset, *args, **kwargs):
         super().__init__(xr_dataset, *args, **kwargs)
 
