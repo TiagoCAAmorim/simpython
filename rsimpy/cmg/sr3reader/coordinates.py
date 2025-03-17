@@ -1,6 +1,6 @@
 # sr3reader/grid.py
 """
-connections.py
+coordinates.py
 
 This module handles grid coordinates.
 
@@ -11,7 +11,7 @@ GridCoordHandler
 
 Usage Example:
 --------------
-coord_handler = GridCoordHandler(sr3_file)
+coord_handler = GridCoordHandler(sr3_file, sr3_grid)
 face_coordinates = coord_handler.get([12,34], face='I-')
 """
 
