@@ -42,6 +42,8 @@ elapsed_data = sr3.data.get("special", "ELAPSED", days=[30., 1085., 2162.])
 elapsed_values = elapsed_data["ELAPSED"].sel(element="").values
 
 grid_data = sr3.data.get("grid", ["SO","PRES","VISO","Z(CO2)"], "MATRIX", days=10.)
+
+sr3.data.to_csv("well", ["QO","BHP","NP"], ["P11","P13"], './wells.csv')
 ```
 
 #### GridFile
