@@ -1,8 +1,3 @@
-** Arquivo original: L:\res\santos\iara\er\er03\SIM2016\ATP\ProgramasTiago\PhD\SimModels\Unisim_iv_2024\grid\CORNERS.grid
-** Malha original: 47 x 39 x 291
-** Corte: 27-28 x 24-26 x 50-51
-** Malha modificada: 2 x 3 x 2
-
 CORNERS
  781346.8879 2*781154.2190 780961.4973 781326.4533 2*781132.4973 780938.8518 ** 1-2,1,1 Top
  781326.4533 2*781132.4973 780938.8518 781306.0207 2*781110.2199 780914.8977 ** 1-2,2,1 Top
