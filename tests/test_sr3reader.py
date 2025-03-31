@@ -52,47 +52,23 @@ class TestSr3Reader(unittest.TestCase):
         sr3.read()
 
         true_result = [
-            "I11",
-            "I11-W",
-            "I12",
-            "I12-W",
-            "I13",
-            "I13-W",
-            "I14",
-            "I14-W",
-            "I15",
-            "I15-W",
-            "I16",
-            "I16-W",
-            "I17",
-            "I17-W",
-            "P11",
-            "P12",
-            "P13",
-            "P14",
-            "P15",
-            "P16",
+            "I11", "I11-W", "I12", "I12-W", "I13", "I13-W",
+            "I14", "I14-W", "I15", "I15-W", "I16", "I16-W",
+            "I17", "I17-W",
+            "P11", "P12", "P13", "P14", "P15", "P16"
         ]
         file_read = sr3.elements.get("well").keys()
         _test_equal_lists(self, true_result, file_read)
 
         true_result = [
-            "Default-Group-PRO",
-            "Default-Group-INJ",
-            "FIELD-PRO",
-            "FIELD-INJ",
-            "I-PLAT1-PRO",
-            "I-PLAT1-INJ",
-            "I-PLAT-TLD-PRO",
-            "I-PLAT-TLD-INJ",
-            "P-PLAT1-PRO",
-            "P-PLAT1-INJ",
-            "P-PLAT-TLD-PRO",
-            "P-PLAT-TLD-INJ",
-            "PLAT1-PRO",
-            "PLAT1-INJ",
-            "PLAT-TLD-PRO",
-            "PLAT-TLD-INJ",
+            "Default-Group-PRO", "Default-Group-INJ",
+            "FIELD-PRO", "FIELD-INJ",
+            "I-PLAT1-PRO", "I-PLAT1-INJ",
+            "I-PLAT-TLD-PRO", "I-PLAT-TLD-INJ",
+            "P-PLAT1-PRO", "P-PLAT1-INJ",
+            "P-PLAT-TLD-PRO", "P-PLAT-TLD-INJ",
+            "PLAT1-PRO", "PLAT1-INJ",
+            "PLAT-TLD-PRO", "PLAT-TLD-INJ",
         ]
         file_read = sr3.elements.get("group").keys()
         _test_equal_lists(self, true_result, file_read)
@@ -102,26 +78,13 @@ class TestSr3Reader(unittest.TestCase):
         _test_equal_lists(self, true_result, file_read)
 
         true_result = [
-            "P11{23,25,49}",
-            "I11{31,10,40}",
-            "P12{12,31,36}",
-            "P13{28,24,48}",
-            "P14{36,17,34}",
-            "P15{23,20,40}",
-            "P16{13,14,41}",
-            "I12{14,18,43}",
-            "I13{26,14,36}",
-            "I14{23,10,42}",
-            "I15{38,9,24}",
-            "I16{12,22,42}",
-            "I17{7,26,41}",
-            "I11-W{31,10,40}",
-            "I12-W{14,18,43}",
-            "I13-W{26,14,36}",
-            "I14-W{23,10,42}",
-            "I15-W{38,9,24}",
-            "I16-W{12,22,42}",
-            "I17-W{7,26,41}",
+            "P11{23,25,49}", "I11{31,10,40}", "P12{12,31,36}",
+            "P13{28,24,48}", "P14{36,17,34}", "P15{23,20,40}",
+            "P16{13,14,41}", "I12{14,18,43}", "I13{26,14,36}",
+            "I14{23,10,42}", "I15{38,9,24}", "I16{12,22,42}",
+            "I17{7,26,41}", "I11-W{31,10,40}", "I12-W{14,18,43}",
+            "I13-W{26,14,36}", "I14-W{23,10,42}", "I15-W{38,9,24}",
+            "I16-W{12,22,42}", "I17-W{7,26,41}",
         ]
         file_read = sr3.elements.get("layer").keys()
         _test_equal_lists(self, true_result, file_read, True)
@@ -149,122 +112,41 @@ class TestSr3Reader(unittest.TestCase):
         sr3 = Sr3Reader(test_file)
 
         true_result = [
-            "WELLSTATE",
-            "WELLOPMO",
-            "WHP",
-            "BHP",
-            "BLOCKP",
-            "MOBWTDATP",
-            "BHTEMP",
-            "WHTEMP",
-            "ONFRAC",
-            "CGLIFT",
-            "OILVOLSC",
-            "GASVOLSC",
-            "WATVOLSC",
-            "INLVOLSC",
-            "WTGVOLSC",
-            "OILVOLRC",
-            "GASVOLRC",
-            "WATVOLRC",
-            "BHFVOLRC",
-            "WELLOTIME",
-            "OILRATSC",
-            "GASRATSC",
-            "WATRATSC",
-            "INLRATSC",
-            "WTGRATSC",
-            "OILRATRC",
-            "GASRATRC",
-            "WATRATRC",
-            "BHFRATRC",
-            "LIQVOLSC",
-            "LIQRATSC",
-            "OILMOLSC",
-            "GASMOLSC",
-            "WTGMOLSC",
-            "OILMOLRSC",
-            "GASMOLRSC",
-            "WTGMOLRSC",
-            "OILCMOLSC(CO2)",
-            "OILCMOLSC(N2 toCH4)",
-            "OILCMOLSC(C2HtoNC5)",
-            "OILCMOLSC(C6ttoC19)",
-            "OILCMOLSC(C29toC63)",
-            "OILMOLRSC(CO2)",
-            "OILMOLRSC(N2 toCH4)",
-            "OILMOLRSC(C2HtoNC5)",
-            "OILMOLRSC(C6ttoC19)",
-            "OILMOLRSC(C29toC63)",
-            "GASCMOLSC(CO2)",
-            "GASCMOLSC(N2 toCH4)",
-            "GASCMOLSC(C2HtoNC5)",
-            "GASCMOLSC(C6ttoC19)",
-            "GASCMOLSC(C29toC63)",
-            "GASMOLRSC(CO2)",
-            "GASMOLRSC(N2 toCH4)",
-            "GASMOLRSC(C2HtoNC5)",
-            "GASMOLRSC(C6ttoC19)",
-            "GASMOLRSC(C29toC63)",
-            "INLCMOLSC(CO2)",
-            "INLCMOLSC(N2 toCH4)",
-            "INLCMOLSC(C2HtoNC5)",
-            "INLCMOLSC(C6ttoC19)",
-            "INLCMOLSC(C29toC63)",
-            "INLMOLRSC(CO2)",
-            "INLMOLRSC(N2 toCH4)",
-            "INLMOLRSC(C2HtoNC5)",
-            "INLMOLRSC(C6ttoC19)",
-            "INLMOLRSC(C29toC63)",
-            "WTGCMOLSC(CO2)",
-            "WTGCMOLSC(N2 toCH4)",
-            "WTGCMOLSC(C2HtoNC5)",
-            "WTGCMOLSC(C6ttoC19)",
-            "WTGCMOLSC(C29toC63)",
-            "WTGMOLRSC(CO2)",
-            "WTGMOLRSC(N2 toCH4)",
-            "WTGMOLRSC(C2HtoNC5)",
-            "WTGMOLRSC(C6ttoC19)",
-            "WTGMOLRSC(C29toC63)",
-            "OILCMASSC(CO2)",
-            "OILCMASSC(N2 toCH4)",
-            "OILCMASSC(C2HtoNC5)",
-            "OILCMASSC(C6ttoC19)",
-            "OILCMASSC(C29toC63)",
-            "OILMASRSC(CO2)",
-            "OILMASRSC(N2 toCH4)",
-            "OILMASRSC(C2HtoNC5)",
-            "OILMASRSC(C6ttoC19)",
-            "OILMASRSC(C29toC63)",
-            "GASCMASSC(CO2)",
-            "GASCMASSC(N2 toCH4)",
-            "GASCMASSC(C2HtoNC5)",
-            "GASCMASSC(C6ttoC19)",
-            "GASCMASSC(C29toC63)",
-            "GASMASRSC(CO2)",
-            "GASMASRSC(N2 toCH4)",
-            "GASMASRSC(C2HtoNC5)",
-            "GASMASRSC(C6ttoC19)",
-            "GASMASRSC(C29toC63)",
-            "INLCMASSC(CO2)",
-            "INLCMASSC(N2 toCH4)",
-            "INLCMASSC(C2HtoNC5)",
-            "INLCMASSC(C6ttoC19)",
-            "INLCMASSC(C29toC63)",
-            "INLMASRSC(CO2)",
-            "INLMASRSC(N2 toCH4)",
-            "INLMASRSC(C2HtoNC5)",
-            "INLMASRSC(C6ttoC19)",
-            "INLMASRSC(C29toC63)",
-            "WTGCMASSC(CO2)",
-            "WTGCMASSC(N2 toCH4)",
-            "WTGCMASSC(C2HtoNC5)",
-            "WTGCMASSC(C6ttoC19)",
-            "WTGCMASSC(C29toC63)",
-            "WTGMASRSC(CO2)",
-            "WTGMASRSC(N2 toCH4)",
-            "WTGMASRSC(C2HtoNC5)",
-            "WTGMASRSC(C6ttoC19)",
+            "WELLSTATE", "WELLOPMO", "WHP", "BHP", "BLOCKP",
+            "MOBWTDATP", "BHTEMP", "WHTEMP", "ONFRAC", "CGLIFT",
+            "OILVOLSC", "GASVOLSC", "WATVOLSC", "INLVOLSC",
+            "WTGVOLSC", "OILVOLRC", "GASVOLRC", "WATVOLRC",
+            "BHFVOLRC", "WELLOTIME", "OILRATSC", "GASRATSC",
+            "WATRATSC", "INLRATSC", "WTGRATSC", "OILRATRC",
+            "GASRATRC", "WATRATRC", "BHFRATRC", "LIQVOLSC",
+            "LIQRATSC", "OILMOLSC", "GASMOLSC", "WTGMOLSC",
+            "OILMOLRSC", "GASMOLRSC", "WTGMOLRSC", "OILCMOLSC(CO2)",
+            "OILCMOLSC(N2 toCH4)", "OILCMOLSC(C2HtoNC5)", "OILCMOLSC(C6ttoC19)",
+            "OILCMOLSC(C29toC63)", "OILMOLRSC(CO2)", "OILMOLRSC(N2 toCH4)",
+            "OILMOLRSC(C2HtoNC5)", "OILMOLRSC(C6ttoC19)", "OILMOLRSC(C29toC63)",
+            "GASCMOLSC(CO2)", "GASCMOLSC(N2 toCH4)", "GASCMOLSC(C2HtoNC5)",
+            "GASCMOLSC(C6ttoC19)", "GASCMOLSC(C29toC63)", "GASMOLRSC(CO2)",
+            "GASMOLRSC(N2 toCH4)", "GASMOLRSC(C2HtoNC5)", "GASMOLRSC(C6ttoC19)",
+            "GASMOLRSC(C29toC63)", "INLCMOLSC(CO2)", "INLCMOLSC(N2 toCH4)",
+            "INLCMOLSC(C2HtoNC5)", "INLCMOLSC(C6ttoC19)", "INLCMOLSC(C29toC63)",
+            "INLMOLRSC(CO2)", "INLMOLRSC(N2 toCH4)", "INLMOLRSC(C2HtoNC5)",
+            "INLMOLRSC(C6ttoC19)", "INLMOLRSC(C29toC63)", "WTGCMOLSC(CO2)",
+            "WTGCMOLSC(N2 toCH4)", "WTGCMOLSC(C2HtoNC5)", "WTGCMOLSC(C6ttoC19)",
+            "WTGCMOLSC(C29toC63)", "WTGMOLRSC(CO2)", "WTGMOLRSC(N2 toCH4)",
+            "WTGMOLRSC(C2HtoNC5)", "WTGMOLRSC(C6ttoC19)", "WTGMOLRSC(C29toC63)",
+            "OILCMASSC(CO2)", "OILCMASSC(N2 toCH4)", "OILCMASSC(C2HtoNC5)",
+            "OILCMASSC(C6ttoC19)", "OILCMASSC(C29toC63)", "OILMASRSC(CO2)",
+            "OILMASRSC(N2 toCH4)", "OILMASRSC(C2HtoNC5)", "OILMASRSC(C6ttoC19)",
+            "OILMASRSC(C29toC63)", "GASCMASSC(CO2)", "GASCMASSC(N2 toCH4)",
+            "GASCMASSC(C2HtoNC5)", "GASCMASSC(C6ttoC19)", "GASCMASSC(C29toC63)",
+            "GASMASRSC(CO2)", "GASMASRSC(N2 toCH4)", "GASMASRSC(C2HtoNC5)",
+            "GASMASRSC(C6ttoC19)", "GASMASRSC(C29toC63)", "INLCMASSC(CO2)",
+            "INLCMASSC(N2 toCH4)", "INLCMASSC(C2HtoNC5)", "INLCMASSC(C6ttoC19)",
+            "INLCMASSC(C29toC63)", "INLMASRSC(CO2)", "INLMASRSC(N2 toCH4)",
+            "INLMASRSC(C2HtoNC5)", "INLMASRSC(C6ttoC19)", "INLMASRSC(C29toC63)",
+            "WTGCMASSC(CO2)", "WTGCMASSC(N2 toCH4)", "WTGCMASSC(C2HtoNC5)",
+            "WTGCMASSC(C6ttoC19)", "WTGCMASSC(C29toC63)", "WTGMASRSC(CO2)",
+            "WTGMASRSC(N2 toCH4)", "WTGMASRSC(C2HtoNC5)", "WTGMASRSC(C6ttoC19)",
             "WTGMASRSC(C29toC63)",
             "LP","QW","QG","QW_RC","QO","QL","QO_RC","NP","UPTIME","QG_RC","WP","GP"
         ]
@@ -272,229 +154,76 @@ class TestSr3Reader(unittest.TestCase):
         _test_equal_lists(self, true_result, file_read)
 
         true_result = [
-            "OILVOLSC",
-            "GASVOLSC",
-            "WATVOLSC",
-            "INLVOLSC",
-            "WTGVOLSC",
-            "OILVOLRC",
-            "GASVOLRC",
-            "WATVOLRC",
-            "BHFVOLRC",
-            "OILRATSC",
-            "GASRATSC",
-            "WATRATSC",
-            "INLRATSC",
-            "WTGRATSC",
-            "OILRATRC",
-            "GASRATRC",
-            "WATRATRC",
-            "BHFRATRC",
-            "VOIDRATRC",
-            "LIQVOLSC",
-            "LIQRATSC",
-            "WELLOTIME",
-            "NOPWING",
-            "PMPRES",
-            "GIMPRES",
-            "WIMPRES",
-            "PSPRES",
-            "GISPRES",
-            "WISPRES",
-            "ONFRAC",
-            "OILMOLSC",
-            "GASMOLSC",
-            "WTGMOLSC",
-            "OILMOLRSC",
-            "GASMOLRSC",
-            "WTGMOLRSC",
-            "OILCMOLSC(CO2)",
-            "OILCMOLSC(N2 toCH4)",
-            "OILCMOLSC(C2HtoNC5)",
-            "OILCMOLSC(C6ttoC19)",
-            "OILCMOLSC(C29toC63)",
-            "OILMOLRSC(CO2)",
-            "OILMOLRSC(N2 toCH4)",
-            "OILMOLRSC(C2HtoNC5)",
-            "OILMOLRSC(C6ttoC19)",
-            "OILMOLRSC(C29toC63)",
-            "GASCMOLSC(CO2)",
-            "GASCMOLSC(N2 toCH4)",
-            "GASCMOLSC(C2HtoNC5)",
-            "GASCMOLSC(C6ttoC19)",
-            "GASCMOLSC(C29toC63)",
-            "GASMOLRSC(CO2)",
-            "GASMOLRSC(N2 toCH4)",
-            "GASMOLRSC(C2HtoNC5)",
-            "GASMOLRSC(C6ttoC19)",
-            "GASMOLRSC(C29toC63)",
-            "INLCMOLSC(CO2)",
-            "INLCMOLSC(N2 toCH4)",
-            "INLCMOLSC(C2HtoNC5)",
-            "INLCMOLSC(C6ttoC19)",
-            "INLCMOLSC(C29toC63)",
-            "INLMOLRSC(CO2)",
-            "INLMOLRSC(N2 toCH4)",
-            "INLMOLRSC(C2HtoNC5)",
-            "INLMOLRSC(C6ttoC19)",
-            "INLMOLRSC(C29toC63)",
-            "WTGCMOLSC(CO2)",
-            "WTGCMOLSC(N2 toCH4)",
-            "WTGCMOLSC(C2HtoNC5)",
-            "WTGCMOLSC(C6ttoC19)",
-            "WTGCMOLSC(C29toC63)",
-            "WTGMOLRSC(CO2)",
-            "WTGMOLRSC(N2 toCH4)",
-            "WTGMOLRSC(C2HtoNC5)",
-            "WTGMOLRSC(C6ttoC19)",
-            "WTGMOLRSC(C29toC63)",
-            "OILCMASSC(CO2)",
-            "OILCMASSC(N2 toCH4)",
-            "OILCMASSC(C2HtoNC5)",
-            "OILCMASSC(C6ttoC19)",
-            "OILCMASSC(C29toC63)",
-            "OILMASRSC(CO2)",
-            "OILMASRSC(N2 toCH4)",
-            "OILMASRSC(C2HtoNC5)",
-            "OILMASRSC(C6ttoC19)",
-            "OILMASRSC(C29toC63)",
-            "GASCMASSC(CO2)",
-            "GASCMASSC(N2 toCH4)",
-            "GASCMASSC(C2HtoNC5)",
-            "GASCMASSC(C6ttoC19)",
-            "GASCMASSC(C29toC63)",
-            "GASMASRSC(CO2)",
-            "GASMASRSC(N2 toCH4)",
-            "GASMASRSC(C2HtoNC5)",
-            "GASMASRSC(C6ttoC19)",
-            "GASMASRSC(C29toC63)",
-            "INLCMASSC(CO2)",
-            "INLCMASSC(N2 toCH4)",
-            "INLCMASSC(C2HtoNC5)",
-            "INLCMASSC(C6ttoC19)",
-            "INLCMASSC(C29toC63)",
-            "INLMASRSC(CO2)",
-            "INLMASRSC(N2 toCH4)",
-            "INLMASRSC(C2HtoNC5)",
-            "INLMASRSC(C6ttoC19)",
-            "INLMASRSC(C29toC63)",
-            "WTGCMASSC(CO2)",
-            "WTGCMASSC(N2 toCH4)",
-            "WTGCMASSC(C2HtoNC5)",
-            "WTGCMASSC(C6ttoC19)",
-            "WTGCMASSC(C29toC63)",
-            "WTGMASRSC(CO2)",
-            "WTGMASRSC(N2 toCH4)",
-            "WTGMASRSC(C2HtoNC5)",
-            "WTGMASRSC(C6ttoC19)",
-            "WTGMASRSC(C29toC63)",
+            "OILVOLSC", "GASVOLSC", "WATVOLSC", "INLVOLSC", "WTGVOLSC",
+            "OILVOLRC", "GASVOLRC", "WATVOLRC", "BHFVOLRC", "OILRATSC",
+            "GASRATSC", "WATRATSC", "INLRATSC", "WTGRATSC", "OILRATRC",
+            "GASRATRC", "WATRATRC", "BHFRATRC", "VOIDRATRC", "LIQVOLSC",
+            "LIQRATSC", "WELLOTIME", "NOPWING", "PMPRES", "GIMPRES",
+            "WIMPRES", "PSPRES", "GISPRES", "WISPRES", "ONFRAC", "OILMOLSC",
+            "GASMOLSC", "WTGMOLSC", "OILMOLRSC", "GASMOLRSC", "WTGMOLRSC",
+            "OILCMOLSC(CO2)", "OILCMOLSC(N2 toCH4)", "OILCMOLSC(C2HtoNC5)",
+            "OILCMOLSC(C6ttoC19)", "OILCMOLSC(C29toC63)", "OILMOLRSC(CO2)",
+            "OILMOLRSC(N2 toCH4)", "OILMOLRSC(C2HtoNC5)", "OILMOLRSC(C6ttoC19)",
+            "OILMOLRSC(C29toC63)", "GASCMOLSC(CO2)", "GASCMOLSC(N2 toCH4)",
+            "GASCMOLSC(C2HtoNC5)", "GASCMOLSC(C6ttoC19)", "GASCMOLSC(C29toC63)",
+            "GASMOLRSC(CO2)", "GASMOLRSC(N2 toCH4)", "GASMOLRSC(C2HtoNC5)",
+            "GASMOLRSC(C6ttoC19)", "GASMOLRSC(C29toC63)", "INLCMOLSC(CO2)",
+            "INLCMOLSC(N2 toCH4)", "INLCMOLSC(C2HtoNC5)", "INLCMOLSC(C6ttoC19)",
+            "INLCMOLSC(C29toC63)", "INLMOLRSC(CO2)", "INLMOLRSC(N2 toCH4)",
+            "INLMOLRSC(C2HtoNC5)", "INLMOLRSC(C6ttoC19)", "INLMOLRSC(C29toC63)",
+            "WTGCMOLSC(CO2)", "WTGCMOLSC(N2 toCH4)", "WTGCMOLSC(C2HtoNC5)",
+            "WTGCMOLSC(C6ttoC19)", "WTGCMOLSC(C29toC63)", "WTGMOLRSC(CO2)",
+            "WTGMOLRSC(N2 toCH4)", "WTGMOLRSC(C2HtoNC5)", "WTGMOLRSC(C6ttoC19)",
+            "WTGMOLRSC(C29toC63)", "OILCMASSC(CO2)", "OILCMASSC(N2 toCH4)",
+            "OILCMASSC(C2HtoNC5)", "OILCMASSC(C6ttoC19)", "OILCMASSC(C29toC63)",
+            "OILMASRSC(CO2)", "OILMASRSC(N2 toCH4)", "OILMASRSC(C2HtoNC5)",
+            "OILMASRSC(C6ttoC19)", "OILMASRSC(C29toC63)", "GASCMASSC(CO2)",
+            "GASCMASSC(N2 toCH4)", "GASCMASSC(C2HtoNC5)", "GASCMASSC(C6ttoC19)",
+            "GASCMASSC(C29toC63)", "GASMASRSC(CO2)", "GASMASRSC(N2 toCH4)",
+            "GASMASRSC(C2HtoNC5)", "GASMASRSC(C6ttoC19)", "GASMASRSC(C29toC63)",
+            "INLCMASSC(CO2)", "INLCMASSC(N2 toCH4)", "INLCMASSC(C2HtoNC5)",
+            "INLCMASSC(C6ttoC19)", "INLCMASSC(C29toC63)", "INLMASRSC(CO2)",
+            "INLMASRSC(N2 toCH4)", "INLMASRSC(C2HtoNC5)", "INLMASRSC(C6ttoC19)",
+            "INLMASRSC(C29toC63)", "WTGCMASSC(CO2)", "WTGCMASSC(N2 toCH4)",
+            "WTGCMASSC(C2HtoNC5)", "WTGCMASSC(C6ttoC19)", "WTGCMASSC(C29toC63)",
+            "WTGMASRSC(CO2)", "WTGMASRSC(N2 toCH4)", "WTGMASRSC(C2HtoNC5)",
+            "WTGMASRSC(C6ttoC19)", "WTGMASRSC(C29toC63)",
             "WP","QO","UPTIME","QG","QW","QW_RC","QG_RC","QO_RC","NP","QL","GP","LP"
         ]
         file_read = sr3.properties.get("group").keys()
         _test_equal_lists(self, true_result, file_read)
 
         true_result = [
-            "OILSECSU",
-            "GASSECSU",
-            "WATSECSU",
-            "INLSECSU",
-            "OILSECRECO",
-            "GASSECRECO",
-            "WATSECRECO",
-            "INLSECRECO",
-            "WAQCUMSEC",
-            "OILSECPRCM",
-            "WATSECPRCM",
-            "GASSECPRCM",
-            "INLSECPRCM",
-            "WTGSECPRCM",
-            "WATSECINCM",
-            "GASSECINCM",
-            "OILSECPRRT",
-            "WATSECPRRT",
-            "GASSECPRRT",
-            "INLSECPRRT",
-            "WTGSECPRRT",
-            "WATSECINRT",
-            "GASSECINRT",
-            "PVCUMSEC",
-            "HPVCUMSEC",
-            "PRSCUMSEC",
-            "PHHCUMSEC",
-            "PDTVSEC",
-            "PTDCUMSEC",
-            "AVGTEMPSEC",
-            "OILSECRECU",
-            "WATSECRECU",
-            "GASSECRECU",
-            "OILSECAVSA",
-            "WATSECAVSA",
-            "GASSECAVSA",
-            "OILMLPSC",
-            "GASMLPSC",
-            "WTGMLPSC",
-            "INLMLPSC",
-            "OILCMLPSC(CO2)",
-            "OILCMLPSC(N2 toCH4)",
-            "OILCMLPSC(C2HtoNC5)",
-            "OILCMLPSC(C6ttoC19)",
-            "OILCMLPSC(C29toC63)",
-            "GASCMLPSC(CO2)",
-            "GASCMLPSC(N2 toCH4)",
-            "GASCMLPSC(C2HtoNC5)",
-            "GASCMLPSC(C6ttoC19)",
-            "GASCMLPSC(C29toC63)",
-            "INLCMLPSC(CO2)",
-            "INLCMLPSC(N2 toCH4)",
-            "INLCMLPSC(C2HtoNC5)",
-            "INLCMLPSC(C6ttoC19)",
-            "INLCMLPSC(C29toC63)",
-            "WTGCMLPSC(CO2)",
-            "WTGCMLPSC(N2 toCH4)",
-            "WTGCMLPSC(C2HtoNC5)",
-            "WTGCMLPSC(C6ttoC19)",
-            "WTGCMLPSC(C29toC63)",
-            "GASCMLISC(CO2)",
-            "GASCMLISC(N2 toCH4)",
-            "GASCMLISC(C2HtoNC5)",
-            "GASCMLISC(C6ttoC19)",
-            "GASCMLISC(C29toC63)",
-            "OILMOLIP(CO2)",
-            "OILMOLIP(N2 toCH4)",
-            "OILMOLIP(C2HtoNC5)",
-            "OILMOLIP(C6ttoC19)",
-            "OILMOLIP(C29toC63)",
-            "GASMOLIP(CO2)",
-            "GASMOLIP(N2 toCH4)",
-            "GASMOLIP(C2HtoNC5)",
-            "GASMOLIP(C6ttoC19)",
-            "GASMOLIP(C29toC63)",
-            "INLMOLIP(CO2)",
-            "INLMOLIP(N2 toCH4)",
-            "INLMOLIP(C2HtoNC5)",
-            "INLMOLIP(C6ttoC19)",
-            "INLMOLIP(C29toC63)",
-            "OILCOMMOL(CO2)",
-            "OILCOMMOL(N2 toCH4)",
-            "OILCOMMOL(C2HtoNC5)",
-            "OILCOMMOL(C6ttoC19)",
-            "OILCOMMOL(C29toC63)",
-            "GASCOMMOL(CO2)",
-            "GASCOMMOL(N2 toCH4)",
-            "GASCOMMOL(C2HtoNC5)",
-            "GASCOMMOL(C6ttoC19)",
-            "GASCOMMOL(C29toC63)",
-            "AQUCOMMOL(CO2)",
-            "AQUCOMMOL(N2 toCH4)",
-            "AQUCOMMOL(C2HtoNC5)",
-            "AQUCOMMOL(C6ttoC19)",
-            "AQUCOMMOL(C29toC63)",
-            "AQUCOMMOL(WATER)",
-            "OILSECRECOO",
-            "GASSECRECOO",
-            "WATSECRECOO",
-            "INLSECRECOO",
-            "VOIP"
+            "OILSECSU", "GASSECSU", "WATSECSU", "INLSECSU",
+            "OILSECRECO", "GASSECRECO", "WATSECRECO", "INLSECRECO",
+            "WAQCUMSEC", "OILSECPRCM", "WATSECPRCM", "GASSECPRCM",
+            "INLSECPRCM", "WTGSECPRCM", "WATSECINCM", "GASSECINCM",
+            "OILSECPRRT", "WATSECPRRT", "GASSECPRRT", "INLSECPRRT",
+            "WTGSECPRRT", "WATSECINRT", "GASSECINRT", "PVCUMSEC",
+            "HPVCUMSEC", "PRSCUMSEC", "PHHCUMSEC", "PDTVSEC",
+            "PTDCUMSEC", "AVGTEMPSEC", "OILSECRECU", "WATSECRECU",
+            "GASSECRECU", "OILSECAVSA", "WATSECAVSA", "GASSECAVSA",
+            "OILMLPSC", "GASMLPSC", "WTGMLPSC", "INLMLPSC",
+            "OILCMLPSC(CO2)", "OILCMLPSC(N2 toCH4)", "OILCMLPSC(C2HtoNC5)",
+            "OILCMLPSC(C6ttoC19)", "OILCMLPSC(C29toC63)", "GASCMLPSC(CO2)",
+            "GASCMLPSC(N2 toCH4)", "GASCMLPSC(C2HtoNC5)", "GASCMLPSC(C6ttoC19)",
+            "GASCMLPSC(C29toC63)", "INLCMLPSC(CO2)", "INLCMLPSC(N2 toCH4)",
+            "INLCMLPSC(C2HtoNC5)", "INLCMLPSC(C6ttoC19)", "INLCMLPSC(C29toC63)",
+            "WTGCMLPSC(CO2)", "WTGCMLPSC(N2 toCH4)", "WTGCMLPSC(C2HtoNC5)",
+            "WTGCMLPSC(C6ttoC19)", "WTGCMLPSC(C29toC63)", "GASCMLISC(CO2)",
+            "GASCMLISC(N2 toCH4)", "GASCMLISC(C2HtoNC5)", "GASCMLISC(C6ttoC19)",
+            "GASCMLISC(C29toC63)", "OILMOLIP(CO2)", "OILMOLIP(N2 toCH4)",
+            "OILMOLIP(C2HtoNC5)", "OILMOLIP(C6ttoC19)", "OILMOLIP(C29toC63)",
+            "GASMOLIP(CO2)", "GASMOLIP(N2 toCH4)", "GASMOLIP(C2HtoNC5)",
+            "GASMOLIP(C6ttoC19)", "GASMOLIP(C29toC63)", "INLMOLIP(CO2)",
+            "INLMOLIP(N2 toCH4)", "INLMOLIP(C2HtoNC5)", "INLMOLIP(C6ttoC19)",
+            "INLMOLIP(C29toC63)", "OILCOMMOL(CO2)", "OILCOMMOL(N2 toCH4)",
+            "OILCOMMOL(C2HtoNC5)", "OILCOMMOL(C6ttoC19)", "OILCOMMOL(C29toC63)",
+            "GASCOMMOL(CO2)", "GASCOMMOL(N2 toCH4)", "GASCOMMOL(C2HtoNC5)",
+            "GASCOMMOL(C6ttoC19)", "GASCOMMOL(C29toC63)", "AQUCOMMOL(CO2)",
+            "AQUCOMMOL(N2 toCH4)", "AQUCOMMOL(C2HtoNC5)", "AQUCOMMOL(C6ttoC19)",
+            "AQUCOMMOL(C29toC63)", "AQUCOMMOL(WATER)", "OILSECRECOO", "GASSECRECOO",
+            "WATSECRECOO", "INLSECRECOO", "VOIP"
         ]
         file_read = sr3.properties.get("sector").keys()
         _test_equal_lists(self, true_result, file_read)
@@ -504,79 +233,27 @@ class TestSr3Reader(unittest.TestCase):
         _test_equal_lists(self, true_result, file_read)
 
         true_result = [
-            "ICSTBC",
-            "ICSTCG",
-            "ICSTGN",
-            "ICSTPS",
-            "ICSTPB",
-            "IPSTCS",
-            "IPSTBT",
-            "IPSTAC",
-            "BLOCKDEPTH",
-            "BLOCKPVOL",
-            "BVOL",
-            "PERMI",
-            "PERMJ",
-            "PERMK",
-            "TRMI",
-            "TRMJ",
-            "TRMK",
-            "TRLI",
-            "TRLJ",
-            "TRLK",
-            "BSWCRIT",
-            "BSGCRIT",
-            "BSORW",
-            "BSORG",
-            "BSWCON",
-            "BSGCON",
-            "BSOIRW",
-            "BSOIRG",
-            "BSLCON",
-            "BKRWIRO",
-            "BKROCW",
-            "BKRWRO",
-            "BKROCRW",
-            "PCWMAX",
-            "PCWSHF",
-            "BKRGCL",
-            "BKROGCG",
-            "BKRGRL",
-            "BKROGCRG",
-            "PCGMAX",
-            "POR",
-            "NET/GROSS",
-            "MODBVOL",
-            "KRSETN",
-            "SO",
-            "SG",
-            "SW",
-            "PRES",
-            "VISO",
-            "VISG",
-            "VISW",
-            "Z(CO2)",
+            "ICSTBC", "ICSTCG", "ICSTGN", "ICSTPS", "ICSTPB",
+            "IPSTCS", "IPSTBT", "IPSTAC", "BLOCKDEPTH", "BLOCKPVOL",
+            "BVOL", "PERMI", "PERMJ", "PERMK", "TRMI", "TRMJ", "TRMK",
+            "TRLI", "TRLJ", "TRLK", "BSWCRIT", "BSGCRIT", "BSORW",
+            "BSORG", "BSWCON", "BSGCON", "BSOIRW", "BSOIRG", "BSLCON",
+            "BKRWIRO", "BKROCW", "BKRWRO", "BKROCRW", "PCWMAX", "PCWSHF",
+            "BKRGCL", "BKROGCG", "BKRGRL", "BKROGCRG", "PCGMAX", "POR",
+            "NET/GROSS", "MODBVOL", "KRSETN", "SO", "SG", "SW", "PRES",
+            "VISO", "VISG", "VISW", "Z(CO2)",
         ]
         file_read = sr3.properties.get("grid").keys()
         _test_equal_lists(self, true_result, file_read)
 
         true_result = [
-            "ELTSCUM",
-            "ELTSRATE",
-            "TSTEPCUM",
-            "NCYCCUM",
-            "SOLITCUM",
-            "TSCUTCUM",
-            "DELTIME",
-            "NCYCPTS",
-            "SOLITPN",
-            "MBERROR",
-            "AVGIMPL",
-            "MEMUSAGE",
-            "TS_SIZE","TS_CUTS","ELAPSED"
+            "ELTSCUM", "ELTSRATE", "TSTEPCUM", "NCYCCUM", "SOLITCUM",
+            "TSCUTCUM", "DELTIME", "NCYCPTS", "SOLITPN", "MBERROR",
+            "AVGIMPL", "MEMUSAGE", "TS_SIZE", "TS_CUTS", "ELAPSED"
         ]
         file_read = sr3.properties.get("special").keys()
         _test_equal_lists(self, true_result, file_read)
+
 
 # MARK: Units
     def test_read_units(self):
@@ -691,6 +368,7 @@ class TestSr3Reader(unittest.TestCase):
         file_read = sr3.dates.date2day(date=[datetime.strptime("20200906", "%Y%m%d")])
         true_result = [735.]
         _test_equal_lists(self, true_result, file_read)
+
 
 # MARK: Element hierarchy
     def test_read_element_hierarchy(self):
@@ -858,6 +536,7 @@ class TestSr3Reader(unittest.TestCase):
         true_result = 4 * 2 * 1 * 2
         self.assertEqual(true_result, file_read)
 
+
 # MARK: Timeseries
     def test_read_timeseries(self):
         """Tests reading timeseries"""
@@ -967,16 +646,8 @@ class TestSr3Reader(unittest.TestCase):
         self.assertEqual(len(file_read_), sr3.grid.get_size("n_cells"))
 
         true_result = [
-            5257.2,
-            5342.5,
-            5428.7,
-            5513.8,
-            5589.9,
-            5651.9,
-            5703.2,
-            5818.1,
-            5818.1,
-            5818.1
+            5257.2, 5342.5, 5428.7, 5513.8, 5589.9,
+            5651.9, 5703.2, 5818.1, 5818.1, 5818.1
         ]
         for i in range(10):
             self.assertAlmostEqual(true_result[i], round(file_read_[i],1))
@@ -996,16 +667,8 @@ class TestSr3Reader(unittest.TestCase):
         self.assertEqual(len(file_read_), sr3.grid.get_size("n_active"))
 
         true_result = [
-            5507.3,
-            5494.4,
-            5515.1,
-            5484.5,
-            5509.3,
-            5541.7,
-            5464.5,
-            5485.2,
-            5515.4,
-            5688.3
+            5507.3, 5494.4, 5515.1, 5484.5, 5509.3,
+            5541.7, 5464.5, 5485.2, 5515.4, 5688.3
         ]
         for i in range(10):
             self.assertAlmostEqual(true_result[i], round(file_read_[i],1))
@@ -1031,16 +694,9 @@ class TestSr3Reader(unittest.TestCase):
 
         file_read_ = file_read["PRES"].sel(day=30.).values
         true_result = [
-            63489.766,
-            63396.96,
-            63545.605,
-            63325.547,
-            63504.36,
-            63737.207,
-            63181.977,
-            63330.82,
-            63547.914,
-            64793.88,
+            63489.766, 63396.96, 63545.605, 63325.547,
+            63504.36, 63737.207, 63181.977, 63330.82,
+            63547.914, 64793.88,
         ]
         true_result = [round(t / 98.0665, 3) for t in true_result]
         for i in range(10):
@@ -1100,21 +756,9 @@ class TestSr3Reader(unittest.TestCase):
         self.assertEqual(len(file_read_), sr3.grid.get_size("n_cells"))
 
         true_result = [
-            3005.500,
-            3006.500,
-            3007.500,
-            3008.500,
-            3005.500,
-            3006.500,
-            3007.500,
-            3008.500,
-            3005.500,
-            3006.500,
-            3007.500,
-            3008.500,
-            3005.500,
-            3006.500,
-            3007.500,
+            3005.500, 3006.500, 3007.500, 3008.500, 3005.500,
+            3006.500, 3007.500, 3008.500, 3005.500, 3006.500,
+            3007.500, 3008.500, 3005.500, 3006.500, 3007.500,
             3008.500
         ]
         for t,v in zip(true_result, file_read_):
@@ -1136,21 +780,9 @@ class TestSr3Reader(unittest.TestCase):
 
         true_result = [
             # 3005.500,
-            3006.500,
-            3007.500,
-            3008.500,
-            3005.500,
-            3006.500,
-            3007.500,
-            3008.500,
+            3006.500, 3007.500, 3008.500, 3005.500, 3006.500, 3007.500, 3008.500,
             # 3005.500,
-            3006.500,
-            3007.500,
-            3008.500,
-            3005.500,
-            3006.500,
-            3007.500,
-            3008.500
+            3006.500, 3007.500, 3008.500, 3005.500, 3006.500, 3007.500, 3008.500
         ]
         for i in range(10):
             self.assertAlmostEqual(true_result[i], round(file_read_[i],1))
@@ -1163,20 +795,9 @@ class TestSr3Reader(unittest.TestCase):
 
         file_read_ = file_read["SO"].sel(day=1096.).values
         true_result = [
-            0.53912,
-            0.52874,
-            0.51399,
-            0.64481,
-            0.62339,
-            0.63017,
-            0.62788,
-            0.52435,
-            0.51081,
-            0.48366,
-            0.64181,
-            0.61585,
-            0.62052,
-            0.61545
+            0.53912, 0.52874, 0.51399, 0.64481, 0.62339,
+            0.63017, 0.62788, 0.52435, 0.51081, 0.48366,
+            0.64181, 0.61585, 0.62052, 0.61545
         ]
 
         for t,v in zip(true_result, file_read_):
@@ -1211,21 +832,9 @@ class TestSr3Reader(unittest.TestCase):
 
         file_read_ = file_read["SO"].sel(day=1096.).values
         true_result = [
-            0.0,
-            0.53912,
-            0.52874,
-            0.51399,
-            0.64481,
-            0.62339,
-            0.63017,
-            0.62788,
-            0.0,
-            0.52435,
-            0.51081,
-            0.48366,
-            0.64181,
-            0.61585,
-            0.62052,
+            0.00000, 0.53912, 0.52874, 0.51399, 0.64481,
+            0.62339, 0.63017, 0.62788, 0.00000, 0.52435,
+            0.51081, 0.48366, 0.64181, 0.61585, 0.62052,
             0.61545
         ]
 
@@ -1341,13 +950,8 @@ class TestSr3Reader(unittest.TestCase):
 
         file_read_ = sr3.connections.get_connections()
         true_result = [
-            [3, 4, 2],
-            [6, 3, 2],
-            [3, 7, 3],
-            [4, 8, 3],
-            [5, 6, 2],
-            [6, 7, 2],
-            [7, 8, 2]
+            [3, 4, 2], [6, 3, 2], [3, 7, 3], [4, 8, 3],
+            [5, 6, 2], [6, 7, 2], [7, 8, 2]
         ]
         true_result = np.array(true_result)
 
@@ -1357,13 +961,8 @@ class TestSr3Reader(unittest.TestCase):
 
         file_read_ = sr3.connections.get_connections(as_active=True)
         true_result = [
-            [1, 2, 2],
-            [4, 1, 2],
-            [1, 5, 3],
-            [2, 6, 3],
-            [3, 4, 2],
-            [4, 5, 2],
-            [5, 6, 2]
+            [1, 2, 2], [4, 1, 2], [1, 5, 3], [2, 6, 3],
+            [3, 4, 2], [4, 5, 2], [5, 6, 2]
         ]
         true_result = np.array(true_result)
 
@@ -1379,14 +978,9 @@ class TestSr3Reader(unittest.TestCase):
 
         file_read_ = sr3.connections.get_transmissibilities()
         true_result = [
-            1.90275126e+02,
-            6.55115580e+00,
-            1.19244010e+05,
-            1.16153341e+05,
-            9.36358173e+01,
-            3.55410101e+02,
-            4.84339698e+02
-            ]
+            1.90275126e+02, 6.55115580e+00, 1.19244010e+05, 1.16153341e+05,
+            9.36358173e+01, 3.55410101e+02, 4.84339698e+02
+        ]
         true_result = np.array(true_result)
 
         for t,v in zip(true_result, file_read_):
@@ -1432,6 +1026,36 @@ class TestSr3Reader(unittest.TestCase):
 
         # plt.savefig('./_connection.png')
         plt.close()
+
+
+    # MARK: Krel
+    def test_read_krel(self):
+        """Tests reading relative permeability tables"""
+
+        test_file = Path("tests/sr3/base_case_3a.sr3")
+        sr3 = Sr3Reader(test_file)
+
+        file_read_ = sr3.krel.get(2)['krow'].values
+        true_result = [
+            0.35000, 0.29412, 0.24522, 0.20268, 0.16593, 0.13443, 0.10763,
+            0.08506, 0.06624, 0.05073, 0.03812, 0.02802, 0.02007, 0.01395,
+            0.00935, 0.00599, 0.00363, 0.00205, 0.00105, 0.00047, 0.00017,
+            0.00004, 0.00001, 0.00000, 0.00000, 0.00000,
+        ]
+        true_result = np.array(true_result)
+
+        for t,v in zip(true_result, file_read_):
+            self.assertAlmostEqual(round(t,5), round(v,5))
+
+        file_read_ = sr3.krel.get(2)['krow']['sw'].values
+        true_result = [
+            0.18, 0.20, 0.22, 0.24, 0.26, 0.28, 0.30, 0.32, 0.34, 0.36, 0.38, 0.40, 0.42,
+            0.44, 0.46, 0.48, 0.50, 0.52, 0.54, 0.56, 0.58, 0.60, 0.62, 0.64, 0.65, 1,00
+        ]
+        true_result = np.array(true_result)
+
+        for t,v in zip(true_result, file_read_):
+            self.assertAlmostEqual(round(t,5), round(v,5))
 
 
 if __name__ == "__main__":
