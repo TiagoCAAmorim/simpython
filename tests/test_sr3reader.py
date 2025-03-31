@@ -735,7 +735,7 @@ class TestSr3Reader(unittest.TestCase):
         for i in range(10):
             self.assertAlmostEqual(true_result[i], file_read_[i])
 
-# MARK: Grid properties
+
     def test_read_grid_2phi2k(self):
         """Tests reading 2phi2k grid properties"""
 
@@ -1035,7 +1035,7 @@ class TestSr3Reader(unittest.TestCase):
         test_file = Path("tests/sr3/base_case_3a.sr3")
         sr3 = Sr3Reader(test_file)
 
-        file_read_ = sr3.krel.get(2)['krow'].values
+        file_read_ = sr3.krel.get(2)
         true_result = [
             0.35000, 0.29412, 0.24522, 0.20268, 0.16593, 0.13443, 0.10763,
             0.08506, 0.06624, 0.05073, 0.03812, 0.02802, 0.02007, 0.01395,
@@ -1044,17 +1044,16 @@ class TestSr3Reader(unittest.TestCase):
         ]
         true_result = np.array(true_result)
 
-        for t,v in zip(true_result, file_read_):
+        for t,v in zip(true_result, file_read_['krow'].values):
             self.assertAlmostEqual(round(t,5), round(v,5))
 
-        file_read_ = sr3.krel.get(2)['krow']['sw'].values
         true_result = [
             0.18, 0.20, 0.22, 0.24, 0.26, 0.28, 0.30, 0.32, 0.34, 0.36, 0.38, 0.40, 0.42,
             0.44, 0.46, 0.48, 0.50, 0.52, 0.54, 0.56, 0.58, 0.60, 0.62, 0.64, 0.65, 1,00
         ]
         true_result = np.array(true_result)
 
-        for t,v in zip(true_result, file_read_):
+        for t,v in zip(true_result, file_read_['sw'].values):
             self.assertAlmostEqual(round(t,5), round(v,5))
 
         # sr3.krel.get(3).to_csv('test_krel.csv')

@@ -49,12 +49,19 @@ elapsed_values = elapsed_data["ELAPSED"].sel(element="").values
 
 # Get grid data
 grid_data = sr3.data.get("grid", ["SO","PRES","VISO","Z(CO2)"], "MATRIX", days=10.)
+grid_so = file_read["SO"].sel(day=10.).values
+
+# Get relative permeability tables
+krel = sr3.krel.get(table_number=2)
+sw = krel['sw'].values
+krow = krel['sw'].values
 
 # Save data to csv
 grid_data.to_csv('./grid_data.csv')
 sr3.data.to_csv("well", ["QO","BHP","NP"], ["P11","P13"], './wells.csv')
+krel.to_csv('krel.csv')
 
-# Plot layer 50 K- planes
+# Plot layer 50 K- faces
 all_layers = sr3.grid.coordinates.get(cells=np.arange(1,ni*nj*nk+1), face='K-')
 all_layers_act = sr3.data.to_active(all_layers)
 
