@@ -18,7 +18,8 @@ krel_table1 = krel_handler.get(1)
 import numpy as np
 import xarray as xr
 
-from rsimpy.cmg.sr3reader.data import SimData
+# from rsimpy.cmg.sr3reader.data import SimData
+from rsimpy.cmg.sr3reader.sim_data import SimData
 
 class KrelHandler:
     """
