@@ -56,7 +56,7 @@ class DataHandler:
 
         Parameters
         ----------
-        element type: str
+        element_type: str
             Element type to be evaluated.
         properties: [str]
             Properties to be evaluated.

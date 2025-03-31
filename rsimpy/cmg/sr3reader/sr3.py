@@ -122,7 +122,6 @@ class Sr3Handler:
         if table_name in self._file:
             table = self._file[table_name]
 
-        # self.close()
         return table
 
 
