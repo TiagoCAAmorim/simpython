@@ -1057,6 +1057,8 @@ class TestSr3Reader(unittest.TestCase):
         for t,v in zip(true_result, file_read_):
             self.assertAlmostEqual(round(t,5), round(v,5))
 
+        # sr3.krel.get(3).to_csv('test_krel.csv')
+
 
 if __name__ == "__main__":
     unittest.main()

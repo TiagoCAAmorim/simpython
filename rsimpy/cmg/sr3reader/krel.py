@@ -61,7 +61,7 @@ class KrelHandler:
             raise ValueError("No GO or WO tables found.")
         for go, wo in zip(go_tables, wo_tables):
             processed_tables = self._process_tables(go, wo)
-            self._krel_tables.append(processed_tables)
+            self._krel_tables.append(SimData(processed_tables))
 
 
     def _process_table(self, table):
@@ -118,6 +118,7 @@ class KrelHandler:
             raise ValueError("Mismatch in KRO max values.")
 
         xr_dataset = xr.Dataset()
+        xr_dataset.attrs["element_type"] = "krel"
         for k,v in end_points.items():
             xr_dataset.attrs[k] = float(v)
 
@@ -128,12 +129,12 @@ class KrelHandler:
                 dims=[s_name])
             return data_array
 
-        elements_ = ['krg', 'krog', 'PCG', 'PCGD', 'PCGI']
+        elements_ = ['krg', 'krog', 'pcg', 'pcgd', 'pcgi']
         for c in elements_:
             if c in go_table:
                 xr_dataset[c] = _new_data_array(go_table, 'sl', c)
 
-        elements_ = ['krw', 'krow', 'PCW', 'PCWD', 'PCWI']
+        elements_ = ['krw', 'krow', 'pcw', 'pcwd', 'pcwi']
         for c in elements_:
             if c in wo_table:
                 xr_dataset[c] = _new_data_array(wo_table, 'sw', c)

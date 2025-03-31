@@ -489,6 +489,22 @@ class SimData(xr.Dataset):
         return df
 
 
+    def _krel_to_df(self):
+        sl = self["sl"].values
+        data = np.array([sl])
+        df = pd.DataFrame(data.T, columns=["Sl"])
+        for prop in self.data_vars.keys():
+            if "g" in prop:
+                data = self[prop].values
+                df[prop.title()] = data[:]
+        df["Sw"] = self["sw"].values
+        for prop in self.data_vars.keys():
+            if "w" in prop:
+                data = self[prop].values
+                df[prop.title()] = data[:]
+        return df
+
+
     def _grid_to_df(self):
         cell_data = np.array([self["index"].values, self["cell"].values])
         df = pd.DataFrame(cell_data.T, columns=["index", "cell"])
@@ -513,6 +529,8 @@ class SimData(xr.Dataset):
         """
         if self.attrs["element_type"] == "grid":
             df = self._grid_to_df()
+        elif self.attrs["element_type"] == "krel":
+            df = self._krel_to_df()
         else:
             df = self._timeseries_to_df()
         df.to_csv(filename, index=False)
