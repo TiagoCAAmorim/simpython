@@ -10,7 +10,7 @@ from .properties import PropertyHandler
 from .elements import ElementHandler
 from .data import DataHandler
 from .connections import ConnectionsHandler
-
+from .krel import KrelHandler
 
 class Sr3Reader:
     """
@@ -64,6 +64,7 @@ class Sr3Reader:
         self.grid = GridHandler(self.file, self.dates, auto_read=auto_read)
         self.properties = PropertyHandler(self.file, self.units, self.grid, auto_read=auto_read)
         self.elements = ElementHandler(self.file, self.units, self.grid, auto_read=auto_read)
+        self.krel = KrelHandler(self.file, auto_read=auto_read)
         self.data = DataHandler(self)
         self.connections = ConnectionsHandler(self)
 
@@ -78,6 +79,7 @@ class Sr3Reader:
         self.grid.read()
         self.properties.read()
         self.elements.read()
+        self.krel.read()
 
 
     def set_usual_units(self):

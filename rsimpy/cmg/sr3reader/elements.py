@@ -257,8 +257,7 @@ class ElementHandler:
         children = self._get_direct_children("group", element_name)
         if len(children) == 0:
             return self._get_direct_children("well", element_name)
-        else:
-            wells = []
-            for child in children:
-                wells += self.get_children("well", child)
-            return wells
+        wells = []
+        for child in children:
+            wells += self.get_children("well", child)
+        return wells
