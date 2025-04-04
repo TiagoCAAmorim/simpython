@@ -131,9 +131,20 @@ class GridCoordHandler:
 
             nodes = np.zeros(((ni+1)*(nj+1)*(nk+1),3), dtype=np.float64)
 
-            x_coord = sr3_file.get_table("SpatialProperties/000000/GRID/XCORNCRCN")[:]
-            y_coord = sr3_file.get_table("SpatialProperties/000000/GRID/YCORNCRCN")[:]
-            z_coord = sr3_file.get_table("SpatialProperties/000000/GRID/ZCORNCRCN")[:]
+            if self._file.get_table("SpatialProperties/000000/GRID/XCORNCRCN") is not None:
+                x_coord = sr3_file.get_table("SpatialProperties/000000/GRID/XCORNCRCN")[:]
+                y_coord = sr3_file.get_table("SpatialProperties/000000/GRID/YCORNCRCN")[:]
+                z_coord = sr3_file.get_table("SpatialProperties/000000/GRID/ZCORNCRCN")[:]
+            else:
+                b_sizes = sr3_file.get_table("SpatialProperties/000000/GRID/BLOCKSIZE")[:].reshape(-1, 3)
+                b_depth = sr3_file.get_table("SpatialProperties/000000/GRID/BLOCKDEPTH")[:]
+                # x_coord = np.cumsum(b_sizes[:,0])
+                # y_coord = np.cumsum(b_sizes[:,1])
+                # z_coord = np.cumsum(b_sizes[:,2] + b_depth)
+
+                x_coord = np.tile(x_coord, (nk+1)*(nj+1))
+                y_coord = np.tile(y_coord, (nk+1))
+                z_coord = np.tile(z_coord, (nj+1))
 
             nodes[:,0] = x_coord
             nodes[:,1] = y_coord

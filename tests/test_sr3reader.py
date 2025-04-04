@@ -1333,6 +1333,28 @@ class TestSr3Reader(unittest.TestCase):
             self.assertAlmostEqual(t, round(v,5))
 
 
+    def test_read_grid_coordinates_simple(self):
+        """Tests reading grid coordinates on a simple grid"""
+
+        test_file = Path("tests/sr3/very_simple/5x5.sr3")
+        sr3 = Sr3Reader(test_file)
+
+        file_read_ = sr3.grid.coordinates.get(cells=[1,sr3.grid.get_size('ni')], face='K+')
+        true_result = [
+            [    0,  150,  150,    0,
+                 0,    0,  150,  150,
+              5405, 5405, 5405, 5405],
+            [  600,  750,  750,  600,
+                 0,    0,  150,  150,
+              5405, 5405, 5405, 5405]
+        ]
+        true_result = np.array(true_result)
+        true_result = true_result.reshape((2,3,4)).swapaxes(1,2)
+
+        for t,v in zip(true_result.flatten(), file_read_.flatten()):
+            self.assertAlmostEqual(t, round(v,5))
+
+
     def test_read_connections(self):
         """Tests reading grid connections"""
 

@@ -105,7 +105,10 @@ class DateHandler:
                 element_type=element_type,
                 dataset_string="Timesteps"
             )
-            self._timesteps[element_type] = dataset[:]
+            if dataset is None:
+                self._timesteps[element_type] = np.array([])
+            else:
+                self._timesteps[element_type] = dataset[:]
 
 
     def _get_grid_timesteps(self):
@@ -121,12 +124,18 @@ class DateHandler:
 
     def _get_days(self, element_type):
         timesteps = self._timesteps[element_type]
-        self._days[element_type] = self._days['all'][timesteps]
+        if timesteps.size == 0:
+            self._days[element_type] = np.array([])
+        else:
+            self._days[element_type] = self._days['all'][timesteps]
 
 
     def _get_dates(self, element_type):
         timesteps = self._timesteps[element_type]
-        self._dates[element_type] = self._dates['all'][timesteps]
+        if timesteps.size == 0:
+            self._dates[element_type] = np.array([])
+        else:
+            self._dates[element_type] = self._dates['all'][timesteps]
 
 
     def _get_times(self, time_dict, element_type=None):
