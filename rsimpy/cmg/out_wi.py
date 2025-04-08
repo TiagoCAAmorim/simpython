@@ -67,8 +67,14 @@ class OutWI:
         Return dict with well index data.
     process_and_get():
         Process file and return well index data.
+    get_wells()
+        Return dict of wells and associated dates.
+    get_well_dates(self, well_name):
+        Return list of dates associated to the well.
     get_table():
         Return WI data as a pandas.DataFrame.
+    plot_well(well_name):
+        Return matplotlib plot with well WI.
     """
 
 
@@ -125,6 +131,7 @@ class OutWI:
         """Return dict with all data read."""
         return self._data
 
+
     def get_wells(self):
         """Return dict of wells and associated dates."""
         wells = {}
@@ -135,7 +142,8 @@ class OutWI:
                 wells[well].append((date,time))
         return wells
 
-    def get_well_dates(self, well):
+
+    def get_well_dates(self, well_name):
         """
         Return list of dates associated to the well.
 
@@ -144,9 +152,10 @@ class OutWI:
         - well: str. Well name.
         """
         wells = self.get_wells()
-        if well not in wells:
+        if well_name not in wells:
             return None
-        return wells[well]
+        return wells[well_name]
+
 
     def get_table(self):
         """Return WI data as a pandas.DataFrame."""
@@ -213,6 +222,7 @@ class OutWI:
             print(msg, e)
             raise
 
+
     def process_and_get(self, file_path, prune=True):
         """
         Process file and return well index data.
@@ -253,6 +263,7 @@ class OutWI:
             if len(data[k]) == 0:
                 _ = data.pop(k)
         self._data = data
+
 
     @staticmethod
     def _equal(data1, data2):
@@ -657,6 +668,8 @@ class OutWI:
             plt.savefig(file_name)
         if show:
             plt.show()
+
+        return axes
 
 def _error_msg():
     print(__doc__)
