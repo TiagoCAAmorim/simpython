@@ -188,10 +188,10 @@ class OutWI:
             for well_name, well_data in date_dict.items():
                 row_well = {'well': well_name}
                 for k,v in well_data.items():
-                    if k == 'wi':
+                    if k == 'con_data':
                         continue
                     row_well[k] = v
-                for connection in well_data['wi']:
+                for connection in well_data['con_data']:
                     row = {}
                     for k,v in row_date.items():
                         row[k] = v
@@ -289,7 +289,7 @@ class OutWI:
         for k in ['number', 'layers']:
             if data1[k] != data2[k]:
                 return False
-            for wi1, wi2 in zip(data1['wi'], data2['wi']):
+            for wi1, wi2 in zip(data1['con_data'], data2['con_data']):
                 for w in wi1:
                     if wi1[w] != wi2[w]:
                         return False
@@ -407,7 +407,7 @@ class OutWI:
                 'number': current['well']['well number'],
                 'layers': current['well']['layers'],
                 'regulated': current['well']['regulated'],
-                'wi': []
+                'con_data': []
             }
 
             log = f'    New well: {well["well name"]} (line {line_number})'
@@ -427,7 +427,7 @@ class OutWI:
             time_key = (current['date'], current['days'])
             well_key = current['well']['well name']
 
-            if len(data[time_key][well_key]['wi']) >= data[time_key][well_key]['layers']:
+            if len(data[time_key][well_key]['con_data']) >= data[time_key][well_key]['layers']:
                 msg = f'Found well index data for {well_key} '
                 msg += f'in line {line_number} at time {time_key} ({current["days"]} days), '
                 msg += f'but only {current["well"]["layers"]} data lines were expected. '
@@ -435,13 +435,13 @@ class OutWI:
                 raise ValueError(msg)
 
             prev_cell = {'i':0, 'j':0, 'k':0, 'm':''}
-            if len(data[time_key][well_key]['wi']) > 0:
-                prev_cell['i'] = data[time_key][well_key]['wi'][-1]['cell i']
-                prev_cell['j'] = data[time_key][well_key]['wi'][-1]['cell j']
-                prev_cell['k'] = data[time_key][well_key]['wi'][-1]['cell k']
-                prev_cell['m'] = data[time_key][well_key]['wi'][-1]['cell medium']
+            if len(data[time_key][well_key]['con_data']) > 0:
+                prev_cell['i'] = data[time_key][well_key]['con_data'][-1]['cell i']
+                prev_cell['j'] = data[time_key][well_key]['con_data'][-1]['cell j']
+                prev_cell['k'] = data[time_key][well_key]['con_data'][-1]['cell k']
+                prev_cell['m'] = data[time_key][well_key]['con_data'][-1]['cell medium']
             OutWI._process_cell(wi, prev_cell)
-            data[time_key][well_key]['wi'].append(wi)
+            data[time_key][well_key]['con_data'].append(wi)
 
         return data, current, ''
 
@@ -639,7 +639,7 @@ class OutWI:
         def _get_values():
             cells = {'MT':[], 'FR':[]}
             wis = {'MT':[], 'FR':[]}
-            for d in self._data[date_key][well_name]['wi']:
+            for d in self._data[date_key][well_name]['con_data']:
                 ii = d['cell i']
                 jj = d['cell j']
                 kk = d['cell k']

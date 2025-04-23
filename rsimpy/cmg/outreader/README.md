@@ -16,7 +16,7 @@ Data is internally stored as a dict with the following structure:
             'number': 1,
             ...
              # List of values per well connection
-            'wi': [
+            'con_data': [
                 {
                     'wi': 10.0,
                     'ff': 1.0,
