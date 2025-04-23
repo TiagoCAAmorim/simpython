@@ -1,7 +1,8 @@
 """
 Module to extract well index information in out file.
 
-Well index is written after keyword 'WELPRN WI'
+Well index is written after keyword 'WELPRN WI' in GEM
+or 'WPRN WELL LAYER' in IMEX.
 
 Example:
 
@@ -32,18 +33,36 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+import utils # pylint: disable=import-error
+
+
 COLS = {
-    'layer': (0,9, int),
-    'cell': (10,22, str),
-    'rtype': (23,28, int),
-    'FF': (29,38, float),
-    'kh': (39,52, float),
-    're': (53,67, float),
-    'skin': (68,78, float),
-    'rw': (79,92, float),
-    'Di': (93,106, float),
-    'wi': (107,119, float),
-    'element': (120,128, int),
+    'IMEX':{
+        'well_number': (3,6, int),
+        'well_name': (7,22, str),
+        'layer': (61,65, int),
+        'cell': (66,80,str),
+        'wi': (82,93,float),
+        'oil_pi': (94,103, float),
+        'wat_pi': (104,113, float),
+        'gas_pi': (114,123, float),
+        'sol_pi': (124,133, float),
+        'pol_pi': (134,143, float),
+        'swt_pi': (144,153, float),
+    },
+    'GEM':{
+        'layer': (0,9, int),
+        'cell': (10,22, str),
+        'rtype': (23,28, int),
+        'FF': (29,38, float),
+        'kh': (39,52, float),
+        're': (53,67, float),
+        'skin': (68,78, float),
+        'rw': (79,92, float),
+        'Di': (93,106, float),
+        'wi': (107,119, float),
+        'element': (120,128, int),
+    },
 }
 
 # MARK: DatDates
@@ -167,12 +186,11 @@ class OutWI:
                 'days': date_key[1],
                 }
             for well_name, well_data in date_dict.items():
-                row_well = {
-                    'well': well_name,
-                    'number': well_data['number'],
-                    'layers': well_data['layers'],
-                    'regulated': well_data['regulated'],
-                }
+                row_well = {'well': well_name}
+                for k,v in well_data.items():
+                    if k == 'wi':
+                        continue
+                    row_well[k] = v
                 for connection in well_data['wi']:
                     row = {}
                     for k,v in row_date.items():
@@ -213,7 +231,8 @@ class OutWI:
         self._file_path = file_path
 
         try:
-            self._get_data()
+            file_type = utils.get_file_type(file_path, encoding=self._encoding)
+            self._get_data(file_type)
             if prune:
                 self._prune_data()
         except UnicodeDecodeError as e:
@@ -309,9 +328,9 @@ class OutWI:
 
 
     @staticmethod
-    def _get_wi_data(line):
+    def _get_wi_data(line, file_type):
         try:
-            out = {k: t(line[i1:i2]) for k,(i1,i2,t) in COLS.items()}
+            out = {k: t(line[i1:i2]) for k,(i1,i2,t) in COLS[file_type].items()}
             for k,v in out.items():
                 if isinstance(v, str):
                     out[k] = v.strip()
@@ -338,7 +357,7 @@ class OutWI:
             elif medium[0] == 'F':
                 medium = 'FR'
         else:
-            msg =- f"Cell string is not in the expected format: {cell_str}."
+            msg = f"Cell string is not in the expected format: {cell_str}."
             raise ValueError(msg)
 
         if medium == 'X':
@@ -358,7 +377,7 @@ class OutWI:
 
 
     @staticmethod
-    def _process_line(line_number, line, data, current):
+    def _process_line(line_number, line, data, current, file_type):
         log = ''
 
         time = OutWI._get_time(line)
@@ -394,7 +413,7 @@ class OutWI:
             log = f'    New well: {well["well name"]} (line {line_number})'
             return data, current, log
 
-        wi = OutWI._get_wi_data(line)
+        wi = OutWI._get_wi_data(line, file_type)
         if wi is not None:
             if current['date'] is None:
                 msg = f'Found well index data in line {line_number}, '
@@ -427,7 +446,7 @@ class OutWI:
         return data, current, ''
 
 
-    def _get_data(self):
+    def _get_data(self, file_type):
         data = {}
         with open(self._file_path, 'r', encoding=self._encoding, errors='ignore') as file:
             start = False
@@ -442,7 +461,7 @@ class OutWI:
                             start = False
                             self._log(f'End of WI Report (line {n+1})')
                         else:
-                            data, current, msg = OutWI._process_line(n+1, line, data, current)
+                            data, current, msg = OutWI._process_line(n+1, line, data, current, file_type)
                             if msg != '':
                                 self._log(msg)
                 except Exception as e: #pylint: disable=broad-exception-caught
@@ -652,7 +671,8 @@ class OutWI:
             if vertical_lines is not None:
                 for v in vertical_lines:
                     ax.axvline(x=v, color='r', linestyle='-', linewidth=0.5)
-                    ax.text(v, len(new_cells)-1.5, str(v), color='red', fontsize=8, rotation=90, va='center', ha='right')
+                    ax.text(v, len(new_cells)-1.5, str(v),
+                            color='red', fontsize=8, rotation=90, va='center', ha='right')
 
             ax.invert_yaxis()
             ax.legend(loc='upper left')
@@ -675,5 +695,30 @@ def _error_msg():
     print(__doc__)
     print(OutWI.__doc__)
 
+def test(file_path):
+    """Tests"""
+    out_wi = OutWI(verbose=False, encoding='utf-8')
+    out_wi.process(file_path, prune=True)
+
+    print('Data found:')
+    print(out_wi)
+
+    print(out_wi.get_table())
+    print(out_wi.get())
+
+
+
+    # print('Plotting...')
+    # vertical_lines=[50, 5000]
+    # wells = out_wi.get_wells()
+    # for well_name in wells:
+    #     out_wi.plot_well(
+    #         well_name,
+    #         vertical_lines=vertical_lines,
+    #         file_name= f'./plots/{well_name}.png'
+    #     )
+
 if __name__ == "__main__":
-    _error_msg()
+    # _error_msg()
+    test('tests/out/test_gem_small.out')
+    # test('tests/out/test_imex_small.out')
