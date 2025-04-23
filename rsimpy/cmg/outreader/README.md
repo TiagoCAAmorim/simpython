@@ -10,12 +10,15 @@ Data is internally stored as a dict with the following structure:
 
 ```python
 {
-    ('date', days): {
+    # Date and days of the simulation
+    (01/01/2020, 0.0): {
         'well_name': {
-             # List of values per well
-            'number': 1,
-            ...
-             # List of values per well connection
+            # List of values per well
+            'well_data': {
+              'number': 1,
+              ...
+            },
+            # List of values per well connection
             'con_data': [
                 {
                     'wi': 10.0,
