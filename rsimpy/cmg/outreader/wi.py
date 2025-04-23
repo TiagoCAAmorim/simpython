@@ -36,19 +36,31 @@ import pandas as pd
 import utils # pylint: disable=import-error
 
 
+START = {
+    'IMEX': 'Units for Well Index',
+    'GEM': 'W E L L  I N D E X  R E P O R T'
+}
+
+IMEX_WELL = {
+    'number': (2,6, int),
+    'well name': (6,22, str),
+    'type': (27,38, str),
+    'constraint': (39,42, str),
+    'constr_val': (42,52, float),
+    'constr_unit': (52,58, str),
+}
+
 COLS = {
     'IMEX':{
-        'well_number': (3,6, int),
-        'well_name': (7,22, str),
-        'layer': (61,65, int),
-        'cell': (66,80,str),
-        'wi': (82,93,float),
-        'oil_pi': (94,103, float),
-        'wat_pi': (104,113, float),
-        'gas_pi': (114,123, float),
-        'sol_pi': (124,133, float),
-        'pol_pi': (134,143, float),
-        'swt_pi': (144,153, float),
+        'layer': (60,64, int),
+        'cell': (64,80,str),
+        'wi': (81,93,float),
+        # 'oil_pi': ( 93,103, float),
+        # 'wat_pi': (103,113, float),
+        # 'gas_pi': (113,123, float),
+        # 'sol_pi': (123,133, float),
+        # 'pol_pi': (133,143, float),
+        # 'swt_pi': (143,153, float),
     },
     'GEM':{
         'layer': (0,9, int),
@@ -102,7 +114,13 @@ class OutWI:
         self._verbose = verbose
 
         self._file_path = None
+        self._file_type = None
         self._data = {}
+
+        self._current_time = (None,None)
+        self._first_time = (None,None)
+        self._current_well = None
+        self._current_line = None
 
 
     def _log(self, msg):
@@ -112,6 +130,7 @@ class OutWI:
 
     # MARK: Print
     def __str__(self):
+        # return 'not implemented!'
         msg = ''
 
         dates = list(self._data.keys())
@@ -125,23 +144,21 @@ class OutWI:
 
         wells = {}
         for v in self._data.values():
-            for ki,vi in v.items():
-                if ki not in wells:
-                    wells[ki] = {'number':[], 'layers':[], 'regulated':[], 'entries':0}
-                wells[ki]['number'].append(str(vi['number']))
-                wells[ki]['layers'].append(str(vi['layers']))
-                reg = 'Regulated' if vi['regulated'] else 'Un-Regulated'
-                wells[ki]['regulated'].append(reg)
-                wells[ki]['entries'] += 1
+            for wi,vi in v.items():
+                if wi not in wells:
+                    wells[wi] = {'number':[], 'layers':[], 'entries':0}
+                wells[wi]['number'].append(str(vi['well_data']['number']))
+                wells[wi]['layers'].append(str(len(vi['con_data'])))
+                wells[wi]['entries'] += 1
 
         if len(wells) == 0:
             return msg + 'No well data.'
-        msg += f'{len(wells)} well(s):\n'
+        msg += f'{len(wells)} well{"s" if len(wells) > 1 else ""}:\n'
         for k,v in wells.items():
             numbers = '/'.join(set(v['number']))
             layers = '/'.join(set(v['layers']))
-            regulated = '/'.join(set(v['regulated']))
-            msg += f'  {k} (#{numbers}): {layers} layers, {regulated}, {v["entries"]} entrie(s)\n'
+            msg += f'  {k} (#{numbers}): {layers} layers, '
+            msg += f'{v["entries"]} entr{"ies" if v["entries"] > 1 else "y"}\n'
         return msg[:-1]
 
 
@@ -149,6 +166,16 @@ class OutWI:
     def get(self):
         """Return dict with all data read."""
         return self._data
+
+
+    def get_file_path(self):
+        """Return file path."""
+        return self._file_path
+
+
+    def get_file_type(self):
+        """Return file type."""
+        return self._file_type
 
 
     def get_wells(self):
@@ -187,9 +214,7 @@ class OutWI:
                 }
             for well_name, well_data in date_dict.items():
                 row_well = {'well': well_name}
-                for k,v in well_data.items():
-                    if k == 'con_data':
-                        continue
+                for k,v in well_data['well_data'].items():
                     row_well[k] = v
                 for connection in well_data['con_data']:
                     row = {}
@@ -225,16 +250,30 @@ class OutWI:
 
         file_path = Path(file_path)
         if not file_path.is_file():
-            msg = f'File not found: {file_path}.'
+            msg = f'File not found: {file_path.resolve().absolute()}.'
             raise ValueError(msg)
-
         self._file_path = file_path
 
         try:
-            file_type = utils.get_file_type(file_path, encoding=self._encoding)
-            self._get_data(file_type)
+            self._file_type = utils.get_file_type(file_path, encoding=self._encoding)
+            self._log(f'File type: {self._file_type}')
+            self._get_data()
+
+            if (None,None) in self._data:
+                if self._first_time not in self._data:
+                    data_ = self._data.pop((None,None))
+                    self._data = {
+                        self._first_time:data_,
+                        **self._data
+                    }
+                else:
+                    msg = f'Error: {self._file_path.name} could not figure out the date '
+                    msg += 'associated to the first well data table.'
+                    raise ValueError(msg)
+
             if prune:
                 self._prune_data()
+
         except UnicodeDecodeError as e:
             msg = f'Error reading: {self._file_path.name} with {self._encoding}. '
             msg += 'Try different encoding:'
@@ -285,65 +324,124 @@ class OutWI:
 
 
     @staticmethod
-    def _equal(data1, data2):
-        for k in ['number', 'layers']:
-            if data1[k] != data2[k]:
+    def _equal(data1, data2): # pylint: disable=too-many-return-statements
+        if len(data1['well_data']) != len(data2['well_data']):
+            return False
+
+        for k,v1 in data1['well_data'].items():
+            if k not in data2['well_data']:
                 return False
-            for wi1, wi2 in zip(data1['con_data'], data2['con_data']):
-                for w in wi1:
-                    if wi1[w] != wi2[w]:
-                        return False
+            if v1 != data2['well_data'][k]:
+                return False
+
+        if len(data1['con_data']) != len(data2['con_data']):
+            return False
+
+        if len(data1['con_data']) == 0:
+            return True
+
+        for wi1, wi2 in zip(data1['con_data'], data2['con_data']):
+            if len(wi1) != len(wi2):
+                return False
+            for k,v1 in wi1.items():
+                if v1 != wi2[k]:
+                    return False
+
         return True
 
 
     # MARK: read data
-    @staticmethod
-    def _get_time(line):
-        pattern = r'TIME:\s+(\d+\.?\d*)\s+days\s+DATE:\s+(\d{4}):(\d{2}):(\d{2})'
-        match = re.search(pattern, line)
+    def _update_time(self):
+        pattern = r'^\s*TIME:\s+(\d+\.?\d*)\s+days\s+.+\s+DATE:\s+(\d{4}):(\d{2}):(\d{2})\s*$'
+        match = re.search(pattern, self._current_line)
         if match:
-            days = float(match[1])
-            date = '/'.join(match.groups()[1:][::-1])
-            return {'date':date, 'days':days}
-        return None
+            days_ = float(match[1])
+            date_ = '/'.join(match.groups()[1:][::-1])
+
+            if self._first_time == (None,None):
+                self._first_time = (date_, days_)
+
+            self._current_time = (date_, days_)
 
 
-    @staticmethod
-    def _get_well(line):
-        pattern = r'Well Number =\s+(.*)\s+Well Name =\s+(.*)\s+'
-        pattern += r' Number of Active Layers =\s+(.*)\s+\((.*)Regulated\)'
-        match = re.search(pattern, line)
-        if match:
-            well_n = int(match[1])
-            well_name = match[2]
-            layers = int(match[3])
-            regulated = match[4] == ''
+    def _update_well(self):
+        """update current well."""
+        if self._file_type == 'IMEX':
+            i1,i2,_ = IMEX_WELL['constr_val']
+            const_value = self._current_line[i1:i2].strip()
+            if const_value != '':
+                try:
+                    const_value = float(const_value)
+                    data = {}
+                    for k, (i1,i2,t) in IMEX_WELL.items():
+                        d = t(self._current_line[i1:i2].strip())
+                        if k == 'well name':
+                            self._current_well = d
+                        else:
+                            data[k] = d
 
-            return {
-                'well number': well_n,
-                'well name': well_name,
-                'layers': layers,
-                'regulated': regulated}
-        return None
+                    if self._current_time not in self._data:
+                        self._data[self._current_time] = {}
+
+                    self._data[self._current_time][self._current_well] = {
+                        'well_data': {**data},
+                        'con_data': [],
+                    }
+                except ValueError:
+                    pass
+
+        elif self._file_type == 'GEM':
+            pattern = r'Well Number =\s+(.*)\s+Well Name =\s+(.*)\s+'
+            pattern += r' Number of Active Layers =\s+(.*)\s+\((.*)Regulated\)'
+            match = re.search(pattern, self._current_line)
+            if match:
+                well_n = int(match[1])
+                well_name = match[2]
+                layers = int(match[3])
+                regulated = match[4] == ''
+
+                if self._current_time not in self._data:
+                    self._data[self._current_time] = {}
+
+                self._current_well = well_name
+                self._data[self._current_time][well_name] = {
+                    'well_data': {
+                        'number': well_n,
+                        'layers': layers,
+                        'regulated': regulated},
+                    'con_data': [],
+                }
 
 
-    @staticmethod
-    def _get_wi_data(line, file_type):
+    def _get_con_data(self):
+        """Extract well connection data from current line."""
         try:
-            out = {k: t(line[i1:i2]) for k,(i1,i2,t) in COLS[file_type].items()}
+            out = {k: self._current_line[i1:i2].strip()
+                   for k,(i1,i2,_) in COLS[self._file_type].items()}
             for k,v in out.items():
-                if isinstance(v, str):
-                    out[k] = v.strip()
+                t = COLS[self._file_type][k][2]
+                if v == '' and t != str:
+                    out[k] = t(0)
+                else:
+                    try:
+                        out[k] = t(v)
+                    except ValueError:
+                        # msg = f'Error converting {k} value ({v}) to type {t}.'
+                        # raise ValueError(msg)
+                        return None
+            if out['cell'] == '':
+                return None
             return out
         except ValueError:
             pass
         return None
 
+
     @staticmethod
-    def _process_cell(wi, prev_cell):
-        if 'cell' not in wi:
+    def _process_cell(con_data, prev_cell):
+        if 'cell' not in con_data:
             return
-        cell_str = wi['cell']
+        cell_str = con_data['cell']
         match = re.match(r'(\d+),(\d+),(\d+)(?:\s*(\w+))?', cell_str)
 
         if match:
@@ -368,106 +466,77 @@ class OutWI:
             else:
                 medium = 'MT'
 
-        wi['cell i'] = ii
-        wi['cell j'] = jj
-        wi['cell k'] = kk
-        wi['cell medium'] = medium
+        con_data['cell i'] = ii
+        con_data['cell j'] = jj
+        con_data['cell k'] = kk
+        con_data['cell medium'] = medium
 
-        _ = wi.pop('cell')
+        _ = con_data.pop('cell')
 
 
-    @staticmethod
-    def _process_line(line_number, line, data, current, file_type):
-        log = ''
+    def _process_line(self, line_number): #(line_number, line, data, current, file_type):
+        """Extract well data from line."""
 
-        time = OutWI._get_time(line)
-        if time is not None:
-            current = {
-                'date': time['date'],
-                'days': time['days'],
-                'well': None
-            }
-            time_key = (current['date'], current['days'])
-            data[time_key] = {}
+        con_data = self._get_con_data()
+        if con_data is None:
+            return
 
-            log = f'  Current date: {time["date"]} ({time["days"]} days)'
-            return data, current, log
+        if self._current_well is None:
+            msg = f'Found well index data ({self._current_time[1]} days), '
+            msg += 'but well is not set. Check data.'
+            raise ValueError(msg)
 
-        well = OutWI._get_well(line)
-        if well is not None:
-            if current['date'] is None:
-                msg = f'Found new well ({well["well name"]}) in line {line_number}, '
-                msg += 'but date is not set. Check data.'
-                raise ValueError(msg)
-            current['well'] = well
+        data_ = self._data[self._current_time][self._current_well]
 
-            well_key = current['well']['well name']
-            time_key = (current['date'], current['days'])
-            data[time_key][well_key] = {
-                'number': current['well']['well number'],
-                'layers': current['well']['layers'],
-                'regulated': current['well']['regulated'],
-                'con_data': []
-            }
-
-            log = f'    New well: {well["well name"]} (line {line_number})'
-            return data, current, log
-
-        wi = OutWI._get_wi_data(line, file_type)
-        if wi is not None:
-            if current['date'] is None:
-                msg = f'Found well index data in line {line_number}, '
-                msg += 'but date is not set. Check data.'
-                raise ValueError(msg)
-            if current['well'] is None:
-                msg = f'Found well index data in line {line_number} ({current["days"]} days), '
-                msg += 'but well is not set. Check data.'
-                raise ValueError(msg)
-
-            time_key = (current['date'], current['days'])
-            well_key = current['well']['well name']
-
-            if len(data[time_key][well_key]['con_data']) >= data[time_key][well_key]['layers']:
-                msg = f'Found well index data for {well_key} '
-                msg += f'in line {line_number} at time {time_key} ({current["days"]} days), '
-                msg += f'but only {current["well"]["layers"]} data lines were expected. '
+        current_layers = len(data_['con_data'])
+        if 'layers' in data_['well_data']:
+            expected = data_['well_data']['layers']
+            if current_layers >= expected:
+                msg = f'Found well index data for {self._current_well} '
+                msg += f'at {self._current_time[0]} ({self._current_time[0]} days), '
+                msg += f'but only {expected} data lines were expected. '
                 msg += 'Check data.'
+                msg += self._current_line
                 raise ValueError(msg)
 
-            prev_cell = {'i':0, 'j':0, 'k':0, 'm':''}
-            if len(data[time_key][well_key]['con_data']) > 0:
-                prev_cell['i'] = data[time_key][well_key]['con_data'][-1]['cell i']
-                prev_cell['j'] = data[time_key][well_key]['con_data'][-1]['cell j']
-                prev_cell['k'] = data[time_key][well_key]['con_data'][-1]['cell k']
-                prev_cell['m'] = data[time_key][well_key]['con_data'][-1]['cell medium']
-            OutWI._process_cell(wi, prev_cell)
-            data[time_key][well_key]['con_data'].append(wi)
+        prev_cell = {'i':0, 'j':0, 'k':0, 'medium':''}
+        if current_layers > 0:
+            for p in prev_cell:
+                prev_cell[p] = data_['con_data'][-1][f'cell {p}']
+        OutWI._process_cell(con_data, prev_cell)
 
-        return data, current, ''
+        data_['con_data'].append(con_data)
 
 
-    def _get_data(self, file_type):
-        data = {}
+    def _get_data(self):
+        """Read data from file line by line."""
+        self._data = {}
+        self._current_well = None
+        self._current_time = (None, None)
+
         with open(self._file_path, 'r', encoding=self._encoding, errors='ignore') as file:
             start = False
             for n, line in enumerate(file):
                 try:
-                    if 'W E L L  I N D E X  R E P O R T' in line:
-                        start = True
-                        current = {'date': None, 'days': None, 'well': None}
-                        self._log(f'New WI Report (line {n+1})')
-                    elif start:
-                        if line.strip() == '1':
-                            start = False
-                            self._log(f'End of WI Report (line {n+1})')
-                        else:
-                            data, current, msg = OutWI._process_line(n+1, line, data, current, file_type)
-                            if msg != '':
-                                self._log(msg)
-                except Exception as e: #pylint: disable=broad-exception-caught
-                    print(f"Error in line {n + 1}: {e}")
+                    self._current_line = line
+                    if line.strip() != '':
+                        self._update_time()
 
-        self._data = data
+                    if START[self._file_type] in line:
+                        start = True
+                        self._log(f'New WI Report (line {n+1:,})')
+                    elif start:
+                        if line.strip() == '':
+                            if self._current_time in self._data:
+                                self._current_well = None
+                                start = False
+                                self._log(f'End of WI Report (line {n+1:,})')
+                        else:
+                            self._update_well()
+                            self._process_line(n+1)
+                except Exception as e: #pylint: disable=broad-exception-caught
+                    print(f"Error in line {n + 1:,}: {e}")
+
 
 
     # MARK: Plot
@@ -703,22 +772,20 @@ def test(file_path):
     print('Data found:')
     print(out_wi)
 
-    print(out_wi.get_table())
-    print(out_wi.get())
+    table = out_wi.get_table()
+    print(table)
+    print(table['well'].unique())
 
+    if out_wi.get_file_type() == 'IMEX':
+        print(table['type'].unique())
+        print(table['constraint'].unique())
+        print(table['constr_unit'].unique())
+    else:
+        print(table['regulated'].unique())
+        print(table['rtype'].unique())
 
-
-    # print('Plotting...')
-    # vertical_lines=[50, 5000]
-    # wells = out_wi.get_wells()
-    # for well_name in wells:
-    #     out_wi.plot_well(
-    #         well_name,
-    #         vertical_lines=vertical_lines,
-    #         file_name= f'./plots/{well_name}.png'
-    #     )
 
 if __name__ == "__main__":
     # _error_msg()
-    test('tests/out/test_gem_small.out')
-    # test('tests/out/test_imex_small.out')
+    # test('tests/out/test_gem.out')
+    test('tests/out/test_imex.out')
