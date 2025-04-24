@@ -50,6 +50,10 @@ IMEX_WELL = {
     'constr_unit': (52,58, str),
 }
 
+KEEP_COLS = [
+    'number', 'name', 'wi', 'cell i', 'cell j', 'cell k', 'cell medium',
+]
+
 COLS = {
     'IMEX':{
         'layer': (60,64, int),
@@ -77,7 +81,7 @@ COLS = {
     },
 }
 
-# MARK: DatDates
+# MARK: OutWI
 class OutWI:
 
     """
@@ -339,6 +343,7 @@ class OutWI:
     def _prune_data(self):
         """Delete data if equal to previous time-step."""
 
+        self._log('Pruning data.')
         prev_data = {}
         data = {}
         for k,v in self._data.items():
@@ -353,6 +358,7 @@ class OutWI:
                     data[k][ki] = vi
                     prev_data[ki] = vi
             if len(data[k]) == 0:
+                self._log(f'Repeated data for {k[0]} ({k[1]} days).')
                 _ = data.pop(k)
         self._data = data
 
@@ -382,33 +388,6 @@ class OutWI:
         return True
 
 
-    # @staticmethod
-    # def _equal(data1, data2): # pylint: disable=too-many-return-statements
-    #     if len(data1['well_data']) != len(data2['well_data']):
-    #         return False
-
-    #     for k,v1 in data1['well_data'].items():
-    #         if k not in data2['well_data']:
-    #             return False
-    #         if v1 != data2['well_data'][k]:
-    #             return False
-
-    #     if len(data1['con_data']) != len(data2['con_data']):
-    #         return False
-
-    #     if len(data1['con_data']) == 0:
-    #         return True
-
-    #     for wi1, wi2 in zip(data1['con_data'], data2['con_data']):
-    #         if len(wi1) != len(wi2):
-    #             return False
-    #         for k,v1 in wi1.items():
-    #             if v1 != wi2[k]:
-    #                 return False
-
-    #     return True
-
-
     # MARK: read data
     def _update_time(self):
         pattern = r'^\s*TIME:\s+(\d+\.?\d*)\s+days\s+.+\s+DATE:\s+(\d{4}):(\d{2}):(\d{2})\s*$'
@@ -427,50 +406,84 @@ class OutWI:
     def _update_well(self):
         """update current well."""
         if self._file_type == 'IMEX':
-            i1,i2,_ = IMEX_WELL['constr_val']
-            const_value = self._current_line[i1:i2].strip()
-            if const_value != '':
-                try:
-                    const_value = float(const_value)
-                    data = {}
-                    for k, (i1,i2,t) in IMEX_WELL.items():
-                        d = t(self._current_line[i1:i2].strip())
-                        if k == 'name':
-                            self._current_well = d
-                        else:
-                            data[k] = d
-
-                    if self._current_time not in self._data:
-                        self._data[self._current_time] = {}
-
-                    self._data[self._current_time][self._current_well] = {
-                        'well_data': {**data},
-                        'con_data': [],
-                    }
-                except ValueError:
-                    pass
-
+            well_name, data = self._read_well_imex()
         elif self._file_type == 'GEM':
-            pattern = r'Well Number =\s+(.*)\s+Well Name =\s+(.*)\s+'
-            pattern += r' Number of Active Layers =\s+(.*)\s+\((.*)Regulated\)'
-            match = re.search(pattern, self._current_line)
-            if match:
-                well_n = int(match[1])
-                well_name = match[2]
-                layers = int(match[3])
-                regulated = match[4] == ''
+            well_name, data = self._read_well_gem()
+        else:
+            msg = f'File type not supported: {self._file_type}.'
+            raise ValueError(msg)
 
-                if self._current_time not in self._data:
-                    self._data[self._current_time] = {}
+        if data is None:
+            return
+        if well_name is None:
+            msg = 'Found well index data, but well name is not set.'
+            raise ValueError(msg)
 
-                self._current_well = well_name
-                self._data[self._current_time][well_name] = {
-                    'well_data': {
-                        'number': well_n,
-                        'layers': layers,
-                        'regulated': regulated},
-                    'con_data': [],
+        if self._current_time not in self._data:
+            self._data[self._current_time] = {}
+        else:
+            self._check_well_layers()
+
+        self._current_well = well_name
+        if self._wi_only:
+            data = {k:v for k,v in data.items() if k in KEEP_COLS}
+        self._data[self._current_time][self._current_well] = {
+                'well_data': {**data},
+                'con_data': [],
+            }
+
+    def _check_well_layers(self):
+        if self._current_well in self._data[self._current_time]:
+            n_con = len(self._data[self._current_time][self._current_well]['con_data'])
+            if 'layers' in self._data[self._current_time][self._current_well]['well_data']:
+                expected = self._data[self._current_time][self._current_well]['well_data']['layers']
+                if n_con != expected:
+                    msg = f'Expected {expected} layers for well {self._current_well} '
+                    msg += f'at {self._current_time[0]} ({self._current_time[0]} days), '
+                    msg += f'but only {n_con} data lines were read. Check data.'
+                    raise ValueError(msg)
+            else:
+                self._data[self._current_time][self._current_well]['well_data']['layers'] = n_con
+
+
+    def _read_well_gem(self):
+        pattern = r'Well Number =\s+(.*)\s+Well Name =\s+(.*)\s+'
+        pattern += r' Number of Active Layers =\s+(.*)\s+\((.*)Regulated\)'
+        match = re.search(pattern, self._current_line)
+        if match:
+            well_n = int(match[1])
+            well_name = match[2]
+            layers = int(match[3])
+            regulated = match[4] == ''
+
+            return well_name, {
+                    'number': well_n,
+                    'layers': layers,
+                    'regulated': regulated
                 }
+        return None, None
+
+
+    def _read_well_imex(self):
+        i1,i2,_ = IMEX_WELL['constr_val']
+        const_value = self._current_line[i1:i2].strip()
+        if const_value == '':
+            return None, None
+        try:
+            const_value = float(const_value)
+            data = {}
+            well_name = None
+            for k, (i1,i2,t) in IMEX_WELL.items():
+                d = t(self._current_line[i1:i2].strip())
+                if k == 'name':
+                    well_name = d
+                else:
+                    data[k] = d
+
+            return well_name, data
+
+        except ValueError:
+            return None, None
 
 
     def _get_con_data(self):
@@ -554,7 +567,6 @@ class OutWI:
                 msg = f'Found well index data for {self._current_well} '
                 msg += f'at {self._current_time[0]} ({self._current_time[0]} days), '
                 msg += f'but only {expected} data lines were expected. Check data.'
-                msg += self._current_line
                 raise ValueError(msg)
 
         prev_cell = {'cell i':0, 'cell j':0, 'cell k':0, 'cell medium':''}
@@ -587,8 +599,9 @@ class OutWI:
                         start = True
                         self._log(f'New WI Report (line {n+1:,})')
                     elif start:
-                        if line.strip() == '':
+                        if line.strip() in ['','1']:
                             if self._current_time in self._data:
+                                self._check_well_layers()
                                 self._current_well = None
                                 start = False
                                 self._log(f'End of WI Report (line {n+1:,})')
@@ -597,7 +610,6 @@ class OutWI:
                             self._process_line()
                 except Exception as e: #pylint: disable=broad-exception-caught
                     print(f"Error in line {n + 1:,}: {e}")
-
 
 
     # MARK: Plot
@@ -827,7 +839,7 @@ def _error_msg():
 
 def test(file_path):
     """Tests"""
-    out_wi = OutWI(verbose=False, encoding='utf-8')
+    out_wi = OutWI(verbose=False, wi_only=True, encoding='utf-8')
     out_wi.process(file_path, prune=True)
 
     print('Data found:')
@@ -837,17 +849,18 @@ def test(file_path):
     print(table)
     print(table['well'].unique())
 
-    if out_wi.get_file_type() == 'IMEX':
-        print(table['type'].unique())
-        print(table['constraint'].unique())
-        print(table['constr_unit'].unique())
-    else:
-        print(table['regulated'].unique())
-        print(table['rtype'].unique())
+    # if out_wi.get_file_type() == 'IMEX':
+        # print(table['type'].unique())
+        # print(table['constraint'].unique())
+        # print(table['constr_unit'].unique())
+    # else:
+        # print(table['regulated'].unique())
+        # print(table['rtype'].unique())
 
 
 if __name__ == "__main__":
     # _error_msg()
     # test('tests/out/test_gem_small.out')
-    test('tests/out/test_gem.out')
-    # test('tests/out/test_imex_small.out')
+    # test('tests/out/test_gem.out')
+    test('tests/out/test_imex_small.out')
+    test('tests/out/test_imex.out')
