@@ -552,6 +552,8 @@ class OutWI:
         con_data = self._get_con_data()
         if con_data is None:
             return
+        if con_data['wi'] == 0:
+            return
 
         if self._current_well is None:
             msg = f'Found well index data ({self._current_time[1]} days), '
@@ -560,21 +562,14 @@ class OutWI:
 
         data_ = self._data[self._current_time][self._current_well]
 
-        current_layers = len(data_['con_data'])
-        if 'layers' in data_['well_data']:
-            expected = data_['well_data']['layers']
-            if current_layers >= expected:
-                msg = f'Found well index data for {self._current_well} '
-                msg += f'at {self._current_time[0]} ({self._current_time[0]} days), '
-                msg += f'but only {expected} data lines were expected. Check data.'
-                raise ValueError(msg)
-
         prev_cell = {'cell i':0, 'cell j':0, 'cell k':0, 'cell medium':''}
-        if current_layers > 0:
+        if len(data_['con_data']) > 0:
             for p in prev_cell:
                 prev_cell[p] = data_['con_data'][-1][p]
         OutWI._process_cell(con_data, prev_cell)
 
+        if self._wi_only:
+            con_data = {k:v for k,v in con_data.items() if k in KEEP_COLS}
         data_['con_data'].append(con_data)
 
 
@@ -848,6 +843,8 @@ def test(file_path):
     table = out_wi.get_table()
     print(table)
     print(table['well'].unique())
+    for w in table['wi']:
+        print(w)
 
     # if out_wi.get_file_type() == 'IMEX':
         # print(table['type'].unique())
@@ -860,7 +857,7 @@ def test(file_path):
 
 if __name__ == "__main__":
     # _error_msg()
-    # test('tests/out/test_gem_small.out')
+    test('tests/out/test_gem_small.out')
     # test('tests/out/test_gem.out')
-    test('tests/out/test_imex_small.out')
-    test('tests/out/test_imex.out')
+    # test('tests/out/test_imex_small.out')
+    # test('tests/out/test_imex.out')
