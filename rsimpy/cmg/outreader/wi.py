@@ -359,29 +359,54 @@ class OutWI:
 
     @staticmethod
     def _equal(data1, data2): # pylint: disable=too-many-return-statements
-        if len(data1['well_data']) != len(data2['well_data']):
-            return False
-
-        for k,v1 in data1['well_data'].items():
-            if k not in data2['well_data']:
+        """Check if all items in two data sets are equal."""
+        if isinstance(data1, dict) and isinstance(data2, dict):
+            if len(data1) != len(data2):
                 return False
-            if v1 != data2['well_data'][k]:
-                return False
-
-        if len(data1['con_data']) != len(data2['con_data']):
-            return False
-
-        if len(data1['con_data']) == 0:
-            return True
-
-        for wi1, wi2 in zip(data1['con_data'], data2['con_data']):
-            if len(wi1) != len(wi2):
-                return False
-            for k,v1 in wi1.items():
-                if v1 != wi2[k]:
+            for k,d1 in data1.items():
+                if k not in data2:
                     return False
-
+                last_check = OutWI._equal(d1, data2[k])
+                if not last_check:
+                    return False
+        elif isinstance(data1, list) and isinstance(data2, list):
+            if len(data1) != len(data2):
+                return False
+            for d1,d2 in zip(data1,data2):
+                last_check = OutWI._equal(d1, d2)
+                if not last_check:
+                    return False
+        else:
+            if data1 != data2:
+                return False
         return True
+
+
+    # @staticmethod
+    # def _equal(data1, data2): # pylint: disable=too-many-return-statements
+    #     if len(data1['well_data']) != len(data2['well_data']):
+    #         return False
+
+    #     for k,v1 in data1['well_data'].items():
+    #         if k not in data2['well_data']:
+    #             return False
+    #         if v1 != data2['well_data'][k]:
+    #             return False
+
+    #     if len(data1['con_data']) != len(data2['con_data']):
+    #         return False
+
+    #     if len(data1['con_data']) == 0:
+    #         return True
+
+    #     for wi1, wi2 in zip(data1['con_data'], data2['con_data']):
+    #         if len(wi1) != len(wi2):
+    #             return False
+    #         for k,v1 in wi1.items():
+    #             if v1 != wi2[k]:
+    #                 return False
+
+    #     return True
 
 
     # MARK: read data
@@ -824,5 +849,5 @@ def test(file_path):
 if __name__ == "__main__":
     # _error_msg()
     # test('tests/out/test_gem_small.out')
-    # test('tests/out/test_gem.out')
-    test('tests/out/test_imex_small.out')
+    test('tests/out/test_gem.out')
+    # test('tests/out/test_imex_small.out')
