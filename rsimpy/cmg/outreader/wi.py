@@ -43,7 +43,7 @@ START = {
 
 IMEX_WELL = {
     'number': (2,6, int),
-    'well name': (6,22, str),
+    'name': (6,22, str),
     'type': (27,38, str),
     'constraint': (39,42, str),
     'constr_val': (42,52, float),
@@ -55,12 +55,12 @@ COLS = {
         'layer': (60,64, int),
         'cell': (64,80,str),
         'wi': (81,93,float),
-        # 'oil_pi': ( 93,103, float),
-        # 'wat_pi': (103,113, float),
-        # 'gas_pi': (113,123, float),
-        # 'sol_pi': (123,133, float),
-        # 'pol_pi': (133,143, float),
-        # 'swt_pi': (143,153, float),
+        'oil_pi': ( 93,103, float),
+        'wat_pi': (103,113, float),
+        'gas_pi': (113,123, float),
+        'sol_pi': (123,133, float),
+        'pol_pi': (133,143, float),
+        'swt_pi': (143,153, float),
     },
     'GEM':{
         'layer': (0,9, int),
@@ -87,6 +87,8 @@ class OutWI:
     ----------
     encoding : str
         File encoding. Default: 'utf-8'.
+    wi_only : bool
+        If True, only well index data is read. Default: False.
     verbose : bool
         Print messages. Default: False.
 
@@ -109,9 +111,10 @@ class OutWI:
     """
 
 
-    def __init__(self, encoding='utf-8', verbose=False):
+    def __init__(self, encoding='utf-8', wi_only=False ,verbose=False):
         self._encoding = encoding
         self._verbose = verbose
+        self._wi_only = wi_only
 
         self._file_path = None
         self._file_type = None
@@ -162,10 +165,43 @@ class OutWI:
         return msg[:-1]
 
 
+    # MARK: Setters
+    def set_encoding(self, encoding):
+        """
+        Set encoding.
+
+        Arguments:
+        -----------
+        - encoding: str. File encoding.
+        """
+        self._encoding = encoding
+
+
+    def set_wi_only(self, wi_only):
+        """
+        Set wi_only.
+
+        Arguments:
+        -----------
+        - wi_only: bool. If True, only well index data is read.
+        """
+        self._wi_only = wi_only
+
+
     # MARK: Getters
     def get(self):
         """Return dict with all data read."""
         return self._data
+
+
+    def get_encoding(self):
+        """Return file encoding."""
+        return self._encoding
+
+
+    def get_wi_only(self):
+        """Return wi_only."""
+        return self._wi_only
 
 
     def get_file_path(self):
@@ -258,18 +294,7 @@ class OutWI:
             self._file_type = utils.get_file_type(file_path, encoding=self._encoding)
             self._log(f'File type: {self._file_type}')
             self._get_data()
-
-            if (None,None) in self._data:
-                if self._first_time not in self._data:
-                    data_ = self._data.pop((None,None))
-                    self._data = {
-                        self._first_time:data_,
-                        **self._data
-                    }
-                else:
-                    msg = f'Error: {self._file_path.name} could not figure out the date '
-                    msg += 'associated to the first well data table.'
-                    raise ValueError(msg)
+            self._adjust_first_table()
 
             if prune:
                 self._prune_data()
@@ -279,6 +304,19 @@ class OutWI:
             msg += 'Try different encoding:'
             print(msg, e)
             raise
+
+    def _adjust_first_table(self):
+        if (None,None) in self._data:
+            if self._first_time not in self._data:
+                data_ = self._data.pop((None,None))
+                self._data = {
+                        self._first_time:data_,
+                        **self._data
+                    }
+            else:
+                msg = f'Error: {self._file_path.name} could not figure out the date '
+                msg += 'associated to the first well data table.'
+                raise ValueError(msg)
 
 
     def process_and_get(self, file_path, prune=True):
@@ -293,12 +331,8 @@ class OutWI:
             different from the table read before.
             Default: True.
         """
-        try:
-            self.process(file_path=file_path, prune=prune)
-            return self.get()
-        except: # pylint: disable=bare-except
-            print('Could not retrieve data.')
-            return None
+        self.process(file_path=file_path, prune=prune)
+        return self.get()
 
 
     # MARK: Prune
@@ -359,6 +393,7 @@ class OutWI:
             date_ = '/'.join(match.groups()[1:][::-1])
 
             if self._first_time == (None,None):
+                self._log(f'First time: {date_} ({days_} days)')
                 self._first_time = (date_, days_)
 
             self._current_time = (date_, days_)
@@ -375,7 +410,7 @@ class OutWI:
                     data = {}
                     for k, (i1,i2,t) in IMEX_WELL.items():
                         d = t(self._current_line[i1:i2].strip())
-                        if k == 'well name':
+                        if k == 'name':
                             self._current_well = d
                         else:
                             data[k] = d
@@ -426,8 +461,6 @@ class OutWI:
                     try:
                         out[k] = t(v)
                     except ValueError:
-                        # msg = f'Error converting {k} value ({v}) to type {t}.'
-                        # raise ValueError(msg)
                         return None
             if out['cell'] == '':
                 return None
@@ -439,38 +472,39 @@ class OutWI:
 
     @staticmethod
     def _process_cell(con_data, prev_cell):
+        """Tranform cell string to i, j, k and medium."""
         if 'cell' not in con_data:
             return
         cell_str = con_data['cell']
         match = re.match(r'(\d+),(\d+),(\d+)(?:\s*(\w+))?', cell_str)
 
+        read = {'cell i':0, 'cell j':0, 'cell k':0}
         if match:
-            ii = int(match.group(1))
-            jj = int(match.group(2))
-            kk = int(match.group(3))
+            for i,k in enumerate(read.keys()):
+                read[k] = int(match.group(i+1))
 
             medium = match.group(4) if match.group(4) else 'X'
             if medium[0] == 'M':
                 medium = 'MT'
             elif medium[0] == 'F':
                 medium = 'FR'
+            read['cell medium'] = medium
         else:
             msg = f"Cell string is not in the expected format: {cell_str}."
             raise ValueError(msg)
 
-        if medium == 'X':
-            same = (prev_cell['i'] == ii) and (prev_cell['j'] == jj)
-            same = same and (prev_cell['k'] == kk) and (prev_cell['m'] == 'MT')
+        if read['cell medium'] == 'X':
+            same = prev_cell['cell medium'] == 'MT'
+            for d1,d2 in zip(read.values(), prev_cell.values()):
+                same = same and (d1 == d2)
+
             if same:
-                medium = 'FR'
+                read['cell medium'] = 'FR'
             else:
-                medium = 'MT'
+                read['cell medium'] = 'MT'
 
-        con_data['cell i'] = ii
-        con_data['cell j'] = jj
-        con_data['cell k'] = kk
-        con_data['cell medium'] = medium
-
+        for k,v in read.items():
+            con_data[k] = v
         _ = con_data.pop('cell')
 
 
@@ -494,15 +528,14 @@ class OutWI:
             if current_layers >= expected:
                 msg = f'Found well index data for {self._current_well} '
                 msg += f'at {self._current_time[0]} ({self._current_time[0]} days), '
-                msg += f'but only {expected} data lines were expected. '
-                msg += 'Check data.'
+                msg += f'but only {expected} data lines were expected. Check data.'
                 msg += self._current_line
                 raise ValueError(msg)
 
-        prev_cell = {'i':0, 'j':0, 'k':0, 'medium':''}
+        prev_cell = {'cell i':0, 'cell j':0, 'cell k':0, 'cell medium':''}
         if current_layers > 0:
             for p in prev_cell:
-                prev_cell[p] = data_['con_data'][-1][f'cell {p}']
+                prev_cell[p] = data_['con_data'][-1][p]
         OutWI._process_cell(con_data, prev_cell)
 
         data_['con_data'].append(con_data)
@@ -523,6 +556,9 @@ class OutWI:
                         self._update_time()
 
                     if START[self._file_type] in line:
+                        if start:
+                            msg = 'Found a new WI report, but the previous one was not closed.'
+                            raise ValueError(msg)
                         start = True
                         self._log(f'New WI Report (line {n+1:,})')
                     elif start:
@@ -787,5 +823,6 @@ def test(file_path):
 
 if __name__ == "__main__":
     # _error_msg()
+    # test('tests/out/test_gem_small.out')
     # test('tests/out/test_gem.out')
-    test('tests/out/test_imex.out')
+    test('tests/out/test_imex_small.out')
