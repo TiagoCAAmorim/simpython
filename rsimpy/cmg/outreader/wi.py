@@ -39,6 +39,7 @@ try:
 except ImportError:
     import utils
 
+
 START = {
     'IMEX': 'Units for Well Index',
     'GEM': 'W E L L  I N D E X  R E P O R T'
@@ -376,7 +377,7 @@ class OutWI:
         return True
 
 
-    # MARK: read data
+    # MARK: Read time
     def _update_time(self):
         pattern = r'^\s*TIME:\s+(\d+\.?\d*)\s+days\s+.+\s+DATE:\s+(\d{4}):(\d{1,2}):(\d{1,2})\s*$'
         match = re.search(pattern, self._current_line)
@@ -385,6 +386,7 @@ class OutWI:
             date_ = '/'.join(match.groups()[1:][::-1])
             self._adjust_last_table((date_, days_))
             self._current_time = (date_, days_)
+
 
     def _adjust_last_table(self, new_time):
         if self._current_time in self._data:
@@ -402,6 +404,7 @@ class OutWI:
                     raise ValueError(msg)
 
 
+    # MARK: Read well data
     def _update_well(self):
         """update current well."""
         if self._file_type == 'IMEX':
@@ -430,6 +433,7 @@ class OutWI:
                 'well_data': {**data},
                 'con_data': [],
             }
+
 
     def _check_well_layers(self):
         if self._current_well in self._data[self._current_time]:
@@ -485,6 +489,7 @@ class OutWI:
             return None, None
 
 
+    # MARK: Read Con data
     def _get_con_data(self):
         """Extract well connection data from current line."""
         try:
@@ -571,7 +576,7 @@ class OutWI:
             con_data = {k:v for k,v in con_data.items() if k in KEEP_COLS}
         data_['con_data'].append(con_data)
 
-
+    # MARK: Read file
     def _get_data(self):
         """Read data from file line by line."""
         self._data = {}
