@@ -27,14 +27,17 @@ Example:
 
 import re
 from pathlib import Path
+import math
 from functools import cmp_to_key
 import itertools
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-import utils # pylint: disable=import-error
-
+try:
+    from . import utils # pylint: disable=import-error
+except ImportError:
+    import utils
 
 START = {
     'IMEX': 'Units for Well Index',
@@ -104,6 +107,8 @@ class OutWI:
         Return dict with well index data.
     process_and_get():
         Process file and return well index data.
+    prune(self):
+        Delete data if equal to previous time-step.
     get_wells()
         Return dict of wells and associated dates.
     get_well_dates(self, well_name):
@@ -124,8 +129,7 @@ class OutWI:
         self._file_type = None
         self._data = {}
 
-        self._current_time = (None,None)
-        self._first_time = (None,None)
+        self._current_time = (None,100000)
         self._current_well = None
         self._current_line = None
 
@@ -137,7 +141,6 @@ class OutWI:
 
     # MARK: Print
     def __str__(self):
-        # return 'not implemented!'
         msg = ''
 
         dates = list(self._data.keys())
@@ -298,29 +301,14 @@ class OutWI:
             self._file_type = utils.get_file_type(file_path, encoding=self._encoding)
             self._log(f'File type: {self._file_type}')
             self._get_data()
-            self._adjust_first_table()
-
             if prune:
-                self._prune_data()
+                self.prune()
 
         except UnicodeDecodeError as e:
             msg = f'Error reading: {self._file_path.name} with {self._encoding}. '
             msg += 'Try different encoding:'
             print(msg, e)
             raise
-
-    def _adjust_first_table(self):
-        if (None,None) in self._data:
-            if self._first_time not in self._data:
-                data_ = self._data.pop((None,None))
-                self._data = {
-                        self._first_time:data_,
-                        **self._data
-                    }
-            else:
-                msg = f'Error: {self._file_path.name} could not figure out the date '
-                msg += 'associated to the first well data table.'
-                raise ValueError(msg)
 
 
     def process_and_get(self, file_path, prune=True):
@@ -340,7 +328,7 @@ class OutWI:
 
 
     # MARK: Prune
-    def _prune_data(self):
+    def prune(self):
         """Delete data if equal to previous time-step."""
 
         self._log('Pruning data.')
@@ -390,17 +378,28 @@ class OutWI:
 
     # MARK: read data
     def _update_time(self):
-        pattern = r'^\s*TIME:\s+(\d+\.?\d*)\s+days\s+.+\s+DATE:\s+(\d{4}):(\d{2}):(\d{2})\s*$'
+        pattern = r'^\s*TIME:\s+(\d+\.?\d*)\s+days\s+.+\s+DATE:\s+(\d{4}):(\d{1,2}):(\d{1,2})\s*$'
         match = re.search(pattern, self._current_line)
         if match:
             days_ = float(match[1])
             date_ = '/'.join(match.groups()[1:][::-1])
-
-            if self._first_time == (None,None):
-                self._log(f'First time: {date_} ({days_} days)')
-                self._first_time = (date_, days_)
-
+            self._adjust_last_table((date_, days_))
             self._current_time = (date_, days_)
+
+    def _adjust_last_table(self, new_time):
+        if self._current_time in self._data:
+            if new_time[1] < self._current_time[1]:
+                if new_time not in self._data:
+                    self._log(f'Adjusting last table: {self._current_time[0]} ({self._current_time[1]} days) to {new_time[0]} ({new_time[1]} days)')
+                    data_ = self._data.pop(self._current_time)
+                    self._data = {
+                        **self._data,
+                        new_time:data_,
+                    }
+                else:
+                    msg = f'Last time read ({self._current_time[0]} - {self._current_time[1]} days) is before the current '
+                    msg += f'({new_time[0]} - {new_time[1]} days), but the current time is already in the data.'
+                    raise ValueError(msg)
 
 
     def _update_well(self):
@@ -577,7 +576,7 @@ class OutWI:
         """Read data from file line by line."""
         self._data = {}
         self._current_well = None
-        self._current_time = (None, None)
+        self._current_time = (None, 1E5)
 
         with open(self._file_path, 'r', encoding=self._encoding, errors='ignore') as file:
             start = False
@@ -588,18 +587,25 @@ class OutWI:
                         self._update_time()
 
                     if START[self._file_type] in line:
+                        self._log(f'New WI Report (line {n+1:,}): {self._current_time[0]} ({self._current_time[1]} days)')
                         if start:
-                            msg = 'Found a new WI report, but the previous one was not closed.'
+                            msg = 'Attention: Previous WI report was not closed.'
                             raise ValueError(msg)
                         start = True
-                        self._log(f'New WI Report (line {n+1:,})')
+                        if self._current_time in self._data:
+                            if len(self._data[self._current_time]) > 0:
+                                msg = f'Current date ({self._current_time[0]} - {self._current_time[1]} days) was already read.'
+                                msg += f' Adding small number to the days.'
+                                while self._current_time in self._data:
+                                    self._current_time = (self._current_time[0], self._current_time[1] + math.ulp(self._current_time[1]))
+                                raise ValueError(msg)
                     elif start:
                         if line.strip() in ['','1']:
                             if self._current_time in self._data:
                                 self._check_well_layers()
                                 self._current_well = None
                                 start = False
-                                self._log(f'End of WI Report (line {n+1:,})')
+                                self._log(f'End of WI Report (line {n+1:,}): {self._current_time[0]} ({self._current_time[1]} days)')
                         else:
                             self._update_well()
                             self._process_line()
@@ -828,36 +834,11 @@ class OutWI:
 
         return axes
 
+
 def _error_msg():
     print(__doc__)
     print(OutWI.__doc__)
 
-def test(file_path):
-    """Tests"""
-    out_wi = OutWI(verbose=False, wi_only=True, encoding='utf-8')
-    out_wi.process(file_path, prune=True)
-
-    print('Data found:')
-    print(out_wi)
-
-    table = out_wi.get_table()
-    print(table)
-    print(table['well'].unique())
-    for w in table['wi']:
-        print(w)
-
-    # if out_wi.get_file_type() == 'IMEX':
-        # print(table['type'].unique())
-        # print(table['constraint'].unique())
-        # print(table['constr_unit'].unique())
-    # else:
-        # print(table['regulated'].unique())
-        # print(table['rtype'].unique())
-
 
 if __name__ == "__main__":
-    # _error_msg()
-    test('tests/out/test_gem_small.out')
-    # test('tests/out/test_gem.out')
-    # test('tests/out/test_imex_small.out')
-    # test('tests/out/test_imex.out')
+    _error_msg()
