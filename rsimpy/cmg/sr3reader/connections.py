@@ -109,7 +109,14 @@ class ConnectionsHandler:
 
 # MARK: Getters
     def get_connections(self, as_active=False):
-        """Get all cell connections from the SR3 file."""
+        """
+        Get all cell connections from the SR3 file.
+
+        Parameters:
+        as_active (bool): If True, the function will return the connections
+            in active cell index. If False, it will return the connections
+            in complete cell index.
+        """
         if self._connections is None:
             self.read()
         if as_active:
