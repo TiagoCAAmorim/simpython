@@ -75,6 +75,8 @@ def _ijk2n(nijk, ijk):
     If has a 4th value, assumes the format (i,j,k,element).
     'element' is 1 for matrix and 2 for fractures.
     """
+    if isinstance(ijk, str):
+        ijk = [int(i) for i in ijk.split(",")]
     ijk_ = np.array(ijk)
     if len(ijk_.shape) == 1:
         ijk_ = np.expand_dims(ijk_, axis=0)
