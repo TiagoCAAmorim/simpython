@@ -245,19 +245,18 @@ class ElementHandler:
         )
 
         self._layer_data = {
-            f"{parent.decode()}{{{name.decode()}}}": {
+            f"{parent.decode()}{{{cell_str.decode()}}}": {
                 "number": int(number),
-                "cell_str": name.decode(),
-                "cell": int(cell),
+                "cell_str": cell_str.decode(),
+                "cell": self._grid.complete2active(self._grid.ijk2n(cell_str.decode())),
                 "parent": parent.decode(),
                 "connection": int(connection),
                 "perf": int(perf) == 0,
             }
-            for (name, parent, number, cell, connection, perf) in zip(
+            for (cell_str, parent, number, connection, perf) in zip(
                 dataset["Name"],
                 dataset["Parent"],
                 dataset["Number"],
-                dataset["CSIndex"],
                 dataset["Connect To"],
                 dataset["Type"],
             )
