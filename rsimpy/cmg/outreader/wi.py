@@ -605,13 +605,13 @@ class OutWI:
                         start = True
                         if self._current_time in self._data:
                             if len(self._data[self._current_time]) > 0:
-                                msg = f'Current date was already read: {self._print_time()}. '
-                                msg += 'Adding small number to the days.'
                                 while self._current_time in self._data:
                                     small = math.ulp(self._current_time[1])
                                     new_days =  self._current_time[1] + small
                                     self._current_time = (self._current_time[0], new_days)
-                                raise ValueError(msg)
+                                msg = f'Current date was already read: {self._print_time()}. '
+                                msg += 'Adding small number to the days.'
+                                self._log(msg)
                     elif start:
                         if line.strip() in ['','1']:
                             if self._current_time in self._data:
