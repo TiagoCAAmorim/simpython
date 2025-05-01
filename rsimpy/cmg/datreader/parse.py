@@ -1,80 +1,211 @@
 """Module to parse CMG dat files."""
-import sys
 import re
-import argparse
 import json
 from pathlib import Path
-from datetime import datetime, timedelta
-import time
-from collections import Counter
 
 
+SECTION_keys = ['TITLE1','GRID','ROCKFLUID','INITIAL','NUMERICAL','RUN']
+GRID_keys = ['CORNERS','COORD','ZCORN','TRANSF','NULL','PINCHOUTARRAY',
+             'POR','NETGROSS','PERMI','PERMJ','PERMK',
+             'RTYPE','EOSTYPE','ITYPE','PTYPE']
+KREL_keys = ['RPT']
+FLUID_keys = ['MODEL']
 VFP_keys = ['PTUBE1','ITUBE1','VFPPROD','VFPINJ']
 WELL_keys = ['WELL','PERF','LAYERCLUMP','PERF','LAYERXYZ']
-ENCODINGS = ['utf-8', 'cp1252',
-             'iso8859_2', 'ascii',
-             'utf_7','utf_16','utf_32',
-             'ISO-8859-1', 'windows-1252']
+TRIGGER_keys = ['TRIGGER','END_TRIGGER']
+ENCODINGS = ['utf-8', 'cp1252', 'iso8859_2', 'ascii',
+             'utf_7','utf_16','utf_32', 'ISO-8859-1', 'windows-1252']
 
-# MARK: Timer
-class Timer:
-    """Helper to time functions."""
-    def __init__(self, min_interval=0.0):
-        self._min = min_interval
-        self._tick = time.time()
 
-    def tick(self):
-        """Start stopwatch"""
-        self._tick = time.time()
-
-    def tock(self, msg=None):
-        """Check elapsed time and print message"""
-        elapsed = time.time() - self._tick
-        if elapsed > self._min:
-            if msg is None:
-                msg = 'Elapsed time'
-            print(f'{msg}: {elapsed:0.4f} s.')
-
-# MARK: DatDates
-class DatDates:
+# MARK: DatParser
+class DatParser:
 
     """
-    Class with code to read Dates in a CMG simulation file.
+    Class with code to read keywords in a CMG simulation file.
 
     Attributes
     ----------
     abs_path : dict
-        Dictionary with changes to absolute pathes. Default: None.
+        Dictionary with changes to absolute pathes. Keys are the
+        strings to be searched in the start of the include path,
+        and values are the strings to replace any positive search.
+        If None, no search is performed. Default: None.
     encoding : str
         File encoding. Default: 'utf-8'.
+    ignore : str or [str]
+        List of keywords to ignore. Available collections of
+        keywords: GRID_keys, VFP_keys, WELL_keys, TRIGGER_keys.
+        To use, enter collections names as strings in the list.
+        If a section keyword is used, all keywords in the section are ignored.
+        Section keywords are: TITLE1, GRID, ROCKFLUID, INITIAL,
+        NUMERICAL, RUN. If None, reads all keywords. Default: None.
     verbose : bool
         Print messages. Default: False.
 
     Methods
     -------
-    process():
+    process(file_path, read_includes=True):
         Process dat file.
-    get_dates():
-        Return first and last dates.
-    process_and_get():
-        Process file and return initial and final dates.
+    get():
+        Return list of keywords and associated options.
+    save(file_path):
+        Save keywords and options to json file.
     """
 
 
-    def __init__(self, abs_path=None, encoding='utf-8', verbose=False, _debug=False):
+    def __init__(self, abs_path=None, encoding='utf-8', ignore=None, verbose=False, _debug=False):
         if abs_path is None:
             self._abs_path = {}
         else:
             self._abs_path = abs_path
         self._encoding = encoding
+        self._ignore = DatParser._process_ignore(ignore)
+        if verbose:
+            print(f'Keywords to ignore: {", ".join(self._ignore)}')
         self._verbose = verbose
         self._debug = _debug
 
         self._file_path = None
-        self._first_date = None
-        self._last_date = None
+        self._result = []
+
+
+    @staticmethod
+    def _process_ignore(ignore):
+        """Process ignore list."""
+        if ignore is None:
+            return []
+
+        if isinstance(ignore, str):
+            ignore = [ignore]
+
+        if isinstance(ignore, list):
+            output = []
+            for s in ignore:
+                if s == 'GRID_keys':
+                    output += GRID_keys
+                elif s == 'VFP_keys':
+                    output += VFP_keys
+                elif s == 'WELL_keys':
+                    output += WELL_keys
+                elif s == 'TRIGGER_keys':
+                    output += TRIGGER_keys
+                elif s in TRIGGER_keys:
+                    output += TRIGGER_keys
+                else:
+                    output.append(s)
+            return list(set(output))
+
+        msg = 'Argument ignore must be a string or a list of strings.'
+        raise ValueError(msg)
+
+
+    def get(self):
+        """Return dict of keywords and associated options."""
+        return self._result
+
+
+    # MARK: Save & Load
+    def save(self, file_path):
+        """Save keywords and options to json file."""
+        if self._file_path is None:
+            msg = 'No file processed.'
+            raise ValueError(msg)
+
+        file_path = Path(file_path)
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        file_path = file_path.with_suffix('.json')
+        if self._verbose:
+            print(f'Saving {file_path.resolve().absolute()}.')
+        if file_path.is_file():
+            print(f'File already exists: {file_path}.')
+            answer = 'y'
+            while answer.lower() not in ['y','']:
+                print('Overwrite? ([y]/n)')
+                answer = input()
+                if answer.lower() == 'n':
+                    return
+
+        i=1
+        result = {}
+        for key in self._result:
+            result[f'{i}. {key[0]}'] = key[1:]
+            i += 1
+        with open(file_path, 'w', encoding=self._encoding) as file:
+            json.dump(result, file, indent=4)
+
+
+    def load(self, file_path):
+        """Load keywords and options from json file."""
+        file_path = Path(file_path)
+        if not file_path.is_file():
+            msg = f'File not found: {file_path}.'
+            raise ValueError(msg)
+
+        with open(file_path, 'r', encoding=self._encoding) as file:
+            result = json.load(file)
+        self._result = []
+        for key, value in result.items():
+            key = key.split('. ')[1:]
+            self._result.append(key + value)
+
+        if self._verbose:
+            print(f'Loaded {file_path.resolve().absolute()}.')
+
+
+    # MARK: Process
+    def process(self, file_path, read_includes=True):
+        """Process dat file."""
+        self._file_path = None
+
+        if self._verbose:
+            print(f'Processing {file_path}.')
+
+        file_path = Path(file_path)
+        if not file_path.is_file():
+            msg = f'File not found: {file_path}.'
+            raise ValueError(msg)
+
+        self._file_path = file_path
+        self._result = []
+
+        if self._verbose:
+            print('Reading main dat file.')
+        txt = self._get_txt(file_path=file_path)
+
+        if self._verbose:
+            print('Processing main dat file.')
+        self._search_keywords(
+            txt=txt,
+            is_include=not read_includes,
+        )
+
 
     # MARK: Read
+    def _get_txt(self, file_path, keyword=None):
+        """Read file and return code after given keyword."""
+
+        txt = self._safe_file_read(file_path)
+        txt = DatParser._clean_line(
+            txt=txt,
+            multilines=True,
+            remove_triggers='TRIGGER' in self._ignore)
+
+        if keyword is None:
+            return txt.split('\n')
+
+        txt = f'\n{txt}\n'
+        if f'\n{keyword}\n' not in txt:
+            msg = f'{keyword} not found in file.'
+            raise ValueError(msg)
+
+        txt = txt.split(f'\n{keyword}\n')[1:]
+        if len(txt) > 1:
+            msg = f'{keyword} found more than once.'
+            raise ValueError(msg)
+
+        return txt[0].split('\n')
+
+
     def _safe_file_read(self, file_path):
         """Changes file enconding if initial file read fails."""
         try:
@@ -96,14 +227,16 @@ class DatDates:
         raise UnicodeEncodeError('Could not open file.')
 
 
+    # MARK: Helpers
     @staticmethod
-    def _clean_line(txt, multilines=False):
+    def _clean_line(txt, multilines=False, remove_triggers=True):
         sub = {
             'comments': (r'\*\*.*$', ''),
             'tabs': (r'\t{1,}', ' '),
-            'asterisks': (r'(\s)\*(\w)', r"\g<1>\g<2>"),
+            'keyword asterisks': (r'(\s)\*(\w)', r"\g<1>\g<2>"),
             'initial spaces': (r'^\s+',''),
             'final spaces': (r'\s+$',''),
+            'double blank lines': (r'^\n\n', '\n'),
         }
 
         if multilines:
@@ -115,10 +248,11 @@ class DatDates:
             txt = re.sub(search_, replace_, txt, flags=flag)
         txt = txt.lstrip(r'\*')
 
-        if multilines:
-            txt = DatDates._remove_triggers(txt)
+        if multilines and remove_triggers:
+            txt = DatParser._remove_triggers(txt)
 
         return txt
+
 
     @staticmethod
     def _remove_triggers(lines):
@@ -130,27 +264,6 @@ class DatDates:
             lines = lines[:start_index] + lines[end_index + len('\nEND_TRIGGER'):]
 
 
-    def _get_code(self, file_path, keyword=None):
-        """Read file and return code after keyword."""
-
-        txt = self._safe_file_read(file_path)
-        txt = DatDates._clean_line(txt, multilines=True)
-
-        if keyword is None:
-            return txt
-
-        if f'\n{keyword}\n' not in txt:
-            msg = f'{keyword} not found in file.'
-            raise ValueError(msg)
-
-        txt = txt.split(f'\n{keyword}\n')[1:]
-        if len(txt) > 1:
-            msg = f'More than one {keyword} found.'
-            raise ValueError(msg)
-
-        return txt[0]
-
-
     @staticmethod
     def _is_float(value):
         try:
@@ -159,23 +272,29 @@ class DatDates:
         except ValueError:
             return False
 
+
     @staticmethod
     def _get_key(line):
-
-        if len(line) == 0:
-            return None
-        if line[0]=="'":
-            return None
-        if line[:3]=="BG ":
+        if len(line) == 0 or line[0]=="'" or line[:3]=="BG ":
             return None
         split_line = line.split()
-        if '*' in split_line[0]:
+        if '*' in split_line[0] or ':' in split_line[0]:
             return None
-        if ':' in split_line[0]:
+        if DatParser._is_float(split_line[0]):
             return None
-        if DatDates._is_float(split_line[0]):
-            return None
-        return split_line
+        return split_line[0]
+
+
+    @staticmethod
+    def _get_key_values(line, key=None):
+        """Split a string by spaces, ignoring spaces within quotes."""
+        if key is not None:
+            if line.startswith(key):
+                line = line[len(key):]
+            else:
+                raise ValueError(f'Expected {key} in line: {line}')
+
+        return re.findall(r'(?:[^\s"\']|"(?:\\.|[^"])*"|\'(?:\\.|[^\'])*\')+', line)
 
 
     def _resolve_relative_path(self, relative_path):
@@ -188,328 +307,78 @@ class DatDates:
         return path_.resolve()
 
 
-    # MARK: Search Dates
-    def _search_dates(self, code, is_include=True):
-        if isinstance(code, list):
-            return self._search_date_in_lines(
-                lines=code,
-                is_include=is_include)
-
-        try:
-            with open(code, "r", encoding=self._encoding) as lines:
-                return self._search_date_in_lines(
-                    lines=lines,
-                    is_include=is_include)
-        except UnicodeDecodeError:
-            if self._verbose:
-                code = Path(code)
-                print(f'Error reading: {code.name}. Trying different encoding.')
-            for encoding in [e for e in ENCODINGS if e != self._encoding]:
-                try:
-                    with open(code, "r", encoding=encoding) as lines:
-                        result = self._search_date_in_lines(
-                            lines=lines,
-                            is_include=is_include)
-                    self._encoding = encoding
-                    if self._verbose:
-                        print(f'Changed encoding to {self._encoding}.')
-                    return result
-                except: #pylint: disable=bare-except
-                    pass
-        raise UnicodeEncodeError('Could not open file.')
-
-
-    def _search_date_in_lines(self, lines, is_include=True):
+    # MARK: Search Keywords
+    def _search_keywords(self, txt, is_include=True):
         check_first_key = is_include
-
         current_key = ''
-        trigger_depth = 0
-        for line in lines:
-            if not isinstance(lines, list):
-                line = DatDates._clean_line(line)
-                if line == '':
-                    continue
-            line = DatDates._get_key(line)
-            if line is None:
+        for line in txt:
+            if line == '':
+                continue
+            new_key = DatParser._get_key(line)
+            options = DatParser._get_key_values(line, new_key)
+            if new_key is None:
+                if current_key not in self._ignore:
+                    self._result[-1].extend(options)
                 continue
 
-            if line[0] == 'TRIGGER':
-                trigger_depth += 1
-            elif line[0] == 'END_TRIGGER':
-                trigger_depth -= 1
-            if trigger_depth > 0:
-                continue
-
-            if check_first_key:
-                if line[0] in VFP_keys + WELL_keys:
+            if new_key in self._ignore:
+                current_key = new_key
+                self._result.append([new_key])
+                self._result[-1].append('ignored')
+                if check_first_key:
                     if self._verbose:
-                        print(f'  Found {line[0]} => skipped reading file.')
+                        print(f'  Found {new_key} => stop reading include file.')
                     return True
                 check_first_key = False
+                continue
 
-            if line[0] == 'INCLUDE':
-                if self._debug:
-                    timer = Timer(0.1)
-                include_name = line[1][1:-1].replace('\\','/').split('/')[-1]
-
-                if current_key in VFP_keys + WELL_keys:
+            if new_key == 'INCLUDE':
+                if current_key in self._ignore:
                     if self._verbose:
-                        print(f'Current key {current_key} => skipped reading {include_name}.')
-                    current_key = line[0]
-                    if self._debug:
-                        timer.tock(f'Skipped reading {include_name}')
+                        print(f'  Found {current_key} before INCLUDE => prevent reading include file.')
+                    self._result.append([new_key])
+                    self._result[-1].extend(options)
+                    self._result[-1].append('ignored')
                     continue
-
-                include_path = self._resolve_relative_path(line[1][1:-1])
                 if self._verbose:
-                    print(f'Reading {include_path.name}')
+                    include_name = options[0][1:-1].replace('\\','/').split('/')[-1]
+                    print(f'  Reading include file: {include_name}.')
 
+                include_path = self._resolve_relative_path(options[0][1:-1])
                 if not include_path.is_file():
-                    print(f'File not found: {include_path}')
-                    if self._debug:
-                        timer.tock(f'File not found: {include_name}')
+                    print(f'  File not found: {include_path}')
+                    self._result.append([new_key])
+                    self._result[-1].extend(options)
+                    self._result[-1].append('file not found')
                     continue
 
-                if not self._search_dates(include_path, is_include=True):
-                    if self._debug:
-                        timer.tock(f'Read STOP: {include_name}')
+                include_txt = self._get_txt(file_path=include_path)
+                if not self._search_keywords(include_txt, is_include=True):
+                    print(f'Error reading include file: {include_path}')
                     return False
 
-                if self._debug:
-                    timer.tock(f'Read: {include_name}')
+            else:
+                current_key = new_key
+                self._result.append([new_key])
+                self._result[-1].extend(options)
 
-            current_key = line[0]
-            if current_key in ['DATE','TIME']:
-                if self._first_date is None:
-                    self._first_date = line[1:]
-                self._last_date = line[1:]
-            elif current_key == 'STOP':
+            if current_key == 'STOP':
                 if self._verbose:
                     print('Found STOP.')
                 return False
         return True
 
 
-    # MARK: Process
-    def process(self, file_path):
-        """Search initial and final DATE."""
-        self._file_path = None
-
-        if self._verbose:
-            print(f'Processing {file_path}.')
-
-        file_path = Path(file_path)
-        if not file_path.is_file():
-            msg = f'File not found: {file_path}.'
-            raise ValueError(msg)
-
-        self._file_path = file_path
-
-        code = self._get_code(file_path=file_path, keyword='RUN')
-
-        self._first_date = None
-        self._last_date = None
-
-        self._search_dates(
-            code=code.split('\n'),
-            is_include=False,
-        )
-
-
-    def process_log(self, file_path):
-        """
-        Return initial and final DATE in a log file.
-
-        Assumptions:
-        - Dates are expressed as 'YYYY MM DD', separated by either
-        /, \\, ., -, : or single space.
-        - There are spaces before and after the date.
-        - Dates are in the same position (column) in the log lines.
-        - Dates are in ascending order.
-        """
-        txt = self._safe_file_read(file_path).split('\n')
-
-        date_pattern = r'\s(\d{4})[ /\\.:-](\d{2})[ /\\.:-](\d{2})\s'
-        results = []
-        for line in txt:
-            for match in re.finditer(date_pattern, line):
-                start_index = match.start()
-                date_str = ' '.join(match.groups())
-                results.append((date_str, start_index))
-
-        start_indices = [start_index for _, start_index in results]
-        index_counts = Counter(start_indices)
-        most_common_index, _ = index_counts.most_common(1)[0]
-        dates = [datetime.strptime(date, '%Y %m %d')
-                 for date, pos in results if pos == most_common_index]
-
-        dates_filter = []
-        for d1,d2 in zip(dates[::-1][:-1], dates[::-1][1:]):
-            if d1 >= d2:
-                dates_filter.append(d1)
-            elif len(dates_filter) > 0:
-                if d1 <= dates_filter[-1]:
-                    dates_filter.append(d1)
-        if len(dates_filter) > 0:
-            if dates[0] <= dates_filter[-1]:
-                dates_filter.append(dates[0])
-
-        if len(dates_filter) > 0:
-            return self.date_to_str(dates_filter[-1]), self.date_to_str(dates_filter[0])
-        return None, None
-
-
-    def get_progress(self, log_path=None):
-        """Check simulation progress."""
-        if self._first_date is None or self._last_date is None:
-            return None
-
-        if log_path is None:
-            if self._file_path is None:
-                return None
-            log_path = self._file_path.with_suffix('.log')
-        log_path = Path(log_path)
-        if not log_path.is_file():
-            return None
-
-        _, current_date = self.process_log(log_path)
-        if current_date is None:
-            return None
-
-        first = self.str_to_date(' '.join(self._first_date))
-        last = self.str_to_date(' '.join(self._last_date))
-        current = self.str_to_date(current_date)
-
-        if last > first:
-            if current < first:
-                return 0.0
-            if current > last:
-                return 1.0
-            return (current - first) / (last - first)
-        return None
-
-
-    # MARK: Convert
-    @staticmethod
-    def str_to_date(date_str):
-        """Convert CMG format string to date."""
-        fractional_day = '0'
-        if '.' in date_str:
-            date_str, fractional_day = date_str.split('.')
-        date = datetime.strptime(date_str, '%Y %m %d')
-        days = float('0.'+fractional_day)
-        return date + timedelta(days=days)
-
-    @staticmethod
-    def date_to_str(date):
-        """Convert date to CMG format string."""
-        def _fraction_of_day(date_time):
-            seconds = date_time.hour * 3600
-            seconds += date_time.minute * 60
-            seconds += date_time.second
-            seconds += date_time.microsecond / 1E6
-            seconds_in_a_day = 24 * 60 * 60
-            return seconds / seconds_in_a_day
-
-        date_str = date.strftime('%Y %m %d')
-        fractional_day = _fraction_of_day(date)
-        if fractional_day > 0:
-            date_str += f'{fractional_day:10f}'.strip().strip('0')
-
-        return date_str
-
-
-    def _add_time(self):
-        first_date = DatDates.str_to_date(' '.join(self._first_date))
-
-        days = float(self._last_date[0])
-        last_date = first_date + timedelta(days=days)
-        last_date_str = DatDates.date_to_str(last_date)
-
-        self._last_date = last_date_str.split()
-
-
-    # MARK: Get
-    def get_dates(self):
-        """Return initial and final dates of the last processed file."""
-        if len(self._last_date) == 1:
-            self._add_time()
-        return ' '.join(self._first_date), ' '.join(self._last_date)
-
-
-    def set_dates(self, first_date, last_date):
-        """Set initial and final dates."""
-        if first_date is not None:
-            first_date = first_date.split()
-        if last_date is not None:
-            last_date = last_date.split()
-        self._first_date = first_date
-        self._last_date = last_date
-
-
-    def process_and_get(self, file_path):
-        """Process file and return initial and final dates."""
-        self.process(file_path)
-        return self.get_dates()
-
-
-def execute(args):
-    """Execute code on the provided arguments."""
-    absolute_dict = json.loads(args.absolute) if args.absolute else {}
-
-    dat_date = DatDates(
-        encoding=args.encoding,
-        abs_path=absolute_dict,
-        verbose=args.verbose == 1,
-    )
-    date_ini, date_end = dat_date.process_and_get(args.file_path)
-
-    if args.progress == 1:
-        p = dat_date.get_progress(args.log_path)
-        print(p)
-    else:
-        print(f'{date_ini}, {date_end}')
-
-
-def parse_arguments():
-    """Parse command-line arguments"""
-    desc = "Process a file with specified encoding and absolute arguments."
-    parser = argparse.ArgumentParser(description=desc)
-
-    desc = "Path to the input file."
-    parser.add_argument("file_path", type=str, help=desc)
-
-    desc = "Encoding of the input file (default: utf-8)."
-    parser.add_argument("--encoding", type=str, default="utf-8", help=desc)
-
-    desc = "Absolute paths arguments as a JSON-formatted string "
-    desc += "(e.g., '{\"\\folder\": \"\\\\server.com\\folder_a\"}') "
-    desc += "(default: '{ }')"
-    parser.add_argument("--absolute", type=str, default="{ }", help=desc)
-
-    desc = "Progress flag: 1=True (default: False)."
-    parser.add_argument("--progress", type=int, default=0, help=desc)
-
-    desc = "Path to the log file."
-    parser.add_argument("--log_path", type=str, default=None, help=desc)
-
-    desc = "Verbose flag: 1=True (default: False)."
-    parser.add_argument("--verbose", type=int, default=0, help=desc)
-
-    return parser.parse_args()
-
-
-def _error_msg():
-    msg = "Error: Missing arguments."
-    msg += "\nUsage: python dat_dates.py <file_path> "
-    msg += "[--encoding <encoding>] [--absolute <absolute_json>] "
-    msg += "[--progress <1>] [--log_path <log_path>] "
-    msg += "[--verbose <1>]"
-    print(msg)
-
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        _error_msg()
-        sys.exit(1)
-    execute(parse_arguments())
+    print(__doc__)
+    print(DatParser.__doc__)
+
+    dat_parser = DatParser(
+        encoding='utf-8',
+        ignore=['TITLE1', 'GRID_keys', 'VFP_keys', 'WELL_keys',
+                'FLUID_keys', 'TRIGGER_keys', 'KREL_keys'],
+        verbose=True,
+    )
+    dat_parser.process('tests/_no_sync/ex/dat/base_case_bo.dat')
+    dat_parser.save('tests/_no_sync/ex/dat/base_case_bo.json')
