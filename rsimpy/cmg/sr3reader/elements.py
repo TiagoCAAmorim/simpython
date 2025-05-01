@@ -44,15 +44,17 @@ class ElementHandler:
         Returns a list of elements of the specified type.
     get_parent(element_type, element_name)
         Returns the parent of a specified element.
-    get_connection(element_type, element_name)
-        Returns the connection of a specified element.
+    get_children(element_type, element_name, deep_search=True)
+        Returns the children of a specified group or well.
+    get_layer_data(data_name)
+        Returns layer data.
     """
 
     def __init__(self, sr3_file, units, grid, auto_read=True):
         self._element = {k:{} for k in ElementHandler.valid_elements()}
         self._parent = {k:{} for k in ElementHandler.valid_elements()}
-        self._connection = {k:{} for k in ElementHandler.valid_elements()}
         self._property = {k:{} for k in ElementHandler.valid_elements()}
+        self._layer_data = None
         self._file = sr3_file
         self._units = units
         self._grid = grid
@@ -65,7 +67,7 @@ class ElementHandler:
         for element_type in ElementHandler.valid_elements():
             self._get_elements(element_type)
             self._get_parents(element_type)
-            self._get_connections(element_type)
+        self._get_layer_data()
 
 
     @staticmethod
@@ -179,48 +181,6 @@ class ElementHandler:
         return self._parent[element_type][element_name]
 
 
-    def _get_connections(self, element_type):
-        if element_type == "layer":
-            dataset = self._file.get_element_table(
-                element_type=element_type,
-                dataset_string=f"{element_type.capitalize()}Table",
-            )
-
-            def _name(name, parent):
-                return f"{parent.decode()}{{{name.decode()}}}"
-
-            self._connection[element_type] = {
-                _name(name, parent): connection
-                for (name, parent, connection) in zip(
-                    dataset["Name"], dataset["Parent"], dataset["Connect To"]
-                )
-            }
-        else:
-            self._connection[element_type] = {
-                name: "" for name in self._element[element_type]
-            }
-
-
-    def get_connection(self, element_type, element_name):
-        """Get connection of an element.
-
-        Parameters
-        ----------
-        element_type : str
-            Element type to be evaluated.
-
-        Raises
-        ------
-        ValueError
-            If an invalid element type is provided.
-        """
-        self.is_valid(element_type, throw_error=True)
-        if element_name not in self._connection[element_type]:
-            msg = f"Connection for {element_name} not found."
-            raise ValueError(msg)
-        return self._connection[element_type][element_name]
-
-
     def _get_direct_children(self, element_type, element_name):
         parents = self._parent[element_type]
         return [k for k, v in parents.items() if v == element_name]
@@ -261,3 +221,81 @@ class ElementHandler:
         for child in children:
             wells += self.get_children("well", child)
         return wells
+
+
+    def _get_layer_data(self):
+        """
+        Get layer data.
+
+        Returns
+        -------
+        Dict
+            A dictionary with layer data indexed by layer name.
+            The dictionary contains the following keys:
+                - number (int): layer number
+                - cell_str (str): string representation of the cell
+                - cell (int): cell number, as active cell index
+                - parent (str): parent well
+                - connection (int): previous layer number
+                - perf (bool): True if the layer is perforated
+        """
+        dataset = self._file.get_element_table(
+            element_type='layer',
+            dataset_string="LayerTable",
+        )
+
+        self._layer_data = {
+            f"{parent.decode()}{{{cell_str.decode()}}}": {
+                "number": int(number),
+                "cell_str": cell_str.decode(),
+                "cell": self._grid.complete2active(self._grid.ijk2n(cell_str.decode())),
+                "parent": parent.decode(),
+                "connection": int(connection),
+                "perf": int(perf) == 0,
+            }
+            for (cell_str, parent, number, connection, perf) in zip(
+                dataset["Name"],
+                dataset["Parent"],
+                dataset["Number"],
+                dataset["Connect To"],
+                dataset["Type"],
+            )
+        }
+
+
+    def get_layer_data(self, data_name):
+        """
+        Get layer data.
+
+        Dictionary by layer name of one of the following options:
+            - number: layer number (int)
+            - cell_str: string representation of the cell (str)
+            - cell: cell number, as active cell index (int)
+            - parent: parent well (str)
+            - connection: previous layer number (int)
+            - perf: True if the layer is perforated (bool)
+
+        Connection is the downstream layer (upstream for injectors).
+        Large integers mean that the layer is connected to the 'surface'.
+
+        Parameters
+        ----------
+        data_name : str
+            Name of the data to retrieve.
+
+        Returns
+        -------
+        Dict
+            A dictionary with layer data indexed by layer name.
+        """
+        if self._layer_data is None:
+            self._get_layer_data()
+        valid_names = ["number", "cell_str", "cell", "parent", "connection", "perf"]
+        if data_name not in valid_names:
+            msg = f"Invalid data name: {data_name}. "
+            msg += f"Expected one of: {', '.join(valid_names)}."
+            raise ValueError(msg)
+        return {
+            k: v[data_name]
+            for k, v in self._layer_data.items()
+        }

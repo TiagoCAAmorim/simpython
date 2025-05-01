@@ -55,7 +55,7 @@ IMEX_WELL = {
 }
 
 KEEP_COLS = [
-    'number', 'name', 'wi', 'cell i', 'cell j', 'cell k', 'cell medium',
+    'number', 'name', 'wi', 'cell', 'cell i', 'cell j', 'cell k', 'cell medium',
 ]
 
 COLS = {
@@ -387,20 +387,26 @@ class OutWI:
             self._adjust_last_table((date_, days_))
             self._current_time = (date_, days_)
 
+    def _print_time(self):
+        return f'{self._current_time[0]} ({self._current_time[1]} days)'
+
 
     def _adjust_last_table(self, new_time):
         if self._current_time in self._data:
             if new_time[1] < self._current_time[1]:
                 if new_time not in self._data:
-                    self._log(f'Adjusting last table: {self._current_time[0]} ({self._current_time[1]} days) to {new_time[0]} ({new_time[1]} days)')
+                    msg = f'Adjusting last table: {self._print_time()} '
+                    msg += f'to {new_time[0]} ({new_time[1]} days)'
+                    self._log(msg)
                     data_ = self._data.pop(self._current_time)
                     self._data = {
                         **self._data,
                         new_time:data_,
                     }
                 else:
-                    msg = f'Last time read ({self._current_time[0]} - {self._current_time[1]} days) is before the current '
-                    msg += f'({new_time[0]} - {new_time[1]} days), but the current time is already in the data.'
+                    msg = f'Last time read, {self._print_time()} '
+                    msg += f'is before the current ({new_time[0]} - {new_time[1]} days), '
+                    msg += 'but the current time is already in the data.'
                     raise ValueError(msg)
 
 
@@ -442,7 +448,7 @@ class OutWI:
                 expected = self._data[self._current_time][self._current_well]['well_data']['layers']
                 if n_con != expected:
                     msg = f'Expected {expected} layers for well {self._current_well} '
-                    msg += f'at {self._current_time[0]} ({self._current_time[0]} days), '
+                    msg += f'at {self._print_time()}, '
                     msg += f'but only {n_con} data lines were read. Check data.'
                     raise ValueError(msg)
             else:
@@ -547,7 +553,6 @@ class OutWI:
 
         for k,v in read.items():
             con_data[k] = v
-        _ = con_data.pop('cell')
 
 
     def _process_line(self):
@@ -560,7 +565,7 @@ class OutWI:
             return
 
         if self._current_well is None:
-            msg = f'Found well index data ({self._current_time[1]} days), '
+            msg = f'Found well index data at {self._print_time()}, '
             msg += 'but well is not set. Check data.'
             raise ValueError(msg)
 
@@ -592,17 +597,20 @@ class OutWI:
                         self._update_time()
 
                     if START[self._file_type] in line:
-                        self._log(f'New WI Report (line {n+1:,}): {self._current_time[0]} ({self._current_time[1]} days)')
+                        msg = f'New WI Report (line {n+1:,}): {self._print_time()}'
+                        self._log(msg)
                         if start:
                             msg = 'Attention: Previous WI report was not closed.'
                             raise ValueError(msg)
                         start = True
                         if self._current_time in self._data:
                             if len(self._data[self._current_time]) > 0:
-                                msg = f'Current date ({self._current_time[0]} - {self._current_time[1]} days) was already read.'
-                                msg += f' Adding small number to the days.'
+                                msg = f'Current date was already read: {self._print_time()}. '
+                                msg += 'Adding small number to the days.'
                                 while self._current_time in self._data:
-                                    self._current_time = (self._current_time[0], self._current_time[1] + math.ulp(self._current_time[1]))
+                                    small = math.ulp(self._current_time[1])
+                                    new_days =  self._current_time[1] + small
+                                    self._current_time = (self._current_time[0], new_days)
                                 raise ValueError(msg)
                     elif start:
                         if line.strip() in ['','1']:
@@ -610,7 +618,8 @@ class OutWI:
                                 self._check_well_layers()
                                 self._current_well = None
                                 start = False
-                                self._log(f'End of WI Report (line {n+1:,}): {self._current_time[0]} ({self._current_time[1]} days)')
+                                msg = f'End of WI Report (line {n+1:,}): {self._print_time()}'
+                                self._log(msg)
                         else:
                             self._update_well()
                             self._process_line()
