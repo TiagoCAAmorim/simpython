@@ -55,7 +55,7 @@ IMEX_WELL = {
 }
 
 KEEP_COLS = [
-    'number', 'name', 'wi', 'cell i', 'cell j', 'cell k', 'cell medium',
+    'number', 'name', 'wi', 'cell', 'cell i', 'cell j', 'cell k', 'cell medium',
 ]
 
 COLS = {
@@ -547,7 +547,6 @@ class OutWI:
 
         for k,v in read.items():
             con_data[k] = v
-        _ = con_data.pop('cell')
 
 
     def _process_line(self):
@@ -600,7 +599,7 @@ class OutWI:
                         if self._current_time in self._data:
                             if len(self._data[self._current_time]) > 0:
                                 msg = f'Current date ({self._current_time[0]} - {self._current_time[1]} days) was already read.'
-                                msg += f' Adding small number to the days.'
+                                msg += ' Adding small number to the days.'
                                 while self._current_time in self._data:
                                     self._current_time = (self._current_time[0], self._current_time[1] + math.ulp(self._current_time[1]))
                                 raise ValueError(msg)
