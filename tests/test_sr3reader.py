@@ -401,10 +401,14 @@ class TestSr3Reader(unittest.TestCase):
         true_result = ""
         self.assertEqual(true_result, file_read)
 
-        file_read = sr3.elements.get_connection(
-            element_type="layer",
-            element_name="I11{31,10,76}")
+        file_read = sr3.elements.get_layer_data(
+            data_name="connection")["I11{31,10,76}"]
         true_result = 99
+        self.assertEqual(true_result, file_read)
+
+        file_read = sr3.elements.get_layer_data(
+            data_name="perf")["P11{23,25,219}"]
+        true_result = False
         self.assertEqual(true_result, file_read)
 
         file_read = sr3.elements.get_children(
