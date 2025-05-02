@@ -147,5 +147,30 @@ class TestTemplate(unittest.TestCase):
             'P11',
             "First well is not correct")
 
+
+    def test_read_well_key(self):
+        """Check reading well BHPDEPTH in dat file"""
+
+        folder = Path('tests/_no_sync/ex/dat/')
+        file = folder / 'base_case_bo.dat'
+
+        parser = dat_parser.DatParser(ignore=['GRID_keys', 'VFP_keys', 'FLUID_keys'])
+        parser.process(file)
+        data_ = parser.get()
+
+        wells_ = dat_run.get_well_key(data_, keyword='BHPDEPTH', verbose=True)
+        self.assertEqual(len(wells_), 2*26-6, f"Should read {2*26-6} entries")
+        p11_values = [w[2] for w in wells_ if w[1] == 'P11']
+        self.assertEqual(len(p11_values), 2, "Should read 2 values for P11")
+        self.assertEqual(
+            p11_values[0],
+            5400.0,
+            "First value for P11 is not correct")
+        self.assertEqual(
+            p11_values[1],
+            5400.01,
+            "Second value for P11 is not correct")
+
+
 if __name__ == '__main__':
     unittest.main()
