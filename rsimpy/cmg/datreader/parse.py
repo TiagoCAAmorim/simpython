@@ -68,7 +68,8 @@ class DatParser:
         self._debug = _debug
 
         self._file_path = None
-        self._result = []
+        self._result = {}
+        self._current_section = ''
 
 
     @staticmethod
@@ -114,7 +115,7 @@ class DatParser:
             print(f'Saving {file_path.resolve().absolute()}.')
         if file_path.is_file():
             print(f'File already exists: {file_path}.')
-            answer = 'y'
+            answer = 'y' if self._debug else 'n'
             while answer.lower() not in ['y','']:
                 print('Overwrite? ([y]/n)')
                 answer = input()
@@ -123,9 +124,12 @@ class DatParser:
 
         i=1
         result = {}
-        for key in self._result:
-            result[f'{i}. {key[0]}'] = key[1:]
-            i += 1
+        for sec_name, section in self._result.items():
+            result[sec_name] = {}
+            for key in section:
+                result[sec_name][f'{i}. {key[0]}'] = key[1:]
+                i += 1
+
         with open(file_path, 'w', encoding=self._encoding) as file:
             json.dump(result, file, indent=4)
 
@@ -139,10 +143,13 @@ class DatParser:
 
         with open(file_path, 'r', encoding=self._encoding) as file:
             result = json.load(file)
-        self._result = []
-        for key, value in result.items():
-            key = key.split('. ')[1:]
-            self._result.append(key + value)
+
+        self._result = {}
+        for sec_name, section in result.items():
+            self._result[sec_name] = []
+            for key, options in section.items():
+                key = key.split('. ')[1:]
+                self._result[sec_name].append(key + options)
 
         if self._verbose:
             print(f'Loaded {file_path.resolve().absolute()}.')
@@ -162,44 +169,30 @@ class DatParser:
             raise ValueError(msg)
 
         self._file_path = file_path
-        self._result = []
-
         if self._verbose:
             print('Reading main dat file.')
-        txt = self._get_txt(file_path=file_path)
 
+        txt = self._safe_file_read(
+            file_path=file_path,
+            lines_fn=self._clean_lines_wrapper).split('\n')
+
+        self._result = {}
+        self._current_section = 'No section'
         if self._verbose:
             print('Processing main dat file.')
         self._search_keywords(txt)
 
 
-    # MARK: Read
-    def _get_txt(self, file_path, keyword=None):
-        """Read file and return code after given keyword."""
-
-        txt = self._safe_file_read(file_path)
-        txt = DatParser._clean_line(
-            txt=txt,
+    def _clean_lines_wrapper(self, lines):
+        """Wrapper for _clean_line to process lines."""
+        return DatParser._clean_line(
+            txt=lines,
             multilines=True,
             remove_triggers='TRIGGER' in self._ignore)
 
-        if keyword is None:
-            return txt.split('\n')
 
-        txt = f'\n{txt}\n'
-        if f'\n{keyword}\n' not in txt:
-            msg = f'{keyword} not found in file.'
-            raise ValueError(msg)
-
-        txt = txt.split(f'\n{keyword}\n')[1:]
-        if len(txt) > 1:
-            msg = f'{keyword} found more than once.'
-            raise ValueError(msg)
-
-        return txt[0].split('\n')
-
-
-    def _safe_file_read(self, file_path):
+    # MARK: Read File
+    def _safe_file_read(self, file_path, lines_fn=None):
         """Changes file enconding if initial file read fails."""
         encodings = [self._encoding] + [e for e in ENCODINGS if e != self._encoding]
         for encoding in encodings:
@@ -209,6 +202,8 @@ class DatParser:
                 if self._verbose and encoding != self._encoding:
                     self._encoding = encoding
                     print(f'Changed encoding to {self._encoding}.')
+                if lines_fn is not None:
+                    txt = lines_fn(txt)
                 return txt
             except UnicodeDecodeError:
                 if self._verbose:
@@ -372,29 +367,48 @@ class DatParser:
     # MARK: Search Keywords
     def _search_keywords(self, txt):
         current_key = ''
+        if self._current_section not in self._result:
+            self._result[self._current_section] = []
         for line in txt:
             if line == '':
                 continue
             new_key, options = DatParser._get_key_options(line)
             if new_key is None:
                 if current_key not in self._ignore:
-                    self._result[-1].extend(options)
+                    result[-1].extend(options)
                 continue
+
+            if new_key in SECTION_keys:
+                if self._verbose:
+                    print(f'Found section: {new_key}.')
+                current_key = new_key
+                self._current_section = new_key
+                self._result[self._current_section] = []
+                if new_key in self._ignore:
+                    if self._verbose:
+                        print(f'  Ignoring section: {new_key}.')
+                    self._result[new_key].append([new_key, '** Ignored section'])
+                    continue
+
+            if self._current_section in self._ignore:
+                continue
+
+            result = self._result[self._current_section]
 
             if new_key in self._ignore:
                 current_key = new_key
-                self._result.append([new_key])
-                self._result[-1].extend(options)
-                self._result[-1].append('** Ignored subsequent options')
+                result.append([new_key])
+                result[-1].extend(options)
+                result[-1].append('** Ignored subsequent options')
                 continue
 
             if new_key == 'INCLUDE':
                 include_path = self._resolve_relative_path(options[0][1:-1])
                 if not include_path.is_file():
                     print(f'  File not found: {include_path}')
-                    self._result.append([new_key])
-                    self._result[-1].extend(options)
-                    self._result[-1].append('** File not found')
+                    result.append([new_key])
+                    result[-1].extend(options)
+                    result[-1].append('** File not found')
                     continue
 
                 include_name = options[0][1:-1].replace('\\','/').split('/')[-1]
@@ -403,44 +417,53 @@ class DatParser:
                     if inc_options is None:
                         if self._verbose:
                             print(f'  No keywords found in include file: {include_name}')
-                        self._result.append([new_key])
-                        self._result[-1].extend(options)
-                        self._result[-1].append('** No data found')
+                        result.append([new_key])
+                        result[-1].extend(options)
+                        result[-1].append('** No data found')
                         continue
                     if current_key in self._ignore:
                         if self._verbose:
                             msg = f'  Found {current_key} before INCLUDE'
                             msg += ' => prevent reading include file.'
                             print(msg)
-                        self._result.append([new_key])
-                        self._result[-1].extend(options)
-                        self._result[-1].append(f'** {current_key} before INCLUDE => Ignored')
+                        result.append([new_key])
+                        result[-1].extend(options)
+                        result[-1].append(f'** {current_key} before INCLUDE => Ignored')
                         continue
                 elif inc_key in self._ignore:
                     if self._verbose:
                         msg = f'  Found {inc_key} in include file: {include_name}'
                         msg += ' => stop reading include file.'
                         print(msg)
-                    self._result.append([new_key])
-                    self._result[-1].extend(options)
-                    self._result[-1].append(f'** Found {inc_key} => Ignored')
+                    result.append([new_key])
+                    result[-1].extend(options)
+                    result[-1].append(f'** Found {inc_key} => Ignored')
                     continue
 
                 if self._verbose:
                     print(f'  Reading include file: {include_name}.')
-                include_txt = self._get_txt(file_path=include_path)
+
+                include_txt = self._safe_file_read(
+                    file_path=include_path,
+                    lines_fn=self._clean_lines_wrapper).split('\n')
+
                 if not self._search_keywords(include_txt):
                     print(f'Error reading include file: {include_path}')
                     return False
             else:
                 current_key = new_key
-                self._result.append([new_key])
-                self._result[-1].extend(options)
+                result.append([new_key])
+                result[-1].extend(options)
 
             if current_key == 'STOP':
                 if self._verbose:
                     print('Found STOP.')
                 return False
+        if 'No section' in self._result:
+            if len(self._result['No section']) == 0:
+                _ = self._result.pop('No section')
+            elif self._verbose:
+                print('Some keywords were not in a known section.')
         return True
 
 
@@ -450,13 +473,26 @@ if __name__ == "__main__":
 
     dat_parser = DatParser(
         encoding='utf-8',
-        ignore=['TITLE1', 'GRID_keys', 'VFP_keys', 'WELL_keys',
-                'FLUID_keys', 'TRIGGER_keys', 'KREL_keys'],
+        ignore=['TITLE1', 'GRID', 'VFP_keys', 'FLUID_keys', 'TRIGGER_keys', 'KREL_keys'],
         verbose=True,
+        _debug=True
     )
     dat_parser.process('tests/_no_sync/ex/dat/base_case_bo.dat')
     dat_parser.save('tests/_no_sync/ex/dat/base_case_bo.json')
 
-    # dat_parser2 = DatParser(verbose=True)
+    # dat_parser2 = DatParser(verbose=True, _debug=True)
     # dat_parser2.load('tests/_no_sync/ex/dat/base_case_bo.json')
     # dat_parser2.save('tests/_no_sync/ex/dat/base_case_bo_bk.json')
+
+    # def compare_files(file1, file2):
+    #     """Compare the contents of two text files."""
+    #     with open(file1, 'r', encoding='utf-8') as f1, open(file2, 'r', encoding='utf-8') as f2:
+    #         content1 = f1.read()
+    #         content2 = f2.read()
+    #         if content1 == content2:
+    #             print(f"The files '{file1}' and '{file2}' have the same data.")
+    #         else:
+    #             print(f"The files '{file1}' and '{file2}' have different data.")
+
+    # # Example usage
+    # compare_files('tests/_no_sync/ex/dat/base_case_bo.json', 'tests/_no_sync/ex/dat/base_case_bo_bk.json')
