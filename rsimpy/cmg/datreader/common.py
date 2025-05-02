@@ -97,3 +97,14 @@ def safe_file_read_by_line( # pylint: disable=too-many-arguments
             if verbose:
                 print(f'Error reading: {file_path.name}. Trying different encoding.')
     raise UnicodeEncodeError('Could not read all file.')
+
+
+def get_section(data, section, verbose=False):
+    """Get data from a specific section in the data read."""
+    if section in data:
+        return data[section]
+    if verbose:
+        print(f"No '{section}' section found.")
+    if 'No section' in data:
+        return data['No section']
+    raise ValueError(f"No '{section}' or 'No section' found. Invalid data.")

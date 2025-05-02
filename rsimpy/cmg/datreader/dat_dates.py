@@ -18,10 +18,10 @@ from collections import Counter
 
 try:
     from rsimpy.cmg.datreader.dat_parser import DatParser
-    from rsimpy.cmg.datreader.common import safe_file_read
+    from rsimpy.cmg.datreader import common
 except ImportError:
     from dat_parser import DatParser
-    from common import safe_file_read
+    import common
 
 
 def get_from_dat(file_path, abs_path=None, encoding='utf-8', verbose=False, _debug=False):
@@ -75,42 +75,42 @@ def get_from_dat_data(data, verbose=False): # pylint: disable=too-many-branches
     list
         Dates as datetime objects.
     """
-    if 'RUN' in data:
-        data = data['RUN']
-    else:
-        if verbose:
-            print('No RUN section found.')
-        if 'No section' in data:
-            data = data['No section']
-        else:
-            raise ValueError("No RUN or 'No section' found. Invalid data.")
+    data = common.get_section(data, 'RUN')
 
     dates = []
     for line in data:
-        if line[0] == 'DATE':
-            date = to_date(line[1:])
-            if len(dates) > 0:
-                if date < dates[-1]:
-                    msg = "Dates are not in ascending order."
-                    msg += f" Found {to_str(date)} after {to_str(dates[-1])}."
-                    raise ValueError(msg)
-            dates.append(date)
-        elif line[0] == 'TIME':
-            delta_time = float(line[1])
-            if len(dates) == 0:
-                raise ValueError("No DATE found before TIME. Invalid data.")
-            if delta_time <= 0:
-                msg = "TIME keyword should be positive."
-                msg += f" Found {line[1]}."
-                raise ValueError(msg)
-            date = dates[0] + timedelta(days=delta_time)
-            dates.append(date)
+        solve_dates(dates, line)
 
     if len(dates) == 0:
         if verbose:
             print('No DATE keywords found.')
 
     return dates
+
+
+def solve_dates(dates, line):
+    """Solve DATE or TIME keywords from the line."""
+    if line[0] == 'DATE':
+        date = to_date(line[1:])
+        if len(dates) > 0:
+            if date < dates[-1]:
+                msg = "Dates are not in ascending order."
+                msg += f" Found {to_str(date)} after {to_str(dates[-1])}."
+                raise ValueError(msg)
+        dates.append(date)
+        return True
+    if line[0] == 'TIME':
+        delta_time = float(line[1])
+        if len(dates) == 0:
+            raise ValueError("No DATE found before TIME. Invalid data.")
+        if delta_time <= 0:
+            msg = "TIME keyword should be positive."
+            msg += f" Found {line[1]}."
+            raise ValueError(msg)
+        date = dates[0] + timedelta(days=delta_time)
+        dates.append(date)
+        return True
+    return False
 
 
 def to_date(date_lst):
@@ -155,7 +155,7 @@ def get_from_log(file_path, encoding='utf-8', verbose=False):
     - Dates are in ascending order.
       - Succesive equal dates are allowed.
     """
-    txt = safe_file_read(file_path, default=encoding).split('\n')
+    txt = common.safe_file_read(file_path, default=encoding).split('\n')
     results = _read_all_dates(txt)
 
     if len(results) == 0:
