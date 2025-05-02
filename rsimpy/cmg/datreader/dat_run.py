@@ -106,53 +106,62 @@ def get_well_key(data, keyword, verbose=False): # pylint: disable=too-many-branc
     return key_data
 
 
-def solve_well_key(key_data, wells, dates, keyword, line, verbose=False):
+def solve_well_key( # pylint: disable=too-many-positional-arguments, too-many-arguments
+        key_data, wells, dates, keyword, data, verbose=False):
     """Solve WELL keywords from the line."""
-    if line[0] == keyword:
-        if len(dates) == 0:
-            raise ValueError(f"No DATE found before {keyword}. Invalid data.")
-        if len(wells) == 0:
-            raise ValueError(f"No WELL found before {keyword}. Invalid data.")
-        if len(line) < 2:
-            raise ValueError(f"Keyword {keyword} has no values. Invalid data.")
+    if data[0] != keyword:
+        return False
+    wells_key, values = _get_wells_key_values(wells, dates, keyword, data)
 
-        wells_key = [w[1:-1] for w in line[1:] if w[0] == "'" and w[-1] == "'"]
-        if len(wells_key) == 0:
-            raise ValueError(f"Keyword {keyword} has no wells. Invalid data.")
-        values = [float(v) for v in line[1:] if "'" not in v]
-        if len(values) == 0:
-            raise ValueError(f"Keyword {keyword} has no values. Invalid data.")
-        if len(values) + len(wells_key) != len(line) - 1:
-            msg = f"Error reading {keyword}. "
-            msg += f"Read {len(line) - 1} options, "
-            msg += f"but found {len(values)} values and {len(wells_key)} wells."
-            raise ValueError(msg)
-        if len(values) == 1:
-            values = [values[0]] * len(wells_key)
+    def _add_well(date, well, value):
+        for i, (d,w,_) in enumerate(key_data):
+            if d == date and w == well:
+                key_data[i] = (date, well, value)
+                return
+        key_data.append((date, well, value))
+
+    wells = list({w[1] for w in wells})
+    wells.sort()
+    for well, value in zip(wells_key, values):
+        if '*' in well:
+            for w in [s for s in wells if fnmatch.fnmatch(s, well)]:
+                _add_well(dates[-1], w, value)
+        else:
+            if well not in wells:
+                if verbose:
+                    msg = f"Well {well} not found."
+                    raise ValueError(msg)
+                continue
+            _add_well(dates[-1], well, value)
+    return True
 
 
-        def _add_well(date, well, value):
-            for i, (d,w,_) in enumerate(key_data):
-                if d == date and w == well:
-                    key_data[i] = (date, well, value)
-                    return
-            key_data.append((date, well, value))
+def _get_wells_key_values(wells, dates, keyword, data):
+    if len(dates) == 0:
+        raise ValueError(f"No DATE found before {keyword}. Invalid data.")
+    if len(wells) == 0:
+        raise ValueError(f"No WELL found before {keyword}. Invalid data.")
+    if len(data) < 2:
+        raise ValueError(f"Keyword {keyword} has no values. Invalid data.")
 
-        wells = list({w[1] for w in wells})
-        wells.sort()
-        for well, value in zip(wells_key, values):
-            if '*' in well:
-                for w in [s for s in wells if fnmatch.fnmatch(s, well)]:
-                    _add_well(dates[-1], w, value)
-            else:
-                if well not in wells:
-                    if verbose:
-                        msg = f"Well {well} not found."
-                        raise ValueError(msg)
-                    continue
-                _add_well(dates[-1], well, value)
-        return True
-    return False
+    wells_key = [w[1:-1] for w in data[1:] if w[0] == "'" and w[-1] == "'"]
+    if len(wells_key) == 0:
+        raise ValueError(f"Keyword {keyword} has no wells. Invalid data.")
+
+    values = [float(v) for v in data[1:] if "'" not in v]
+    if len(values) == 0:
+        raise ValueError(f"Keyword {keyword} has no values. Invalid data.")
+
+    if len(values) + len(wells_key) != len(data) - 1:
+        msg = f"Error reading {keyword}. "
+        msg += f"Read {len(data) - 1} options, "
+        msg += f"but found {len(values)} values and {len(wells_key)} wells."
+        raise ValueError(msg)
+
+    if len(values) == 1:
+        values = [values[0]] * len(wells_key)
+
+    return wells_key,values
 
 
 if __name__ == '__main__':
