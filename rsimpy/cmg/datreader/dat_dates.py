@@ -17,10 +17,10 @@ from datetime import datetime, timedelta
 from collections import Counter
 
 try:
-    from rsimpy.cmg.datreader.parser import DatParser
+    from rsimpy.cmg.datreader.dat_parser import DatParser
     from rsimpy.cmg.datreader.common import safe_file_read
 except ImportError:
-    from parser import DatParser
+    from dat_parser import DatParser
     from common import safe_file_read
 
 

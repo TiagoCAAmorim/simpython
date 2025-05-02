@@ -5,7 +5,7 @@ import unittest
 
 from pathlib import Path
 import context  # noqa # pylint: disable=unused-import
-from rsimpy.cmg.datreader import dat_dates, parser
+from rsimpy.cmg.datreader import dat_dates, dat_parser
 
 
 def compare_files(file1, file2):
@@ -22,7 +22,7 @@ class TestTemplate(unittest.TestCase):
     def test_read_dat_keys(self):
         """Check reading keywords in dat file"""
 
-        dat_parser = parser.DatParser(
+        parser = dat_parser.DatParser(
             encoding='utf-8',
             ignore=['TITLE1', 'GRID',
                     'VFP_keys', 'GRID_keys', 'FLUID_keys',
@@ -33,8 +33,8 @@ class TestTemplate(unittest.TestCase):
 
         folder = Path('tests/_no_sync/ex/dat/')
 
-        dat_parser.process(folder / 'base_case_bo.dat')
-        results = dat_parser.get()
+        parser.process(folder / 'base_case_bo.dat')
+        results = parser.get()
 
         self.assertTrue('GRID' in results, "No GRID data found")
         self.assertTrue('RUN' in results, "No RUN data found")
@@ -46,7 +46,7 @@ class TestTemplate(unittest.TestCase):
     def test_read_save_load(self):
         """Check save and load of dat file keywords"""
 
-        dat_parser = parser.DatParser(
+        parser = dat_parser.DatParser(
             encoding='utf-8',
             ignore=['TITLE1', 'GRID',
                     'VFP_keys', 'GRID_keys', 'FLUID_keys',
@@ -57,10 +57,10 @@ class TestTemplate(unittest.TestCase):
 
         folder = Path('tests/_no_sync/ex/dat/')
 
-        dat_parser.process(folder / 'base_case_bo.dat')
-        dat_parser.save(folder / 'base_case_bo.json')
+        parser.process(folder / 'base_case_bo.dat')
+        parser.save(folder / 'base_case_bo.json')
 
-        dat_parser2 = parser.DatParser(verbose=False, _debug=True)
+        dat_parser2 = dat_parser.DatParser(verbose=False, _debug=True)
         dat_parser2.load(folder / 'base_case_bo.json')
         dat_parser2.save(folder / 'base_case_bo_bk.json')
 
