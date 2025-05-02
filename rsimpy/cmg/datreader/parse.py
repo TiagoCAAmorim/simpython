@@ -5,14 +5,16 @@ from pathlib import Path
 
 
 SECTION_keys = ['TITLE1','GRID','ROCKFLUID','INITIAL','NUMERICAL','RUN']
-GRID_keys = ['CORNERS','COORD','ZCORN','TRANSF','NULL','PINCHOUTARRAY',
-             'POR','NETGROSS','PERMI','PERMJ','PERMK',
-             'RTYPE','EOSTYPE','ITYPE','PTYPE']
-KREL_keys = ['RPT']
-FLUID_keys = ['MODEL']
-VFP_keys = ['PTUBE1','ITUBE1','VFPPROD','VFPINJ']
-WELL_keys = ['WELL','PERF','LAYERCLUMP','PERF','LAYERXYZ']
-TRIGGER_keys = ['TRIGGER','END_TRIGGER']
+IGNORE_keys = {
+    'GRID_keys': ['CORNERS','COORD','ZCORN','TRANSF','NULL','PINCHOUTARRAY',
+                'POR','NETGROSS','PERMI','PERMJ','PERMK',
+                'RTYPE','EOSTYPE','ITYPE','PTYPE'],
+    'KREL_keys': ['RPT'],
+    'FLUID_keys': ['MODEL'],
+    'VFP_keys': ['PTUBE1','ITUBE1','VFPPROD','VFPINJ'],
+    'WELL_keys': ['WELL','PERF','LAYERCLUMP','PERF','LAYERXYZ'],
+    'TRIGGER_keys': ['TRIGGER','END_TRIGGER'],
+}
 ENCODINGS = ['utf-8', 'cp1252', 'iso8859_2', 'ascii',
              'utf_7','utf_16','utf_32', 'ISO-8859-1', 'windows-1252']
 
@@ -81,16 +83,10 @@ class DatParser:
         if isinstance(ignore, list):
             output = []
             for s in ignore:
-                if s == 'GRID_keys':
-                    output += GRID_keys
-                elif s == 'VFP_keys':
-                    output += VFP_keys
-                elif s == 'WELL_keys':
-                    output += WELL_keys
-                elif s == 'TRIGGER_keys':
-                    output += TRIGGER_keys
-                elif s in TRIGGER_keys:
-                    output += TRIGGER_keys
+                if s in IGNORE_keys:
+                    output += IGNORE_keys[s]
+                elif s in IGNORE_keys['TRIGGER_keys']:
+                    output += IGNORE_keys['TRIGGER_keys']
                 else:
                     output.append(s)
             return list(set(output))
@@ -107,8 +103,8 @@ class DatParser:
     # MARK: Save & Load
     def save(self, file_path):
         """Save keywords and options to json file."""
-        if self._file_path is None:
-            msg = 'No file processed.'
+        if len(self._result) == 0:
+            msg = 'No keywords found. Nothing to save.'
             raise ValueError(msg)
 
         file_path = Path(file_path)
@@ -153,7 +149,7 @@ class DatParser:
 
 
     # MARK: Process
-    def process(self, file_path, read_includes=True):
+    def process(self, file_path):
         """Process dat file."""
         self._file_path = None
 
@@ -174,10 +170,7 @@ class DatParser:
 
         if self._verbose:
             print('Processing main dat file.')
-        self._search_keywords(
-            txt=txt,
-            is_include=not read_includes,
-        )
+        self._search_keywords(txt)
 
 
     # MARK: Read
@@ -208,23 +201,84 @@ class DatParser:
 
     def _safe_file_read(self, file_path):
         """Changes file enconding if initial file read fails."""
-        try:
-            with open(file_path, 'r', encoding=self._encoding) as file:
-                return file.read()
-        except UnicodeDecodeError:
-            if self._verbose:
-                print(f'Error reading: {file_path.name}. Trying different encoding.')
-            for encoding in [e for e in ENCODINGS if e != self._encoding]:
-                try:
-                    with open(file_path, 'r', encoding=encoding) as file:
-                        txt = file.read()
+        encodings = [self._encoding] + [e for e in ENCODINGS if e != self._encoding]
+        for encoding in encodings:
+            try:
+                with open(file_path, 'r', encoding=encoding) as file:
+                    txt = file.read()
+                if self._verbose and encoding != self._encoding:
                     self._encoding = encoding
-                    if self._verbose:
-                        print(f'Changed encoding to {self._encoding}.')
-                    return txt
-                except: #pylint: disable=bare-except
-                    pass
-        raise UnicodeEncodeError('Could not open file.')
+                    print(f'Changed encoding to {self._encoding}.')
+                return txt
+            except UnicodeDecodeError:
+                if self._verbose:
+                    print(f'Error reading: {file_path.name}. Trying different encoding.')
+            except FileNotFoundError as e:
+                msg = f'File not found: {file_path}.'
+                raise ValueError(msg) from e
+        raise UnicodeEncodeError('Could not read file.')
+
+
+    def _safe_file_read_by_line(self, file_path, line_fn):
+        """
+        Changes file enconding if initial file read by line fails.
+
+        Reads the file line by line and applies the line function to each line.
+        If the file cannot be read with the initial encoding, it tries
+        different encodings until it succeeds or raises an error.
+
+        Resumes in the last position if the file is not read completely.
+
+        line_fn should return the tuple (None, result) to stop reading the file.
+        This way result is returned in this function.
+
+        Args:
+            file_path (Path): Path to the file.
+            line_fn (function): Function to process each line.
+        """
+        i_lines = 0
+        encodings = [self._encoding] + [e for e in ENCODINGS if e != self._encoding]
+        for encoding in encodings:
+            try:
+                with open(file_path, 'r', encoding=encoding) as file:
+                    if i_lines > 0:
+                        for _ in range(i_lines):
+                            file.readline()
+                    for line in file:
+                        out = line_fn(line)
+                        i_lines += 1
+                        if isinstance(out, tuple):
+                            if out[0] is None:
+                                return out[1]
+                    if isinstance(out, tuple):
+                        return out[1]
+                    return out
+            except UnicodeDecodeError:
+                if self._verbose:
+                    print(f'Error reading: {file_path.name}. Trying different encoding.')
+        raise UnicodeEncodeError('Could not read all file.')
+
+
+    def _read_first_line(self, file_path):
+        """
+        Read the first line with comands.
+
+        Args:
+            file_path (Path): Path to the file.
+
+        Returns:
+            tuple: (keyword, [options]) of the first line with commands.
+        """
+
+        def _line_fn(line):
+            line = DatParser._clean_line(line)
+            if line == '':
+                return (True, (None, None))
+            new_key, options = DatParser._get_key_options(line)
+            return (None, (new_key, options))
+
+        new_key, options = self._safe_file_read_by_line(file_path, _line_fn)
+        return new_key, options
 
 
     # MARK: Helpers
@@ -286,7 +340,7 @@ class DatParser:
 
 
     @staticmethod
-    def _get_key_values(line, key=None):
+    def _get_options(line, key=None):
         """Split a string by spaces, ignoring spaces within quotes."""
         if key is not None:
             if line.startswith(key):
@@ -295,6 +349,14 @@ class DatParser:
                 raise ValueError(f'Expected {key} in line: {line}')
 
         return re.findall(r'(?:[^\s"\']|"(?:\\.|[^"])*"|\'(?:\\.|[^\'])*\')+', line)
+
+
+    @staticmethod
+    def _get_key_options(line):
+        """Return key and options from line."""
+        key = DatParser._get_key(line)
+        options = DatParser._get_options(line, key=key)
+        return key, options
 
 
     def _resolve_relative_path(self, relative_path):
@@ -308,14 +370,12 @@ class DatParser:
 
 
     # MARK: Search Keywords
-    def _search_keywords(self, txt, is_include=True):
-        check_first_key = is_include
+    def _search_keywords(self, txt):
         current_key = ''
         for line in txt:
             if line == '':
                 continue
-            new_key = DatParser._get_key(line)
-            options = DatParser._get_key_values(line, new_key)
+            new_key, options = DatParser._get_key_options(line)
             if new_key is None:
                 if current_key not in self._ignore:
                     self._result[-1].extend(options)
@@ -324,39 +384,54 @@ class DatParser:
             if new_key in self._ignore:
                 current_key = new_key
                 self._result.append([new_key])
-                self._result[-1].append('ignored')
-                if check_first_key:
-                    if self._verbose:
-                        print(f'  Found {new_key} => stop reading include file.')
-                    return True
-                check_first_key = False
+                self._result[-1].extend(options)
+                self._result[-1].append('** Ignored subsequent options')
                 continue
 
             if new_key == 'INCLUDE':
-                if current_key in self._ignore:
-                    if self._verbose:
-                        print(f'  Found {current_key} before INCLUDE => prevent reading include file.')
-                    self._result.append([new_key])
-                    self._result[-1].extend(options)
-                    self._result[-1].append('ignored')
-                    continue
-                if self._verbose:
-                    include_name = options[0][1:-1].replace('\\','/').split('/')[-1]
-                    print(f'  Reading include file: {include_name}.')
-
                 include_path = self._resolve_relative_path(options[0][1:-1])
                 if not include_path.is_file():
                     print(f'  File not found: {include_path}')
                     self._result.append([new_key])
                     self._result[-1].extend(options)
-                    self._result[-1].append('file not found')
+                    self._result[-1].append('** File not found')
                     continue
 
+                include_name = options[0][1:-1].replace('\\','/').split('/')[-1]
+                inc_key, inc_options = self._read_first_line(include_path)
+                if inc_key is None:
+                    if inc_options is None:
+                        if self._verbose:
+                            print(f'  No keywords found in include file: {include_name}')
+                        self._result.append([new_key])
+                        self._result[-1].extend(options)
+                        self._result[-1].append('** No data found')
+                        continue
+                    if current_key in self._ignore:
+                        if self._verbose:
+                            msg = f'  Found {current_key} before INCLUDE'
+                            msg += ' => prevent reading include file.'
+                            print(msg)
+                        self._result.append([new_key])
+                        self._result[-1].extend(options)
+                        self._result[-1].append(f'** {current_key} before INCLUDE => Ignored')
+                        continue
+                elif inc_key in self._ignore:
+                    if self._verbose:
+                        msg = f'  Found {inc_key} in include file: {include_name}'
+                        msg += ' => stop reading include file.'
+                        print(msg)
+                    self._result.append([new_key])
+                    self._result[-1].extend(options)
+                    self._result[-1].append(f'** Found {inc_key} => Ignored')
+                    continue
+
+                if self._verbose:
+                    print(f'  Reading include file: {include_name}.')
                 include_txt = self._get_txt(file_path=include_path)
-                if not self._search_keywords(include_txt, is_include=True):
+                if not self._search_keywords(include_txt):
                     print(f'Error reading include file: {include_path}')
                     return False
-
             else:
                 current_key = new_key
                 self._result.append([new_key])
@@ -367,7 +442,6 @@ class DatParser:
                     print('Found STOP.')
                 return False
         return True
-
 
 
 if __name__ == "__main__":
@@ -382,3 +456,7 @@ if __name__ == "__main__":
     )
     dat_parser.process('tests/_no_sync/ex/dat/base_case_bo.dat')
     dat_parser.save('tests/_no_sync/ex/dat/base_case_bo.json')
+
+    # dat_parser2 = DatParser(verbose=True)
+    # dat_parser2.load('tests/_no_sync/ex/dat/base_case_bo.json')
+    # dat_parser2.save('tests/_no_sync/ex/dat/base_case_bo_bk.json')
