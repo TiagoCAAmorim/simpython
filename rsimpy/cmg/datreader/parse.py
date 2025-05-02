@@ -424,10 +424,12 @@ class DatParser:
         return True
 
 
-    def _search_keywords(self, txt):
+    def _search_keywords(self, txt): #pylint: disable=too-many-branches
+        """Search keywords in text."""
         current_key = ''
         if self._current_section not in self._result:
             self._result[self._current_section] = []
+
         for line in txt:
             if line == '':
                 continue
@@ -458,7 +460,7 @@ class DatParser:
                     file_path=include_path,
                     lines_fn=self._clean_lines_wrapper).split('\n')
                 if not self._search_keywords(include_txt):
-                    print(f'Error reading include file: {include_path}')
+                    print(f'Finished reading in include file: {include_path.name}')
                     return False
             else:
                 current_key = new_key
@@ -468,6 +470,7 @@ class DatParser:
                 if self._verbose:
                     print('Found STOP.')
                 return False
+
         if 'No section' in self._result:
             if self._current_section != 'No section':
                 if len(self._result['No section']) == 0:
@@ -478,31 +481,3 @@ class DatParser:
 if __name__ == "__main__":
     print(__doc__)
     print(DatParser.__doc__)
-
-    dat_parser = DatParser(
-        encoding='utf-8',
-        ignore=['TITLE1', 'GRID',
-                'VFP_keys', 'GRID_keys', 'FLUID_keys',
-                'TRIGGER_keys', 'KREL_keys', 'WELL_keys'],
-        verbose=True,
-        _debug=True
-    )
-    dat_parser.process('tests/_no_sync/ex/dat/base_case_bo.dat')
-    dat_parser.save('tests/_no_sync/ex/dat/base_case_bo.json')
-
-    # dat_parser2 = DatParser(verbose=True, _debug=True)
-    # dat_parser2.load('tests/_no_sync/ex/dat/base_case_bo.json')
-    # dat_parser2.save('tests/_no_sync/ex/dat/base_case_bo_bk.json')
-
-    # def compare_files(file1, file2):
-    #     """Compare the contents of two text files."""
-    #     with open(file1, 'r', encoding='utf-8') as f1, open(file2, 'r', encoding='utf-8') as f2:
-    #         content1 = f1.read()
-    #         content2 = f2.read()
-    #         if content1 == content2:
-    #             print(f"The files '{file1}' and '{file2}' have the same data.")
-    #         else:
-    #             print(f"The files '{file1}' and '{file2}' have different data.")
-
-    # # Example usage
-    # compare_files('tests/_no_sync/ex/dat/base_case_bo.json', 'tests/_no_sync/ex/dat/base_case_bo_bk.json')

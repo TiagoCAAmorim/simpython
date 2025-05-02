@@ -1,0 +1,74 @@
+"""
+outreader module tests
+"""
+import unittest
+
+from pathlib import Path
+import context  # noqa # pylint: disable=unused-import
+from rsimpy.cmg.datreader import parse
+
+
+def compare_files(file1, file2):
+    """Compare the contents of two text files."""
+    with open(file1, 'r', encoding='utf-8') as f1, open(file2, 'r', encoding='utf-8') as f2:
+        content1 = f1.read()
+        content2 = f2.read()
+        return content1 == content2
+
+
+class TestTemplate(unittest.TestCase):
+    """Tests reading dat files"""
+
+    def test_read_dat_keys(self):
+        """Check reading keywords in dat file"""
+
+        dat_parser = parse.DatParser(
+            encoding='utf-8',
+            ignore=['TITLE1', 'GRID',
+                    'VFP_keys', 'GRID_keys', 'FLUID_keys',
+                    'TRIGGER_keys', 'KREL_keys', 'WELL_keys'],
+            verbose=False,
+            _debug=True
+        )
+
+        folder = Path('tests/_no_sync/ex/dat/')
+
+        dat_parser.process(folder / 'base_case_bo.dat')
+        results = dat_parser.get()
+
+        self.assertTrue('GRID' in results, "No GRID data found")
+        self.assertTrue('RUN' in results, "No RUN data found")
+
+        run_keys = [v[0] for v in results['RUN']]
+        self.assertTrue('DATE' in run_keys, "No DATE in RUN section")
+
+
+    def test_read_save_load(self):
+        """Check save and load of dat file keywords"""
+
+        dat_parser = parse.DatParser(
+            encoding='utf-8',
+            ignore=['TITLE1', 'GRID',
+                    'VFP_keys', 'GRID_keys', 'FLUID_keys',
+                    'TRIGGER_keys', 'KREL_keys', 'WELL_keys'],
+            verbose=False,
+            _debug=True
+        )
+
+        folder = Path('tests/_no_sync/ex/dat/')
+
+        dat_parser.process(folder / 'base_case_bo.dat')
+        dat_parser.save(folder / 'base_case_bo.json')
+
+        dat_parser2 = parse.DatParser(verbose=False, _debug=True)
+        dat_parser2.load(folder / 'base_case_bo.json')
+        dat_parser2.save(folder / 'base_case_bo_bk.json')
+
+        compare = compare_files(
+            folder / 'base_case_bo.json',
+            folder / 'base_case_bo_bk.json')
+        self.assertTrue(compare, "The files are not the same")
+
+
+if __name__ == '__main__':
+    unittest.main()
