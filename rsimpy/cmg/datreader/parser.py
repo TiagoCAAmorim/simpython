@@ -3,6 +3,7 @@ import re
 import json
 from pathlib import Path
 
+from rsimpy.cmg.datreader.common import safe_file_read, safe_file_read_by_line
 
 SECTION_keys = ['TITLE1','GRID','ROCKFLUID','INITIAL','NUMERICAL','RUN']
 IGNORE_keys = {
@@ -15,12 +16,10 @@ IGNORE_keys = {
     'WELL_keys': ['LAYERCLUMP','PERF','LAYERXYZ'],
     'TRIGGER_keys': ['TRIGGER','END_TRIGGER'],
 }
-ENCODINGS = ['utf-8', 'cp1252', 'iso8859_2', 'ascii',
-             'utf_7','utf_16','utf_32', 'ISO-8859-1', 'windows-1252']
 
 
 # MARK: DatParser
-class DatParser:
+class DatParser: #pylint: disable=too-many-instance-attributes
 
     """
     Class with code to read keywords in a CMG simulation file.
@@ -194,64 +193,13 @@ class DatParser:
     # MARK: Read File
     def _safe_file_read(self, file_path, lines_fn=None):
         """Changes file enconding if initial file read fails."""
-        encodings = [self._encoding] + [e for e in ENCODINGS if e != self._encoding]
-        for encoding in encodings:
-            try:
-                with open(file_path, 'r', encoding=encoding) as file:
-                    txt = file.read()
-                if self._verbose and encoding != self._encoding:
-                    self._encoding = encoding
-                    print(f'Changed encoding to {self._encoding}.')
-                if lines_fn is not None:
-                    txt = lines_fn(txt)
-                return txt
-            except UnicodeDecodeError:
-                if self._verbose:
-                    print(f'Error reading: {file_path.name}. Trying different encoding.')
-            except FileNotFoundError as e:
-                msg = f'File not found: {file_path}.'
-                raise ValueError(msg) from e
-        raise UnicodeEncodeError('Could not read file.')
-
-
-    def _safe_file_read_by_line(self, file_path, line_fn):
-        """
-        Changes file enconding if initial file read by line fails.
-
-        Reads the file line by line and applies the line function to each line.
-        If the file cannot be read with the initial encoding, it tries
-        different encodings until it succeeds or raises an error.
-
-        Resumes in the last position if the file is not read completely.
-
-        line_fn should return the tuple (None, result) to stop reading the file.
-        This way result is returned in this function.
-
-        Args:
-            file_path (Path): Path to the file.
-            line_fn (function): Function to process each line.
-        """
-        i_lines = 0
-        encodings = [self._encoding] + [e for e in ENCODINGS if e != self._encoding]
-        for encoding in encodings:
-            try:
-                with open(file_path, 'r', encoding=encoding) as file:
-                    if i_lines > 0:
-                        for _ in range(i_lines):
-                            file.readline()
-                    for line in file:
-                        out = line_fn(line)
-                        i_lines += 1
-                        if isinstance(out, tuple):
-                            if out[0] is None:
-                                return out[1]
-                    if isinstance(out, tuple):
-                        return out[1]
-                    return out
-            except UnicodeDecodeError:
-                if self._verbose:
-                    print(f'Error reading: {file_path.name}. Trying different encoding.')
-        raise UnicodeEncodeError('Could not read all file.')
+        txt = safe_file_read(
+            file_path=file_path,
+            default=self._encoding,
+            verbose=self._verbose)
+        if lines_fn is not None:
+            txt = lines_fn(txt)
+        return txt
 
 
     def _read_first_line(self, file_path):
@@ -265,14 +213,15 @@ class DatParser:
             tuple: (keyword, [options]) of the first line with commands.
         """
 
-        def _line_fn(line):
+        def _line_fn(line, _):
             line = DatParser._clean_line(line)
             if line == '':
                 return (True, (None, None))
             new_key, options = DatParser._get_key_options(line)
             return (None, (new_key, options))
 
-        new_key, options = self._safe_file_read_by_line(file_path, _line_fn)
+        new_key, options = safe_file_read_by_line(
+            file_path, _line_fn, default=self._encoding, verbose=self._verbose)
         return new_key, options
 
 
