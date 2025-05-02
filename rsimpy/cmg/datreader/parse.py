@@ -12,7 +12,7 @@ IGNORE_keys = {
     'KREL_keys': ['RPT'],
     'FLUID_keys': ['MODEL'],
     'VFP_keys': ['PTUBE1','ITUBE1','VFPPROD','VFPINJ'],
-    'WELL_keys': ['WELL','PERF','LAYERCLUMP','PERF','LAYERXYZ'],
+    'WELL_keys': ['LAYERCLUMP','PERF','LAYERXYZ'],
     'TRIGGER_keys': ['TRIGGER','END_TRIGGER'],
 }
 ENCODINGS = ['utf-8', 'cp1252', 'iso8859_2', 'ascii',
@@ -365,6 +365,65 @@ class DatParser:
 
 
     # MARK: Search Keywords
+    def _new_key_none(self, current_key, options):
+        if current_key not in self._ignore:
+            self._result[self._current_section][-1].extend(options)
+
+
+    def _new_key_in_section(self, new_key):
+        if self._verbose:
+            print(f'Found section: {new_key}.')
+        self._current_section = new_key
+        self._result[self._current_section] = []
+        if new_key in self._ignore:
+            if self._verbose:
+                print(f'  Ignoring section: {new_key}.')
+            self._result[new_key].append([new_key, '** Ignored section'])
+            return False
+        return True
+
+
+    def _add_new_key(self, new_key, options, msg=None):
+        self._result[self._current_section].append([new_key])
+        self._result[self._current_section][-1].extend(options)
+        if msg is not None:
+            self._result[self._current_section][-1].append(f'** {msg}')
+
+
+    def _new_key_include(self, new_key, options, current_key):
+        include_path = self._resolve_relative_path(options[0][1:-1])
+        if not include_path.is_file():
+            print(f'  File not found: {include_path}')
+            self._add_new_key(new_key, options, 'File not found')
+            return False
+
+        inc_key, inc_options = self._read_first_line(include_path)
+        if inc_key is None:
+            if inc_options is None:
+                if self._verbose:
+                    print(f'  No keywords found in include file: {include_path.name}')
+                self._add_new_key(new_key, options, 'No data found')
+                return False
+            if current_key in self._ignore:
+                if self._verbose:
+                    msg = f'  Found {current_key} before INCLUDE'
+                    msg += ' => prevent reading include file.'
+                    print(msg)
+                self._add_new_key(new_key, options, f'{current_key} before INCLUDE => Ignored')
+                return False
+        elif inc_key in self._ignore:
+            if self._verbose:
+                msg = f'  Found {inc_key} in include file: {include_path.name}'
+                msg += ' => stop reading include file.'
+                print(msg)
+            self._add_new_key(new_key, options, f'Found {inc_key} => Ignored')
+            return False
+
+        if self._verbose:
+            print(f'  Reading include file: {include_path.name}.')
+        return True
+
+
     def _search_keywords(self, txt):
         current_key = ''
         if self._current_section not in self._result:
@@ -373,97 +432,46 @@ class DatParser:
             if line == '':
                 continue
             new_key, options = DatParser._get_key_options(line)
+
             if new_key is None:
-                if current_key not in self._ignore:
-                    result[-1].extend(options)
+                self._new_key_none(current_key, options)
                 continue
 
             if new_key in SECTION_keys:
-                if self._verbose:
-                    print(f'Found section: {new_key}.')
                 current_key = new_key
-                self._current_section = new_key
-                self._result[self._current_section] = []
-                if new_key in self._ignore:
-                    if self._verbose:
-                        print(f'  Ignoring section: {new_key}.')
-                    self._result[new_key].append([new_key, '** Ignored section'])
+                if not self._new_key_in_section(new_key):
                     continue
 
             if self._current_section in self._ignore:
                 continue
 
-            result = self._result[self._current_section]
-
             if new_key in self._ignore:
                 current_key = new_key
-                result.append([new_key])
-                result[-1].extend(options)
-                result[-1].append('** Ignored subsequent options')
+                self._add_new_key(new_key, options, 'Ignored subsequent options')
                 continue
 
             if new_key == 'INCLUDE':
+                if not self._new_key_include(new_key, options, current_key):
+                    continue
                 include_path = self._resolve_relative_path(options[0][1:-1])
-                if not include_path.is_file():
-                    print(f'  File not found: {include_path}')
-                    result.append([new_key])
-                    result[-1].extend(options)
-                    result[-1].append('** File not found')
-                    continue
-
-                include_name = options[0][1:-1].replace('\\','/').split('/')[-1]
-                inc_key, inc_options = self._read_first_line(include_path)
-                if inc_key is None:
-                    if inc_options is None:
-                        if self._verbose:
-                            print(f'  No keywords found in include file: {include_name}')
-                        result.append([new_key])
-                        result[-1].extend(options)
-                        result[-1].append('** No data found')
-                        continue
-                    if current_key in self._ignore:
-                        if self._verbose:
-                            msg = f'  Found {current_key} before INCLUDE'
-                            msg += ' => prevent reading include file.'
-                            print(msg)
-                        result.append([new_key])
-                        result[-1].extend(options)
-                        result[-1].append(f'** {current_key} before INCLUDE => Ignored')
-                        continue
-                elif inc_key in self._ignore:
-                    if self._verbose:
-                        msg = f'  Found {inc_key} in include file: {include_name}'
-                        msg += ' => stop reading include file.'
-                        print(msg)
-                    result.append([new_key])
-                    result[-1].extend(options)
-                    result[-1].append(f'** Found {inc_key} => Ignored')
-                    continue
-
-                if self._verbose:
-                    print(f'  Reading include file: {include_name}.')
-
                 include_txt = self._safe_file_read(
                     file_path=include_path,
                     lines_fn=self._clean_lines_wrapper).split('\n')
-
                 if not self._search_keywords(include_txt):
                     print(f'Error reading include file: {include_path}')
                     return False
             else:
                 current_key = new_key
-                result.append([new_key])
-                result[-1].extend(options)
+                self._add_new_key(new_key, options)
 
             if current_key == 'STOP':
                 if self._verbose:
                     print('Found STOP.')
                 return False
         if 'No section' in self._result:
-            if len(self._result['No section']) == 0:
-                _ = self._result.pop('No section')
-            elif self._verbose:
-                print('Some keywords were not in a known section.')
+            if self._current_section != 'No section':
+                if len(self._result['No section']) == 0:
+                    _ = self._result.pop('No section')
         return True
 
 
@@ -473,7 +481,9 @@ if __name__ == "__main__":
 
     dat_parser = DatParser(
         encoding='utf-8',
-        ignore=['TITLE1', 'GRID', 'VFP_keys', 'FLUID_keys', 'TRIGGER_keys', 'KREL_keys'],
+        ignore=['TITLE1', 'GRID',
+                'VFP_keys', 'GRID_keys', 'FLUID_keys',
+                'TRIGGER_keys', 'KREL_keys', 'WELL_keys'],
         verbose=True,
         _debug=True
     )
