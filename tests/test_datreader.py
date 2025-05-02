@@ -89,5 +89,24 @@ class TestTemplate(unittest.TestCase):
             "Last date is not correct")
 
 
+    def test_read_log_dates(self):
+        """Check reading dates in out file"""
+
+        folder = Path('tests/_no_sync/ex/dat/')
+        file = folder / 'base_case_bo.out'
+
+        dates = dat_dates.get_from_log(file)
+
+        self.assertEqual(len(dates), 3496, "Should read 3496 DATES")
+        self.assertEqual(
+            dat_dates.to_str(dates[0]),
+            '2018 09 03',
+            "First date is not correct")
+        self.assertEqual(
+            dat_dates.to_str(dates[-1]),
+            '2049 01 01',
+            "Last date is not correct")
+
+
 if __name__ == '__main__':
     unittest.main()

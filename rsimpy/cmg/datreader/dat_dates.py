@@ -142,7 +142,7 @@ def to_str(date):
     return date_str
 
 
-def process_log(file_path):
+def get_from_log(file_path, encoding='utf-8', verbose=False):
     """
     Return dates from an ascii file.
 
@@ -151,26 +151,28 @@ def process_log(file_path):
     /, \\, ., -, : or single space.
     - There are spaces before and after the date.
     - Dates are in the same position (column) in the log lines.
+      - Only the dates in the most common position are stored.
     - Dates are in ascending order.
       - Succesive equal dates are allowed.
     """
-    txt = safe_file_read(file_path).split('\n')
+    txt = safe_file_read(file_path, default=encoding).split('\n')
+    results = _read_all_dates(txt)
 
-    date_pattern = r'\s(\d{4})[ /\\.:-](\d{1,2})[ /\\.:-](\d{1,2})\s'
-    results = []
-    for line in txt:
-        for match in re.finditer(date_pattern, line):
-            start_index = match.start()
-            date_str = ' '.join(match.groups())
-            results.append((date_str, start_index))
+    if len(results) == 0:
+        raise ValueError("No dates found in the log file.")
+    if verbose:
+        print(f"Found {len(results)} possible dates in the log file.")
 
-    start_indices = [start_index for _, start_index in results]
-    index_counts = Counter(start_indices)
-    most_common_index, _ = index_counts.most_common(1)[0]
-    dates = [datetime.strptime(date, '%Y %m %d')
-                for date, pos in results if pos == most_common_index]
+    dates = _filter_dates(results, verbose)
+    dates_filtered = _check_dates_read(dates)
+
+    if len(dates_filtered) == 0:
+        raise ValueError("No dates found in the log file.")
+    return dates_filtered
 
 
+def _check_dates_read(dates):
+    """Keep only the dates that are in ascending order."""
     dates_filter = []
     for d1,d2 in zip(dates[::-1][:-1], dates[::-1][1:]):
         if d1 >= d2:
@@ -181,16 +183,42 @@ def process_log(file_path):
     if len(dates_filter) > 0:
         if dates[0] <= dates_filter[-1]:
             dates_filter.append(dates[0])
+    return dates_filter[::-1]
 
-    if len(dates_filter) == 0:
-        raise ValueError("No dates found in the log file.")
-    return dates_filter
+
+def _filter_dates(results, verbose):
+    """Keep only the dates that are in the most common position."""
+    indexes = [x for _, x in results]
+    index_counts = Counter(indexes)
+    most_common_index, _ = index_counts.most_common(1)[0]
+    dates = [datetime.strptime(date, '%Y %m %d')
+                for date, index in results if index == most_common_index]
+
+    if verbose:
+        msg = f"{most_common_index[1]}' at position {most_common_index[0]}"
+        print("Most common date separator: "+msg)
+        print(f"Found {len(dates)} dates in the log file.")
+    return dates
+
+def _read_all_dates(txt):
+    """Read all dates from the log file."""
+    date_pattern = r'\s(\d{4})([ /\\.:-])(\d{1,2})([ /\\.:-])(\d{1,2})\s'
+    results = []
+    for line in txt:
+        for match in re.finditer(date_pattern, line):
+            if match.group(2) != match.group(4):
+                continue
+            sep = match.group(2)
+            start_index = match.start()
+            date_str = f'{match.group(1)} {match.group(3)} {match.group(5)}'
+            results.append((date_str, (start_index, sep)))
+    return results
 
 
 if __name__ == "__main__":
     print(__doc__)
 
-    d = process_log('tests/_no_sync/ex/dat/base_case_bo.out')
+    d = get_from_log('tests/_no_sync/ex/dat/base_case_bo.out', verbose=True)
     print(len(d))
     print(d[:5])
     print()
