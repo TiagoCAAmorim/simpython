@@ -5,7 +5,7 @@ import unittest
 
 from pathlib import Path
 import context  # noqa # pylint: disable=unused-import
-from rsimpy.cmg.datreader import parser
+from rsimpy.cmg.datreader import dat_dates, parser
 
 
 def compare_files(file1, file2):
@@ -68,6 +68,25 @@ class TestTemplate(unittest.TestCase):
             folder / 'base_case_bo.json',
             folder / 'base_case_bo_bk.json')
         self.assertTrue(compare, "The files are not the same")
+
+
+    def test_read_dates(self):
+        """Check reading dates in dat file"""
+
+        folder = Path('tests/_no_sync/ex/dat/')
+        file = folder / 'base_case_bo.dat'
+
+        dates = dat_dates.get_from_dat(file)
+
+        self.assertEqual(len(dates), 955, "Should read 955 DATES")
+        self.assertEqual(
+            dat_dates.to_str(dates[0]),
+            '2018 09 02',
+            "First date is not correct")
+        self.assertEqual(
+            dat_dates.to_str(dates[-1]),
+            '2049 01 01',
+            "Last date is not correct")
 
 
 if __name__ == '__main__':

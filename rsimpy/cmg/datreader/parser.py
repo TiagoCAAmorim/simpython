@@ -3,8 +3,12 @@ import re
 import json
 from pathlib import Path
 
-from rsimpy.cmg.datreader.common import safe_file_read, safe_file_read_by_line
+try:
+    from rsimpy.cmg.datreader.common import safe_file_read, safe_file_read_by_line
+except ImportError:
+    from common import safe_file_read, safe_file_read_by_line
 
+# MARK: Constants
 SECTION_keys = ['TITLE1','GRID','ROCKFLUID','INITIAL','NUMERICAL','RUN']
 IGNORE_keys = {
     'GRID_keys': ['CORNERS','COORD','ZCORN','TRANSF','NULL','PINCHOUTARRAY',
