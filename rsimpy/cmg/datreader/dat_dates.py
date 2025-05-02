@@ -200,6 +200,7 @@ def _filter_dates(results, verbose):
         print(f"Found {len(dates)} dates in the log file.")
     return dates
 
+
 def _read_all_dates(txt):
     """Read all dates from the log file."""
     date_pattern = r'\s(\d{4})([ /\\.:-])(\d{1,2})([ /\\.:-])(\d{1,2})\s'
@@ -215,46 +216,30 @@ def _read_all_dates(txt):
     return results
 
 
+def get_progress(dates, current_date, verbose=False):
+    """Check simulation progress."""
+    if len(dates) < 2:
+        if verbose:
+            print("Not enough dates to check progress.")
+        return None
+
+    first = dates[0]
+    last = dates[-1]
+
+    if last > first:
+        if current_date < first:
+            if verbose:
+                print("Current date is before the first date.")
+            return 0.0
+        if current_date > last:
+            if verbose:
+                print("Current date is after the last date.")
+            return 1.0
+        return (current_date - first) / (last - first)
+    if verbose:
+        print("Dates are not in ascending order.")
+    return None
+
+
 if __name__ == "__main__":
     print(__doc__)
-
-    d = get_from_log('tests/_no_sync/ex/dat/base_case_bo.out', verbose=True)
-    print(len(d))
-    print(d[:5])
-    print()
-    print(d[-5:])
-
-
-
-
-
-
-
-#     def get_progress(self, log_path=None):
-#         """Check simulation progress."""
-#         if self._first_date is None or self._last_date is None:
-#             return None
-
-#         if log_path is None:
-#             if self._file_path is None:
-#                 return None
-#             log_path = self._file_path.with_suffix('.log')
-#         log_path = Path(log_path)
-#         if not log_path.is_file():
-#             return None
-
-#         _, current_date = self.process_log(log_path)
-#         if current_date is None:
-#             return None
-
-#         first = self.to_date(' '.join(self._first_date))
-#         last = self.to_date(' '.join(self._last_date))
-#         current = self.to_date(current_date)
-
-#         if last > first:
-#             if current < first:
-#                 return 0.0
-#             if current > last:
-#                 return 1.0
-#             return (current - first) / (last - first)
-#         return None

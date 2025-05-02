@@ -108,5 +108,21 @@ class TestTemplate(unittest.TestCase):
             "Last date is not correct")
 
 
+    def test_get_progress(self):
+        """Check reading simulation progress"""
+
+        folder = Path('tests/_no_sync/ex/dat/')
+        file = folder / 'base_case_bo.dat'
+        dates = dat_dates.get_from_dat(file)
+
+        progress = dat_dates.get_progress(dates, dates[0])
+        self.assertEqual(progress, 0, "Should be 0%")
+        progress = dat_dates.get_progress(dates, dates[-1])
+        self.assertEqual(progress, 1, "Should be 100%")
+
+        new_date = dates[0] + (dates[-1] - dates[0])/4
+        progress = dat_dates.get_progress(dates, new_date)
+        self.assertEqual(progress, 0.25, "Should be 25%")
+
 if __name__ == '__main__':
     unittest.main()
