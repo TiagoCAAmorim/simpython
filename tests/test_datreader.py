@@ -5,7 +5,8 @@ import unittest
 
 from pathlib import Path
 import context  # noqa # pylint: disable=unused-import
-from rsimpy.cmg.datreader import dat_dates, dat_parser, dat_run
+from rsimpy.cmg.datreader import dat_dates, dat_parser, dat_run, sch_to_daily
+import os
 
 
 def compare_files(file1, file2):
@@ -171,6 +172,23 @@ class TestTemplate(unittest.TestCase):
             5400.01,
             "Second value for P11 is not correct")
 
+    def test_add_dates(self):
+        """Check adding dates to a schedule file"""
+        file_path = Path('../SimModels/Unisim_iv_2024/hist/Schedule_history_2024_mod2.hist')
+        output_path = Path('../SimModels/Unisim_iv_2024/hist/Schedule_history_2024_mod2a.hist')
+        sch_to_daily.process(file_path, output_path, delta_days=5, encoding='utf-8')
+
+        self.assertTrue(output_path.is_file(), "Output file was not created")
+
+        file_path = Path('../SimModels/Unisim_iv_2024/hist/Schedule_history_2024_mod2a.hist')
+        output_path = Path('../SimModels/Unisim_iv_2024/hist/Schedule_history_2024_mod2b.hist')
+        sch_to_daily.process(file_path, output_path, delta_days=5, encoding='utf-8')
+
+        with open(file_path, 'r', encoding='utf-8') as f1, open(output_path, 'r', encoding='utf-8') as f2:
+            self.assertEqual(f1.read(), f2.read(), "The files do not have the same content")
+
+        os.remove(file_path)
+        os.remove(output_path)
 
 if __name__ == '__main__':
     unittest.main()
