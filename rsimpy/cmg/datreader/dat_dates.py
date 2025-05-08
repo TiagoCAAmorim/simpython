@@ -114,7 +114,19 @@ def solve_dates(dates, line):
 
 
 def to_date(date_lst):
-    """Convert CMG format string to datetime."""
+    """
+    Convert CMG format string to datetime.
+
+    Parameters
+    ----------
+    date_lst : str or list
+        CMG format string or list of strings.
+        If a string, it should be in the format 'DATE YYYY MM DD'.
+        If a list, it should be in the format ['YYYY', 'MM', 'DD'].
+        Decimal days are allowed.
+    """
+    if isinstance(date_lst, str):
+        date_lst = date_lst.strip().split()[1:]
     day_str = date_lst[2]
     fractional_day = '0'
     if '.' in day_str:
