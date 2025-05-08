@@ -26,7 +26,6 @@ def process(input_file_path, output_file_path, delta_days=1, encoding='utf-8'):
         encoding (str): Encoding of the input file. Default is 'utf-8'.
     """
     current_date = None
-    last_date = None
     output = []
 
     with open(input_file_path, 'r', encoding=encoding) as input_file:
@@ -40,15 +39,13 @@ def process(input_file_path, output_file_path, delta_days=1, encoding='utf-8'):
                     current_date = new_date
                     output.append(_date_to_str(current_date))
                 else:
-                    if new_date < current_date:
+                    if new_date <= current_date:
                         msg = f"Dates are not in chronological order: {current_date} -> {new_date}"
                         raise ValueError(msg)
                     while current_date < new_date:
                         current_date += timedelta(days=delta_days)
                         current_date = min(current_date, new_date)
                         output.append(_date_to_str(current_date))
-
-                last_date = new_date
             else:
                 output.append(line)
 

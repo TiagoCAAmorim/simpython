@@ -184,8 +184,9 @@ class TestTemplate(unittest.TestCase):
         output_path = Path('../SimModels/Unisim_iv_2024/hist/Schedule_history_2024_mod2b.hist')
         sch_to_daily.process(file_path, output_path, delta_days=5, encoding='utf-8')
 
-        with open(file_path, 'r', encoding='utf-8') as f1, open(output_path, 'r', encoding='utf-8') as f2:
-            self.assertEqual(f1.read(), f2.read(), "The files do not have the same content")
+        with open(file_path, 'r', encoding='utf-8') as f1:
+            with open(output_path, 'r', encoding='utf-8') as f2:
+                self.assertEqual(f1.read(), f2.read(), "The files do not have the same content")
 
         os.remove(file_path)
         os.remove(output_path)
