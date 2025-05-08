@@ -47,18 +47,11 @@ def process(input_file_path, output_file_path, delta_days=1, encoding='utf-8'):
                         current_date += timedelta(days=delta_days)
                         current_date = min(current_date, new_date)
                         output.append(_date_to_str(current_date))
-                    # if current_date > new_date:
-                    #     current_date = new_date
-                        # output.append(_date_to_str(new_date))
 
                 last_date = new_date
             else:
                 output.append(line)
 
-        if last_date and current_date <= last_date:
-            while current_date <= last_date:
-                output.append(_date_to_str(current_date))
-                current_date += timedelta(days=1)
 
     with open(output_file_path, 'w', encoding=encoding) as output_file:
         output_file.writelines(output)
