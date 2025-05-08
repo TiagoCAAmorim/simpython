@@ -9,12 +9,17 @@ process(input_file_path, output_file_path, encoding='utf-8'):
         encoding (str): Encoding of the input file. Default is 'utf-8'.
 """
 import sys
-from datetime import datetime, timedelta
+from datetime import timedelta
+
+try:
+    from rsimpy.cmg.datreader.dat_dates import to_date, to_str
+except ImportError:
+    from dat_dates import to_date, to_str
 
 
 def _date_to_str(date):
-    """Converts a datetime object to a string in the format YYYY-MM-DD."""
-    return f"DATE {date.year} {date.month} {date.day}\n"
+    """Converts a datetime object to a string in the format DATE YYYY MM DD."""
+    return 'DATE ' + to_str(date) + '\n'
 
 
 def process(input_file_path, output_file_path, delta_days=1, encoding='utf-8'):
@@ -31,9 +36,7 @@ def process(input_file_path, output_file_path, delta_days=1, encoding='utf-8'):
     with open(input_file_path, 'r', encoding=encoding) as input_file:
         for line in input_file:
             if line.strip().startswith("DATE"):
-                parts = line.split()
-                year, month, day = int(parts[1]), int(parts[2]), int(parts[3])
-                new_date = datetime(year, month, day)
+                new_date = to_date(line)
 
                 if current_date is None:
                     current_date = new_date
