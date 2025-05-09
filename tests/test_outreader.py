@@ -12,15 +12,15 @@ class TestTemplate(unittest.TestCase):
 
     def test_file_type(self):
         """Check file type detection"""
-        file_path = 'tests/out/test_gem.out'
+        file_path = 'tests/_no_sync/out/test_gem.out'
         file_type = utils.get_file_type(file_path)
         self.assertEqual(file_type, 'GEM')
 
-        file_path = 'tests/out/test_imex.out'
+        file_path = 'tests/_no_sync/out/test_imex.out'
         file_type = utils.get_file_type(file_path)
         self.assertEqual(file_type, 'IMEX')
 
-        file_path = 'tests/out/no_file.out'
+        file_path = 'tests/_no_sync/out/no_file.out'
         with self.assertRaises(FileNotFoundError):
             utils.get_file_type(file_path)
 
@@ -32,7 +32,7 @@ class TestTemplate(unittest.TestCase):
     def test_read_wi_gem(self):
         """Check reading of well index"""
         out_wi = wi.OutWI(verbose=False, wi_only=True, encoding='utf-8')
-        file_path = 'tests/out/test_gem.out'
+        file_path = 'tests/_no_sync/out/test_gem.out'
         out_wi.process(file_path, prune=False)
 
         self.assertEqual(len(out_wi.get()), 69)
@@ -49,7 +49,7 @@ class TestTemplate(unittest.TestCase):
     def test_read_wi_imex(self):
         """Check reading of well index"""
         out_wi = wi.OutWI(verbose=False, wi_only=True, encoding='utf-8')
-        file_path = 'tests/out/test_imex.out'
+        file_path = 'tests/_no_sync/out/test_imex.out'
         out_wi.process(file_path, prune=False)
 
         self.assertEqual(len(out_wi.get()), 977)

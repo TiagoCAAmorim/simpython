@@ -303,8 +303,10 @@ class PropertyHandler:
             If new property already exists.
         """
         if old not in self._properties:
-            msg = f'Property not found: {old}'
-            raise ValueError(msg)
+            if return_error:
+                msg = f'Property not found: {old}'
+                raise ValueError(msg)
+            return
         if new in self._properties and return_error:
             msg = f'Property already exists: {new}'
             raise ValueError(msg)

@@ -524,21 +524,31 @@ class OutWI:
         if 'cell' not in con_data:
             return
         cell_str = con_data['cell']
-        match = re.match(r'(\d+),(\d+),(\d+)(?:\s*(\w+))?', cell_str)
+        match = re.match(r'(\d+)(,|\s+|:)(\d+)(,|\s+|:)(\d+)(?:\s*(\w+))?', cell_str)
 
         read = {'cell i':0, 'cell j':0, 'cell k':0}
         if match:
-            for i,k in enumerate(read.keys()):
-                read[k] = int(match.group(i+1))
+            if match.group(2) != match.group(4):
+                msg = f"Cell string is not in the expected format: '{cell_str}'"
+                raise ValueError(msg)
 
-            medium = match.group(4) if match.group(4) else 'X'
+            s = f"{match.group(1)},{match.group(3)},{match.group(5)}"
+            if match.group(6):
+                s += f"{match.group(6)}"
+            con_data['cell'] = s
+
+            read['cell i'] = int(match.group(1))
+            read['cell j'] = int(match.group(3))
+            read['cell k'] = int(match.group(5))
+
+            medium = match.group(6) if match.group(6) else 'X'
             if medium[0] == 'M':
                 medium = 'MT'
             elif medium[0] == 'F':
                 medium = 'FR'
             read['cell medium'] = medium
         else:
-            msg = f"Cell string is not in the expected format: {cell_str}."
+            msg = f"Cell string is not in the expected format: '{cell_str}'"
             raise ValueError(msg)
 
         if read['cell medium'] == 'X':
