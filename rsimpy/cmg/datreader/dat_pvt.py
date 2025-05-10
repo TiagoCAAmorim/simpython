@@ -10,6 +10,7 @@ get_pvt_from_dat_data(data, verbose=False):
 """
 import numpy as np
 import pandas as pd
+from scipy.interpolate import RegularGridInterpolator
 
 try:
     from rsimpy.cmg.datreader.dat_parser import DatParser
@@ -19,7 +20,7 @@ except ImportError:
     import common
 
 
-COLS = ['PSAT', 'PRES', 'RS', 'BO', 'EG', 'UO', 'UG']
+COLS = ['PRES', 'RS', 'BO', 'EG', 'UO', 'UG']
 
 
 def get_from_dat(file_path, abs_path=None, encoding='utf-8', verbose=False, _debug=False):
@@ -61,7 +62,7 @@ def get_from_dat(file_path, abs_path=None, encoding='utf-8', verbose=False, _deb
     parser = DatParser(
         abs_path=abs_path,
         encoding=encoding,
-        ignore=['TITLE1','ROCKFLUID','INITIAL','NUMERICAL','RUN','GRID_keys'],
+        ignore=['ROCKFLUID','INITIAL','NUMERICAL','RUN','GRID_keys'],
         verbose=verbose,
         _debug=_debug)
     parser.process(file_path=file_path)
@@ -105,14 +106,18 @@ def get_from_dat_data(data, verbose=False): # pylint: disable=too-many-branches
         - 'Uo': Oil viscosity.
         - 'Ug': Gas viscosity.
     """
+    alpha, t_delta = _read_units(data)
     data = common.get_section(data, 'GRID')
 
+    t_res = None
     tables = []
     table = {}
     for line in data:
+        if line[0] == 'TRES':
+            t_res = float(line[1]) + t_delta
         if line[0] == 'PVT':
             if len(table) != 0:
-                tables.append(_process_table(table, len(tables), verbose=verbose))
+                tables.append(_process_table(table, len(tables), alpha / t_res, verbose=verbose))
             table = {'PVT': line, 'BOT':[], 'VOT': []}
         elif line[0] == 'BOT':
             if len(table) == 0:
@@ -123,7 +128,7 @@ def get_from_dat_data(data, verbose=False): # pylint: disable=too-many-branches
                 raise ValueError("VOT keyword found before PVT keyword.")
             table['VOT'].append(line)
     if len(table) != 0:
-        tables.append(_process_table(table, len(tables), verbose=verbose))
+        tables.append(_process_table(table, len(tables), alpha / t_res, verbose=verbose))
 
     if len(tables) == 0:
         if verbose:
@@ -132,56 +137,49 @@ def get_from_dat_data(data, verbose=False): # pylint: disable=too-many-branches
     return tables
 
 
-def _process_table(table, num_tables, verbose=False):
+def _read_units(data):
+    """Read units from the data and definte t_std/p_std."""
+    data = common.get_section(data, 'TITLE1')
+
+    t_delta = 273.15
+    p_std = 101.325
+    t_std = 15.56 + t_delta
+    for line in data:
+        if line[0] == 'INUNIT':
+            if line[1] == 'SI':
+                break
+            if line[1] == 'MODSI':
+                p_std = 1.03
+            elif line[1] == 'FIELD':
+                #include scf/bbl => m3/m3, IMEX manual: 0.17801529
+                p_std = 14.7 * 0.1801175
+                t_delta = 459.67
+                t_std = 60 + t_delta
+            else:
+                raise ValueError(f"Unknown pressure unit: {line[1]}")
+            break
+    return t_std / p_std, t_delta
+
+
+def _process_table(table, num_tables, z_transform, verbose=False):
     """Process a PVT table."""
-    pvt = _process_pvt(table['PVT'], num_tables, verbose)
+    pvt = _process_pvt(table['PVT'], num_tables, z_transform, verbose)
     bot = _process_bot_vot(table['BOT'], pvt, 'BO')
     vot = _process_bot_vot(table['VOT'], pvt, 'UO')
 
-    for col in COLS:
-        pvt[col] = np.concatenate((pvt[col], bot[col], vot[col]))
+    bot = _build_inv_bo_interpolation(bot)
+    vot = _build_inv_bo_uo_interpolation(vot, bot)
 
-    table = pd.DataFrame(pvt)
-
-    # TODO: Interpolate missing values: 1/Bo and 1/BoUo
+    table = {
+        'sat': pd.DataFrame(pvt),
+        'usat_bo': bot,
+        'usat_vo': vot,
+    }
 
     return table
 
 
-def _process_bot_vot(tables, pvt, col_name):
-    """Process BOT or VOT tables."""
-    if col_name not in ['BO', 'UO']:
-        raise ValueError(f"Invalid column name: {col_name}. Expected 'BO' or 'UO'.")
-
-    output = {k: np.array([]) for k in COLS}
-    for table in tables:
-        values = np.array(table[1:], dtype=float).reshape(-1, 2)
-        if len(values) == 0:
-            raise ValueError("No values found in BOT keyword.")
-
-        psat_values = pvt['PSAT']
-        rs_values = pvt['RS']
-        interpolated_rs = np.interp(values[0, 0], psat_values, rs_values, left=np.nan, right=np.nan)
-
-        data = {
-            'PSAT': np.full(values.shape[0], values[0, 0]),
-            'PRES': values[:, 0],
-            'RS': np.full(values.shape[0], interpolated_rs),
-            col_name: values[:, 1],
-            'EG': np.interp(values[:, 0], pvt['PRES'], pvt['EG'], left=np.nan, right=np.nan),
-            'UG': np.interp(values[:, 0], pvt['PRES'], pvt['UG'], left=np.nan, right=np.nan),
-            'NAN': np.full(values.shape[0], np.nan),
-        }
-
-        for col in COLS:
-            if col not in data:
-                output[col] = np.concatenate((output[col], data['NAN']))
-            else:
-                output[col] = np.concatenate((output[col], data[col]))
-    return output
-
-
-def _process_pvt(table, num_tables, verbose):
+def _process_pvt(table, num_tables, z_transform, verbose):
     gas_col = 'EG'
     i0 = 1
     try:
@@ -196,38 +194,209 @@ def _process_pvt(table, num_tables, verbose):
             table_number = 1
             i0 = 1
 
+    if gas_col not in ['EG', 'BG', 'ZG']:
+        msg = f"Invalid gas column: {gas_col}. Expected 'EG', 'BG' or 'ZG'."
+        raise ValueError(msg)
+
     if verbose:
         print(f"Found Table: {gas_col} {table_number}")
     if table_number != num_tables+1:
         msg = f"Table number {table_number} does not match expected {num_tables+1}."
         raise ValueError(msg)
 
-    if gas_col == 'ZG':
-        raise ValueError("Gas compressibility factor (ZG) is not supported yet.")
-
-    values = table[i0+1:]
-    values = np.array(values, dtype=float).reshape(-1, 6)
-
+    values = np.array(table[i0+1:], dtype=float).reshape(-1, 6)
     if gas_col == 'BG':
         values[:, 3] = 1/values[:, 3]
+    elif gas_col == 'ZG':
+        values[:, 3] = values[:, 0] / values[:, 3] * z_transform
 
-    output = {'PSAT': values[:,0]}
-    cols = ['PRES', 'RS', 'BO', 'EG', 'UO', 'UG']
-    for i, col in enumerate(cols):
+    output = {}
+    for i, col in enumerate(COLS):
         output[col] = values[:, i]
     return output
 
 
-# TODO: functions to get intermediate values from Rs and Pres
+def _process_bot_vot(tables, pvt, col_name):
+    """Process BOT or VOT tables."""
+    if col_name not in ['BO', 'UO']:
+        raise ValueError(f"Invalid column name: {col_name}. Expected 'BO' or 'UO'.")
+
+    output = {}
+    for table in tables:
+        values = np.array(table[1:], dtype=float).reshape(-1, 2)
+        if len(values) == 0:
+            raise ValueError("No values found in BOT keyword.")
+
+        psat_values = pvt['PRES']
+        rs_values = pvt['RS']
+        interpolated_rs = np.interp(values[0, 0], psat_values, rs_values)
+        p_max = np.max(pvt['PRES'])
+        p_norm = (values[:, 0] - values[0, 0]) / (p_max - values[0, 0])
+
+        output[interpolated_rs] = {
+            'PRES_NORM': p_norm,
+            f'1/{col_name}': 1/values[:, 1],
+            }
+
+    return output
+
+
+def _build_inv_bo_interpolation(bot):
+    """Build 1/Bo interpolation table."""
+    p_norm = np.array([])
+    for rs in bot:
+        p_norm = np.append(p_norm, bot[rs]['PRES_NORM'])
+    p_norm = np.unique(p_norm)
+    p_norm = np.sort(p_norm)
+
+    rs = np.array(list(bot))
+    bo_inv = []
+    for rsi in bot:
+        bo_inv.append(np.interp(p_norm, bot[rsi]['PRES_NORM'], bot[rsi]['1/BO']))
+    bo_inv = np.array(bo_inv)
+
+    return {
+        'RS': rs,
+        'PRES_NORM': p_norm,
+        '1/BO': bo_inv,
+    }
+
+
+def _build_inv_bo_uo_interpolation(vot, inv_bo_interp):
+    """Build 1/BoUo interpolation table."""
+    p_norm = np.array([])
+    for rs in vot:
+        p_norm = np.append(p_norm, vot[rs]['PRES_NORM'])
+    p_norm = np.unique(p_norm)
+    p_norm = np.sort(p_norm)
+
+    interp_f = RegularGridInterpolator(
+        (inv_bo_interp['RS'], inv_bo_interp['PRES_NORM']),
+        inv_bo_interp['1/BO'],
+        bounds_error=False,
+        fill_value=None,
+    )
+
+    rs = np.array(list(vot))
+    bovo_inv = []
+    for rsi in vot:
+        bo_inv = interp_f(
+            np.stack(
+                [np.repeat([rsi],vot[rsi]['PRES_NORM'].shape[0]), vot[rsi]['PRES_NORM']], axis=1
+        ))
+        vo_inv = vot[rsi]['1/UO']
+        bovo_inv.append(np.interp(p_norm, vot[rsi]['PRES_NORM'], bo_inv * vo_inv))
+    bovo_inv = np.array(bovo_inv)
+
+    return {
+        'RS': rs,
+        'PRES_NORM': p_norm,
+        '1/BOUO': bovo_inv,
+    }
+
+
+def get_pvt_values(table, data, check_psat=True):
+    """
+    Get PVT values for a given RS and Pressure.
+
+    Parameters
+    ----------
+    table : dict
+        PVT table with the following keys:
+        - 'sat': Saturated table (Pres = Psat).
+        - 'usat_bo': Undersaturated table for BO (Pres > Psat).
+        - 'usat_vo': Undersaturated  table for UO (Pres > Psat).
+    data : np.array
+        Array of (np_points, 2) with the first column being
+        solution gas-oil ratio (Rs) and the second
+        column being pressure.
+    check_psat : bool
+        If True, check if Psat is smaller or equal to the pressure.
+        Default: True.
+    """
+    if len(table) != 3:
+        raise ValueError(f"Expected 3 items in PVT table. Found {len(table)}.")
+
+    for key in ['sat', 'usat_bo', 'usat_vo']:
+        if key not in table:
+            raise ValueError(f"Missing {key} in PVT table.")
+
+    rs = data[:, 0]
+    p = data[:, 1]
+
+    sat = table['sat']
+    if rs.min() < sat['RS'].min() or rs.max() > sat['RS'].max():
+        range_rs = f"[{rs.min()}, {rs.max()}]"
+        range_ = f"[{sat['RS'].min()}, {sat['RS'].max()}]"
+        raise ValueError(f"RS values ({range_rs}) is out of range ({range_}).")
+
+    if p.min() < sat['PRES'].min() or p.max() > sat['PRES'].max():
+        range_p = f"[{p.min()}, {p.max()}]"
+        range_ = f"[{sat['PRES'].min()}, {sat['PRES'].max()}]"
+        raise ValueError(f"Pressure values ({range_p}) is out of range ({range_}).")
+
+    psat = np.interp(rs, sat['RS'], sat['PRES'])
+    if check_psat and np.any(p < psat):
+        raise ValueError(f"{np.sum(p < psat)} pressure values less than associated Psat.")
+
+    eg = np.interp(p, sat['PRES'], sat['EG'])
+    ug = eg/np.interp(p, sat['PRES'], 1/sat['UG']*sat['EG'])
+
+    inv_bo = table['usat_bo']
+    inv_bovo = table['usat_vo']
+
+    interp_bo = RegularGridInterpolator(
+        (inv_bo['RS'], inv_bo['PRES_NORM']),
+        inv_bo['1/BO'],
+        bounds_error=False,
+        fill_value=None,
+    )
+    interp_bovo = RegularGridInterpolator(
+        (inv_bovo['RS'], inv_bovo['PRES_NORM']),
+        inv_bovo['1/BOUO'],
+        bounds_error=False,
+        fill_value=None,
+    )
+
+    p_norm = (p - psat) / (sat['PRES'].max() - psat)
+
+    bo = 1/interp_bo(np.stack([rs, p_norm], axis=1))
+    uo = 1/bo/interp_bovo(np.stack([rs, p_norm], axis=1))
+
+    return {
+        'RS': rs,
+        'PRES': p,
+        'PSAT': psat,
+        'PNORM': p_norm,
+        'BO': bo,
+        'EG': eg,
+        'BG': 1/eg,
+        'UO': uo,
+        'UG': ug,
+    }
 
 
 def main():
     """Test"""
     path = 'tests/_no_sync/ex/dat/base_case_bo.dat'
-    data = get_from_dat(path, verbose=True)
-    for d in data:
-        print(d)
-        d.to_csv('test.csv', index=False)
+    pvt = get_from_dat(path, verbose=True)
+    print(f"{len(pvt)} tables found.")
+    for d in pvt:
+        for k, v in d.items():
+            print('================')
+            print(k)
+            print(v)
+            # d.to_csv('test.csv', index=False)
+    print('**************************')
+
+    data = np.array([
+        [152.7532, 270],
+        [152.7532, 450],
+        [275.5254, 450],
+    ])
+    x = get_pvt_values(pvt[0], data, check_psat=False)
+    for k, v in x.items():
+        print(f'{k}: {v}')
 
 
 if __name__ == "__main__":
