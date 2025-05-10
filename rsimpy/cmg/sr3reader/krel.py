@@ -165,6 +165,13 @@ class KrelHandler:
         return self._krel_tables[table_number - 1]
 
 
+    def get_number_of_tables(self):
+        """Returns the number of relative permeability tables."""
+        if self._krel_tables is None:
+            self.read()
+        return len(self._krel_tables)
+
+
 # MARK: Save Data
 
     def to_csv(self,

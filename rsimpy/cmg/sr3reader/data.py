@@ -17,7 +17,6 @@ wells_bhp = data_handler.get("well", property="BHP")
 
 import numpy as np
 import xarray as xr
-import pandas as pd
 
 from rsimpy.common import utils
 from rsimpy.cmg.sr3reader.sim_data import SimData
