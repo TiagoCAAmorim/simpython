@@ -255,10 +255,32 @@ def _build_inv_bo_interpolation(bot, pvt):
     p_norm = np.unique(p_norm)
     p_norm = np.sort(p_norm)
 
-    rs = np.array(list(bot))
+    rs_ = np.array(list(bot))
+    bo_norm = []
+    for rsi in rs_:
+        bo_norm.append(np.interp(p_norm, bot[rsi]['PRES_NORM'], bot[rsi]['1/BO'] / bot[rsi]['1/BO'][0]))
+    bo_norm = np.array(bo_norm)
+    interp_f = RegularGridInterpolator((rs_, p_norm), bo_norm)
+
+    rs = np.concatenate([rs_, pvt['RS']])
+    rs = np.unique(rs)
+    rs = np.sort(rs)
+
     bo_inv = []
-    for rsi in bot:
-        bo_inv.append(np.interp(p_norm, bot[rsi]['PRES_NORM'], bot[rsi]['1/BO']))
+    for rsi in rs:
+        if rsi in bot:
+            bo_inv.append(np.interp(p_norm, bot[rsi]['PRES_NORM'], bot[rsi]['1/BO']))
+        else:
+            if rsi < rs_[0]:
+                bo_scaler = bo_norm[0]
+            elif rsi > rs_[-1]:
+                bo_scaler = bo_norm[-1]
+            else:
+                rs_vector = np.repeat([rsi], p_norm.shape[0])
+                bo_scaler = interp_f(np.stack([rs_vector, p_norm], axis=1))
+            bo_inv_sat = np.interp(rsi, pvt['RS'], 1/pvt['BO'])
+            bo_inv.append(bo_scaler * bo_inv_sat)
+
     bo_inv = np.array(bo_inv)
 
     return {
