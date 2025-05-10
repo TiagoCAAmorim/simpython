@@ -21,6 +21,7 @@ except ImportError:
 
 
 COLS = ['PRES', 'RS', 'BO', 'EG', 'UO', 'UG']
+EPS = 1e-4
 
 
 def get_from_dat(file_path, abs_path=None, encoding='utf-8', verbose=False, _debug=False):
@@ -117,7 +118,9 @@ def get_from_dat_data(data, verbose=False): # pylint: disable=too-many-branches
             t_res = float(line[1]) + t_delta
         if line[0] == 'PVT':
             if len(table) != 0:
-                tables.append(_process_table(table, len(tables), alpha / t_res, verbose=verbose))
+                tables.append(
+                    _process_pvt_lines(table, len(tables), alpha / t_res, verbose=verbose)
+                )
             table = {'PVT': line, 'BOT':[], 'VOT': []}
         elif line[0] == 'BOT':
             if len(table) == 0:
@@ -128,7 +131,9 @@ def get_from_dat_data(data, verbose=False): # pylint: disable=too-many-branches
                 raise ValueError("VOT keyword found before PVT keyword.")
             table['VOT'].append(line)
     if len(table) != 0:
-        tables.append(_process_table(table, len(tables), alpha / t_res, verbose=verbose))
+        tables.append(
+            _process_pvt_lines(table, len(tables), alpha / t_res, verbose=verbose)
+        )
 
     if len(tables) == 0:
         if verbose:
@@ -161,13 +166,13 @@ def _read_units(data):
     return t_std / p_std, t_delta
 
 
-def _process_table(table, num_tables, z_transform, verbose=False):
-    """Process a PVT table."""
+def _process_pvt_lines(table, num_tables, z_transform, verbose=False):
+    """Process PVT data from lines in dat file."""
     pvt = _process_pvt(table['PVT'], num_tables, z_transform, verbose)
     bot = _process_bot_vot(table['BOT'], pvt, 'BO')
     vot = _process_bot_vot(table['VOT'], pvt, 'UO')
 
-    bot = _build_inv_bo_interpolation(bot)
+    bot = _build_inv_bo_interpolation(bot, pvt)
     vot = _build_inv_bo_uo_interpolation(vot, bot)
 
     table = {
@@ -180,6 +185,7 @@ def _process_table(table, num_tables, z_transform, verbose=False):
 
 
 def _process_pvt(table, num_tables, z_transform, verbose):
+    """Process PVT keyword from lines in dat file."""
     gas_col = 'EG'
     i0 = 1
     try:
@@ -217,7 +223,7 @@ def _process_pvt(table, num_tables, z_transform, verbose):
 
 
 def _process_bot_vot(tables, pvt, col_name):
-    """Process BOT or VOT tables."""
+    """Process BOT or VOT keywords from lines in a dat file."""
     if col_name not in ['BO', 'UO']:
         raise ValueError(f"Invalid column name: {col_name}. Expected 'BO' or 'UO'.")
 
@@ -230,7 +236,7 @@ def _process_bot_vot(tables, pvt, col_name):
         psat_values = pvt['PRES']
         rs_values = pvt['RS']
         interpolated_rs = np.interp(values[0, 0], psat_values, rs_values)
-        p_max = np.max(pvt['PRES'])
+        p_max = np.max(pvt['PRES']) + EPS
         p_norm = (values[:, 0] - values[0, 0]) / (p_max - values[0, 0])
 
         output[interpolated_rs] = {
@@ -241,7 +247,7 @@ def _process_bot_vot(tables, pvt, col_name):
     return output
 
 
-def _build_inv_bo_interpolation(bot):
+def _build_inv_bo_interpolation(bot, pvt):
     """Build 1/Bo interpolation table."""
     p_norm = np.array([])
     for rs in bot:
@@ -323,21 +329,9 @@ def get_pvt_values(table, data, check_psat=True):
 
     rs = data[:, 0]
     p = data[:, 1]
-
     sat = table['sat']
-    if rs.min() < sat['RS'].min() or rs.max() > sat['RS'].max():
-        range_rs = f"[{rs.min()}, {rs.max()}]"
-        range_ = f"[{sat['RS'].min()}, {sat['RS'].max()}]"
-        raise ValueError(f"RS values ({range_rs}) is out of range ({range_}).")
-
-    if p.min() < sat['PRES'].min() or p.max() > sat['PRES'].max():
-        range_p = f"[{p.min()}, {p.max()}]"
-        range_ = f"[{sat['PRES'].min()}, {sat['PRES'].max()}]"
-        raise ValueError(f"Pressure values ({range_p}) is out of range ({range_}).")
-
     psat = np.interp(rs, sat['RS'], sat['PRES'])
-    if check_psat and np.any(p < psat):
-        raise ValueError(f"{np.sum(p < psat)} pressure values less than associated Psat.")
+    _check_pvt_limits(rs, p, sat, psat, check_psat)
 
     eg = np.interp(p, sat['PRES'], sat['EG'])
     ug = eg/np.interp(p, sat['PRES'], 1/sat['UG']*sat['EG'])
@@ -358,8 +352,7 @@ def get_pvt_values(table, data, check_psat=True):
         fill_value=None,
     )
 
-    p_norm = (p - psat) / (sat['PRES'].max() - psat)
-
+    p_norm = (p - psat) / (sat['PRES'].max() + EPS - psat)
     bo = 1/interp_bo(np.stack([rs, p_norm], axis=1))
     uo = 1/bo/interp_bovo(np.stack([rs, p_norm], axis=1))
 
@@ -376,6 +369,21 @@ def get_pvt_values(table, data, check_psat=True):
     }
 
 
+def _check_pvt_limits(rs, p, sat, psat, check_psat):
+    if rs.min() < sat['RS'].min() or rs.max() > sat['RS'].max():
+        range_rs = f"[{rs.min()}, {rs.max()}]"
+        range_ = f"[{sat['RS'].min()}, {sat['RS'].max()}]"
+        raise ValueError(f"RS values ({range_rs}) is out of range ({range_}).")
+
+    if p.min() < sat['PRES'].min() or p.max() > sat['PRES'].max():
+        range_p = f"[{p.min()}, {p.max()}]"
+        range_ = f"[{sat['PRES'].min()}, {sat['PRES'].max()}]"
+        raise ValueError(f"Pressure values ({range_p}) is out of range ({range_}).")
+
+    if check_psat and np.any(p < psat):
+        raise ValueError(f"{np.sum(p < psat)} pressure values less than associated Psat.")
+
+
 def main():
     """Test"""
     path = 'tests/_no_sync/ex/dat/base_case_bo.dat'
@@ -390,13 +398,26 @@ def main():
     print('**************************')
 
     data = np.array([
-        [152.7532, 270],
-        [152.7532, 450],
-        [275.5254, 450],
+        [152.7532, 270],  #Saturated, has undersaturated
+        [152.7532, 450],  #Undersaturated, has undersaturated
+        [275.5254, 450],  #Saturated, no undersaturated
+        [275.5254, 510],  #Undersaturated, no undersaturated
     ])
     x = get_pvt_values(pvt[0], data, check_psat=False)
+
+    true_ = {
+        'RS': [152.7532, 152.7532, 275.5254, 275.5254,],
+        'PRES': [270, 450, 450, 510],
+        'PSAT': [270, 270, 450, 450],
+        'PNORM': [0.0, 0.642857143, 0.0, 0.6],
+        'BO': [1.3877, 1.3595, 1.6554, 999.999],
+        'BG': [0.00373 , 0.00288, 0.00288, 0.00275],
+        'EG': [1/0.00373 , 1/0.00288, 1/0.00288, 1/0.00275],
+        'UO': [1.4887, 1.8318, 0.9242, 999.999],
+        'UG': [0.03638, 0.06156, 0.06156, 0.07026],
+    }
     for k, v in x.items():
-        print(f'{k}: {v}')
+        print(f'{k}: {v}\t{true_[k]}')
 
 
 if __name__ == "__main__":
