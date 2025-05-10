@@ -3,14 +3,18 @@ Module to get dates from CMG dat files.
 
 Functions
 ---------
-get_dates_from_dat(file_path, abs_path=None, encoding='utf-8', verbose=False):
+get_from_dat(file_path, abs_path=None, encoding='utf-8', verbose=False):
     Get list of dates from a CMG dat file.
-get_dates_from_dat_data(data, verbose=False):
+get_from_dat_data(data, verbose=False):
     Get list of dates from a CMG dat file processed data.
 to_date(date_str):
     Convert CMG format string to datetime.
 to_str(date):
     Convert date to CMG format string.
+get_from_log(file_path, encoding='utf-8', verbose=False)
+    Return dates from an ascii file.
+get_progress(dates, current_date, verbose=False):
+    Check simulation progress.
 """
 import re
 from datetime import datetime, timedelta
@@ -44,8 +48,8 @@ def get_from_dat(file_path, abs_path=None, encoding='utf-8', verbose=False, _deb
 
     Returns
     -------
-    tuple
-        First and last dates in the format 'YYYY MM DD'.
+    list
+        Dates as datetime objects.
     """
     parser = DatParser(
         abs_path=abs_path,
@@ -89,7 +93,20 @@ def get_from_dat_data(data, verbose=False): # pylint: disable=too-many-branches
 
 
 def solve_dates(dates, line):
-    """Solve DATE or TIME keywords from the line."""
+    """
+    Solve DATE or TIME keywords.
+
+    Add the date to the list of dates if finds DATE or TIME keywords,
+    and return True. Else, return False.
+    If the date is not in ascending order, raise a ValueError.
+
+    Parameters
+    ----------
+    dates : list
+        List of datetime objects.
+    line : list
+        List of strings from the dat file line.
+    """
     if line[0] == 'DATE':
         date = to_date(line[1:])
         if len(dates) > 0:
@@ -137,7 +154,12 @@ def to_date(date_lst):
 
 
 def to_str(date):
-    """Convert date to CMG format string."""
+    """
+    Convert date to CMG format string.
+
+    The date is converted to a string in the format 'YYYY MM DD'.
+    If the date has a fractional part, it is added to the string.
+    """
     def _fraction_of_day(date_time):
         seconds = date_time.hour * 3600
         seconds += date_time.minute * 60
@@ -229,7 +251,20 @@ def _read_all_dates(txt):
 
 
 def get_progress(dates, current_date, verbose=False):
-    """Check simulation progress."""
+    """
+    Check simulation progress.
+
+    Progress is calculated as the ratio of `current_date`
+    to the total time between the first and last date in `dates`.
+    If `current_date` is before the first date, progress is 0.
+    If `current_date` is after the last date, progress is 1.
+    If `dates` is empty or has less than 2 dates, return None.
+    """
+    if dates is None or current_date is None:
+        if verbose:
+            print("Dates and/or current date are None.")
+        return None
+
     if len(dates) < 2:
         if verbose:
             print("Not enough dates to check progress.")
