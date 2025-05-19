@@ -443,43 +443,5 @@ def _check_pvt_limits(rs, p, sat, psat, check_psat):
         raise ValueError(f"{np.sum(p < psat)} pressure values less than associated Psat.")
 
 
-def main():
-    """Test"""
-    path = 'tests/_no_sync/ex/dat/base_case_bo.dat'
-    pvt = get_from_dat(path, verbose=True)
-    print(f"{len(pvt)} tables found.")
-    for d in pvt:
-        for k, v in d.items():
-            print('================')
-            print(k)
-            print(v)
-            # d.to_csv('test.csv', index=False)
-    print('**************************')
-
-    data = np.array([
-        [152.7532, 270],  #Saturated, has undersaturated
-        [152.7532, 450],  #Undersaturated, has undersaturated
-        [275.5254, 450],  #Saturated, no undersaturated
-        [275.5254, 510],  #Undersaturated, no undersaturated
-        [100., 500],  #Not in table
-    ])
-    x = get_pvt_values(pvt[0], data, check_psat=False)
-
-    true_ = {
-        'RS': [152.7532, 152.7532, 275.5254, 275.5254,],
-        'PRES': [270, 450, 450, 510],
-        'PSAT': [270, 270, 450, 450],
-        'PNORM': [0.0, 0.642857143, 0.0, 0.6],
-        'BO': [1.3877, 1.3595, 1.6554, 999.999],
-        'BG': [0.00373 , 0.00288, 0.00288, 0.00275],
-        'EG': [1/0.00373 , 1/0.00288, 1/0.00288, 1/0.00275],
-        'UO': [1.4887, 1.8318, 0.9242, 999.999],
-        'UG': [0.03638, 0.06156, 0.06156, 0.07026],
-    }
-    for k, v in x.items():
-        print(f'{k}: {v}\t{true_[k]}')
-
-
 if __name__ == "__main__":
     print(__doc__)
-    main()
