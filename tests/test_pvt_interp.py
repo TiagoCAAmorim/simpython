@@ -63,6 +63,8 @@ class TestTemplate(unittest.TestCase):
                 corr = np.corrcoef(original_values, interp_values)[0, 1]
                 print(f"Correlation for {key}: {corr:0.6f}")
                 print(f"   Max difference: {np.max(np.abs(original_values - interp_values)):.6f}")
+                print(f"   Max relative diff.: {
+                    np.max(np.abs(original_values - interp_values)/original_values)*100:.4f}%")
                 if corr < 0.99999:
                     # Save the n most offending samples to CSV
                     data = np.stack([rs, pres, original_values, interp_values], axis=1)

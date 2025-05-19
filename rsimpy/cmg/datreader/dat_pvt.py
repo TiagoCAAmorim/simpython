@@ -169,8 +169,8 @@ def _read_units(data):
 def _process_pvt_lines(table, num_tables, z_transform, verbose=False):
     """Process PVT data from lines in dat file."""
     pvt = _process_pvt(table['PVT'], num_tables, z_transform, verbose)
-    bot = _process_bot_vot(table['BOT'], pvt, 'BO')
-    vot = _process_bot_vot(table['VOT'], pvt, 'UO')
+    bot = _process_bot_vot(table['BOT'], pvt)
+    vot = _process_bot_vot(table['VOT'], pvt)
 
     bot = _build_inv_bo_interpolation(bot, pvt)
     vot = _build_inv_bo_uo_interpolation(vot, bot, pvt)
@@ -222,16 +222,13 @@ def _process_pvt(table, num_tables, z_transform, verbose):
     return output
 
 
-def _process_bot_vot(tables, pvt, col_name):
+def _process_bot_vot(tables, pvt):
     """Process BOT or VOT keywords from lines in a dat file."""
-    if col_name not in ['BO', 'UO']:
-        raise ValueError(f"Invalid column name: {col_name}. Expected 'BO' or 'UO'.")
-
     output = {}
     for table in tables:
         values = np.array(table[1:], dtype=float).reshape(-1, 2)
         if len(values) == 0:
-            raise ValueError(f"No values found in {col_name}T keyword.")
+            raise ValueError("No values found in keyword table.")
 
         psat_values = pvt['PRES']
         rs_values = pvt['RS']
@@ -242,30 +239,36 @@ def _process_bot_vot(tables, pvt, col_name):
         output[interpolated_rs] = {
             'PRES': values[:, 0],
             'PRES_NORM': p_norm,
-            col_name: values[:, 1],
+            'val': values[:, 1],
             }
 
     return output
 
 
-def _build_inv_bo_interpolation(bot, pvt):
-    """Build 1/Bo interpolation table."""
+def _get_compressibility(tables):
+    """Build compressibility table, and interpolator."""
     p_norm = np.array([])
-    for rs in bot:
-        p_norm = np.append(p_norm, bot[rs]['PRES_NORM'])
+    for rs in tables:
+        p_norm = np.append(p_norm, tables[rs]['PRES_NORM'])
     p_norm = np.unique(p_norm)
     p_norm = np.sort(p_norm)
 
-    rs_ = np.array(list(bot))
-    bo_comp = []
-    for rsi in rs_:
-        p_norm_ = bot[rsi]['PRES_NORM']
-        pres_ = bot[rsi]['PRES']
-        bo_ = bot[rsi]['BO']
-        comp_ = (bo_[1:] - bo_[:-1]) / (pres_[1:] - pres_[:-1]) / bo_[:-1]
-        bo_comp.append(np.interp(p_norm, p_norm_[:-1], comp_))
-    bo_comp = np.array(bo_comp)
-    interp_comp = RegularGridInterpolator((rs_, p_norm), bo_comp)
+    rs = np.array(list(tables))
+    comp = []
+    for rsi in rs:
+        p_norm_ = tables[rsi]['PRES_NORM']
+        pres_ = tables[rsi]['PRES']
+        val_ = tables[rsi]['val']
+        comp_ = (val_[1:] - val_[:-1]) / (pres_[1:] - pres_[:-1]) / val_[:-1]
+        comp.append(np.interp(p_norm, p_norm_[:-1], comp_))
+    comp = np.array(comp)
+    interp_comp = RegularGridInterpolator((rs, p_norm), comp)
+    return rs, p_norm, comp, interp_comp
+
+
+def _build_inv_bo_interpolation(bot, pvt):
+    """Build 1/Bo interpolation table."""
+    rs_, p_norm, comp, interp_comp = _get_compressibility(bot)
 
     rs = np.concatenate([rs_, pvt['RS']])
     rs = np.unique(rs)
@@ -275,12 +278,12 @@ def _build_inv_bo_interpolation(bot, pvt):
     bo_inv = []
     for rsi in rs:
         if rsi in bot:
-            bo_inv.append(np.interp(p_norm, bot[rsi]['PRES_NORM'], 1/bot[rsi]['BO']))
+            bo_inv.append(np.interp(p_norm, bot[rsi]['PRES_NORM'], 1/bot[rsi]['val']))
         else:
             if rsi < rs_[0]:
-                comp_ = bo_comp[0]
+                comp_ = comp[0]
             elif rsi > rs_[-1]:
-                comp_ = bo_comp[-1]
+                comp_ = comp[-1]
             else:
                 rs_vector = np.repeat([rsi], p_norm.shape[0])
                 comp_ = interp_comp(np.stack([rs_vector, p_norm], axis=1))
@@ -303,22 +306,7 @@ def _build_inv_bo_interpolation(bot, pvt):
 
 def _build_inv_bo_uo_interpolation(vot, inv_bo_interp, pvt):
     """Build 1/BoUo interpolation table."""
-    p_norm = np.array([])
-    for rs in vot:
-        p_norm = np.append(p_norm, vot[rs]['PRES_NORM'])
-    p_norm = np.unique(p_norm)
-    p_norm = np.sort(p_norm)
-
-    rs_ = np.array(list(vot))
-    uo_comp = []
-    for rsi in rs_:
-        p_norm_ = vot[rsi]['PRES_NORM']
-        pres_ = vot[rsi]['PRES']
-        uo_ = vot[rsi]['UO']
-        comp_ = (uo_[1:] - uo_[:-1]) / (pres_[1:] - pres_[:-1]) / uo_[:-1]
-        uo_comp.append(np.interp(p_norm, p_norm_[:-1], comp_))
-    uo_comp = np.array(uo_comp)
-    interp_comp = RegularGridInterpolator((rs_, p_norm), uo_comp)
+    rs_, p_norm, comp, interp_comp = _get_compressibility(vot)
 
     rs = np.concatenate([rs_, pvt['RS']])
     rs = np.unique(rs)
@@ -328,12 +316,12 @@ def _build_inv_bo_uo_interpolation(vot, inv_bo_interp, pvt):
     uo_inv = []
     for rsi in rs:
         if rsi in vot:
-            uo_inv.append(1/np.interp(p_norm, vot[rsi]['PRES_NORM'], vot[rsi]['UO']))
+            uo_inv.append(1/np.interp(p_norm, vot[rsi]['PRES_NORM'], vot[rsi]['val']))
         else:
             if rsi < rs_[0]:
-                comp_ = uo_comp[0]
+                comp_ = comp[0]
             elif rsi > rs_[-1]:
-                comp_ = uo_comp[-1]
+                comp_ = comp[-1]
             else:
                 rs_vector = np.repeat([rsi], p_norm.shape[0])
                 comp_ = interp_comp(np.stack([rs_vector, p_norm], axis=1))
