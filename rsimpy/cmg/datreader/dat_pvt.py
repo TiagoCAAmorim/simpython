@@ -173,7 +173,7 @@ def _process_pvt_lines(table, num_tables, z_transform, verbose=False):
     vot = _process_bot_vot(table['VOT'], pvt, 'UO')
 
     bot = _build_inv_bo_interpolation(bot, pvt)
-    vot = _build_inv_bo_uo_interpolation(vot, bot)
+    vot = _build_inv_bo_uo_interpolation(vot, bot, pvt)
 
     table = {
         'sat': pd.DataFrame(pvt),
@@ -231,7 +231,7 @@ def _process_bot_vot(tables, pvt, col_name):
     for table in tables:
         values = np.array(table[1:], dtype=float).reshape(-1, 2)
         if len(values) == 0:
-            raise ValueError("No values found in BOT keyword.")
+            raise ValueError(f"No values found in {col_name}T keyword.")
 
         psat_values = pvt['PRES']
         rs_values = pvt['RS']
@@ -240,8 +240,9 @@ def _process_bot_vot(tables, pvt, col_name):
         p_norm = (values[:, 0] - values[0, 0]) / (p_max - values[0, 0])
 
         output[interpolated_rs] = {
+            'PRES': values[:, 0],
             'PRES_NORM': p_norm,
-            f'1/{col_name}': 1/values[:, 1],
+            col_name: values[:, 1],
             }
 
     return output
@@ -258,7 +259,9 @@ def _build_inv_bo_interpolation(bot, pvt):
     rs_ = np.array(list(bot))
     bo_norm = []
     for rsi in rs_:
-        bo_norm.append(np.interp(p_norm, bot[rsi]['PRES_NORM'], bot[rsi]['1/BO'] / bot[rsi]['1/BO'][0]))
+        bo_norm.append(
+            np.interp(p_norm, bot[rsi]['PRES_NORM'], bot[rsi]['BO'][0] / bot[rsi]['BO'])
+            )
     bo_norm = np.array(bo_norm)
     interp_f = RegularGridInterpolator((rs_, p_norm), bo_norm)
 
@@ -269,7 +272,7 @@ def _build_inv_bo_interpolation(bot, pvt):
     bo_inv = []
     for rsi in rs:
         if rsi in bot:
-            bo_inv.append(np.interp(p_norm, bot[rsi]['PRES_NORM'], bot[rsi]['1/BO']))
+            bo_inv.append(np.interp(p_norm, bot[rsi]['PRES_NORM'], 1/bot[rsi]['BO']))
         else:
             if rsi < rs_[0]:
                 bo_scaler = bo_norm[0]
@@ -290,7 +293,7 @@ def _build_inv_bo_interpolation(bot, pvt):
     }
 
 
-def _build_inv_bo_uo_interpolation(vot, inv_bo_interp):
+def _build_inv_bo_uo_interpolation(vot, inv_bo_interp, pvt):
     """Build 1/BoUo interpolation table."""
     p_norm = np.array([])
     for rs in vot:
@@ -298,22 +301,56 @@ def _build_inv_bo_uo_interpolation(vot, inv_bo_interp):
     p_norm = np.unique(p_norm)
     p_norm = np.sort(p_norm)
 
-    interp_f = RegularGridInterpolator(
+    rs_ = np.array(list(vot))
+    uo_comp = []
+    for rsi in rs_:
+        p_norm_ = vot[rsi]['PRES_NORM']
+        pres_ = vot[rsi]['PRES']
+        uo_ = vot[rsi]['UO']
+        comp_ = (uo_[1:] - uo_[:-1]) / (pres_[1:] - pres_[:-1]) / uo_[:-1]
+        uo_comp.append(np.interp(p_norm, p_norm_[:-1], comp_))
+    uo_comp = np.array(uo_comp)
+    interp_comp = RegularGridInterpolator((rs_, p_norm), uo_comp)
+
+    rs = np.concatenate([rs_, pvt['RS']])
+    rs = np.unique(rs)
+    rs = np.sort(rs)
+
+    p_max = np.max(pvt['PRES']) + EPS
+    uo_inv = []
+    for rsi in rs:
+        if rsi in vot:
+            uo_inv.append(1/np.interp(p_norm, vot[rsi]['PRES_NORM'], vot[rsi]['UO']))
+        else:
+            if rsi < rs_[0]:
+                comp_ = uo_comp[0]
+            elif rsi > rs_[-1]:
+                comp_ = uo_comp[-1]
+            else:
+                rs_vector = np.repeat([rsi], p_norm.shape[0])
+                comp_ = interp_comp(np.stack([rs_vector, p_norm], axis=1))
+            bo_sat = 1/np.interp(rsi, pvt['RS'], 1/pvt['BO'])
+            bouo_sat = 1/np.interp(rsi, pvt['RS'], 1/pvt['UO']/pvt['BO'])
+            uo = [bouo_sat / bo_sat]
+            psat = np.interp(rsi, pvt['RS'], pvt['PRES'])
+            pres = psat + (p_max - psat) * p_norm
+            for i in range(1, p_norm.shape[0]):
+                uo.append(uo[i-1] + comp_[i-1] * (pres[i] - pres[i-1]) * uo[i-1])
+            uo_inv.append(1/np.array(uo))
+
+
+    interp_inv_bo = RegularGridInterpolator(
         (inv_bo_interp['RS'], inv_bo_interp['PRES_NORM']),
         inv_bo_interp['1/BO'],
         bounds_error=False,
         fill_value=None,
     )
 
-    rs = np.array(list(vot))
     bovo_inv = []
-    for rsi in vot:
-        bo_inv = interp_f(
-            np.stack(
-                [np.repeat([rsi],vot[rsi]['PRES_NORM'].shape[0]), vot[rsi]['PRES_NORM']], axis=1
-        ))
-        vo_inv = vot[rsi]['1/UO']
-        bovo_inv.append(np.interp(p_norm, vot[rsi]['PRES_NORM'], bo_inv * vo_inv))
+    for rsi, uo_inv_ in zip(rs, uo_inv):
+        rs_vector = np.repeat([rsi], p_norm.shape[0])
+        bo_inv = interp_inv_bo(np.stack([rs_vector, p_norm], axis=1))
+        bovo_inv.append(bo_inv * uo_inv_)
     bovo_inv = np.array(bovo_inv)
 
     return {
@@ -424,6 +461,7 @@ def main():
         [152.7532, 450],  #Undersaturated, has undersaturated
         [275.5254, 450],  #Saturated, no undersaturated
         [275.5254, 510],  #Undersaturated, no undersaturated
+        [100., 500],  #Not in table
     ])
     x = get_pvt_values(pvt[0], data, check_psat=False)
 
