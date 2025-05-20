@@ -15,14 +15,14 @@ from rsimpy.cmg.datreader import dat_pvt
 def _plot_errors(key, interp_values, original_values):
     _, ax = plt.subplots(1, 2, figsize=(12, 5))
 
-            # Scatter plot: Original vs Interpolated
+    # Scatter plot: Original vs Interpolated
     ax[0].scatter(original_values, interp_values, alpha=0.5)
     ax[0].set_xlabel(f"Original {key}")
     ax[0].set_ylabel(f"Interpolated {key}")
     ax[0].set_title(f"Scatter plot of {key}: Original vs Interpolated")
     ax[0].grid(True)
 
-            # Histogram of differences
+    # Histogram of differences
     diff = original_values - interp_values
     ax[1].hist(diff, bins=50, alpha=0.7)
     ax[1].set_xlabel("Original - Interpolated")
@@ -32,6 +32,24 @@ def _plot_errors(key, interp_values, original_values):
 
     plt.tight_layout()
     plt.show()
+
+
+def _save_worst(rs, pres, key, interp_values, original_values):
+    """Save the n most offending samples to CSV."""
+    data = np.stack([rs, pres, original_values, interp_values], axis=1)
+    n = 10000
+    diff = np.abs(original_values - interp_values)
+    idx = np.argsort(diff)[-n:][::-1]
+    offending_samples = data[idx]
+    csv_path = f"./offending_{key}.csv"
+    np.savetxt(
+        csv_path,
+        offending_samples,
+        delimiter=",",
+        header="RS,PRES,Original,Interpolated",
+        comments="")
+    print(f"Saved {n} most offending samples for {key} to {csv_path}")
+    return csv_path
 
 
 class TestTemplate(unittest.TestCase):
@@ -55,8 +73,6 @@ class TestTemplate(unittest.TestCase):
         interp_ = dat_pvt.get_pvt_values(pvt[0], data, check_psat=False)
 
         for key, interp_values in interp_.items():
-            if key in ['RS','PRES']:
-                continue
             key_ = key.replace("U", "VIS")
             if key_ in file_read:
                 original_values = file_read[key_].values.flatten()
@@ -66,24 +82,9 @@ class TestTemplate(unittest.TestCase):
                 print(f"   Max relative diff.: {
                     np.max(np.abs(original_values - interp_values)/original_values)*100:.4f}%")
                 if corr < 0.99999:
-                    # Save the n most offending samples to CSV
-                    data = np.stack([rs, pres, original_values, interp_values], axis=1)
-                    n = 10000
-                    diff = np.abs(original_values - interp_values)
-                    idx = np.argsort(diff)[-n:][::-1]
-                    offending_samples = data[idx]
-                    csv_path = f"./offending_{key}.csv"
-                    np.savetxt(
-                        csv_path,
-                        offending_samples,
-                        delimiter=",",
-                        header="RS,PRES,Original,Interpolated",
-                        comments="")
-                    print(f"Saved {n} most offending samples for {key} to {csv_path}")
-
+                    csv_path = _save_worst(rs, pres, key, interp_values, original_values)
                     _plot_errors(key, interp_values, original_values)
-                    self.assertTrue(
-                        corr > 0.99999,
+                    self.assertTrue(corr > 0.99999,
                         f"Correlation for {key} is too low: {corr:.6f}. "
                         f"Check offending samples saved to {csv_path}")
 
