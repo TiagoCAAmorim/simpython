@@ -186,8 +186,8 @@ def _process_pvt_lines(table, num_tables, z_transform, verbose=False):
 
     table = {
         'sat': pd.DataFrame(pvt),
-        'usat_bo': _build_bo_interpolation(bot, pvt),
-        'usat_uo': _build_uo_interpolation(uot, pvt),
+        'usat_bo': _build_interpolation(bot, pvt, 'BO'),
+        'usat_uo': _build_interpolation(uot, pvt, 'UO'),
     }
 
     return table
@@ -275,19 +275,19 @@ def _get_compressibility(tables):
     return rs, p_norm, comp, interp_comp
 
 
-def _build_bo_interpolation(bot, pvt):
-    """Build Bo interpolation table."""
-    rs_, p_norm, comp, interp_comp = _get_compressibility(bot)
+def _build_interpolation(table, pvt, col_name):
+    """Build interpolation table."""
+    rs_, p_norm, comp, interp_comp = _get_compressibility(table)
 
     rs = np.concatenate([rs_, pvt['RS']])
-    rs = np.unique(rs)
-    rs = np.sort(rs)
+    rs = np.sort(np.unique(rs))
 
     p_max = np.max(pvt['PRES']) + EPS
-    bo = []
+    vals = []
+
     for rsi in rs:
-        if rsi in bot:
-            bo.append(np.interp(p_norm, bot[rsi]['PRES_NORM'], bot[rsi]['val']))
+        if rsi in table:
+            vals.append(np.interp(p_norm, table[rsi]['PRES_NORM'], table[rsi]['val']))
         else:
             if rsi < rs_[0]:
                 comp_ = comp[0]
@@ -296,54 +296,18 @@ def _build_bo_interpolation(bot, pvt):
             else:
                 rs_vector = np.repeat([rsi], p_norm.shape[0])
                 comp_ = interp_comp(np.stack([rs_vector, p_norm], axis=1))
-            bo_sat = np.interp(rsi, pvt['RS'], pvt['BO'])
-            bo_ = [bo_sat]
+            val_sat = np.interp(rsi, pvt['RS'], pvt[col_name])
+            vals_ = [val_sat]
             psat = np.interp(rsi, pvt['RS'], pvt['PRES'])
             pres = psat + (p_max - psat) * p_norm
             for i in range(1, p_norm.shape[0]):
-                bo_.append(bo_[i-1] + comp_[i-1] * (pres[i] - pres[i-1]) * bo_[i-1])
-            bo.append(bo_)
+                vals_.append(vals_[i-1] + comp_[i-1] * (pres[i] - pres[i-1]) * vals_[i-1])
+            vals.append(vals_)
 
     return {
         'RS': rs,
         'PRES_NORM': p_norm,
-        'BO': np.array(bo),
-    }
-
-
-def _build_uo_interpolation(uot, pvt):
-    """Build Uo interpolation table."""
-    rs_, p_norm, comp, interp_comp = _get_compressibility(uot)
-
-    rs = np.concatenate([rs_, pvt['RS']])
-    rs = np.unique(rs)
-    rs = np.sort(rs)
-
-    p_max = np.max(pvt['PRES']) + EPS
-    uo = []
-    for rsi in rs:
-        if rsi in uot:
-            uo.append(np.interp(p_norm, uot[rsi]['PRES_NORM'], uot[rsi]['val']))
-        else:
-            if rsi < rs_[0]:
-                comp_ = comp[0]
-            elif rsi > rs_[-1]:
-                comp_ = comp[-1]
-            else:
-                rs_vector = np.repeat([rsi], p_norm.shape[0])
-                comp_ = interp_comp(np.stack([rs_vector, p_norm], axis=1))
-            uo_sat = np.interp(rsi, pvt['RS'], pvt['UO'])
-            uo_ = [uo_sat]
-            psat = np.interp(rsi, pvt['RS'], pvt['PRES'])
-            pres = psat + (p_max - psat) * p_norm
-            for i in range(1, p_norm.shape[0]):
-                uo_.append(uo_[i-1] + comp_[i-1] * (pres[i] - pres[i-1]) * uo_[i-1])
-            uo.append(uo_)
-
-    return {
-        'RS': rs,
-        'PRES_NORM': p_norm,
-        'UO': np.array(uo),
+        col_name: np.array(vals),
     }
 
 
