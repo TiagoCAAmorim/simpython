@@ -33,7 +33,7 @@ except ImportError:
 
 
 COLS = ['PRES', 'RS', 'BO', 'EG', 'UO', 'UG']
-EPS = 1e-4
+INTERP_PTS = 1000
 
 # MARK: Read
 def get_from_dat(file_path, abs_path=None, encoding='utf-8', verbose=False, _debug=False):
@@ -242,7 +242,7 @@ def _process_bot_vot(tables, pvt):
         psat_values = pvt['PRES']
         rs_values = pvt['RS']
         interpolated_rs = np.interp(values[0, 0], psat_values, rs_values)
-        p_max = np.max(pvt['PRES']) + EPS
+        p_max = np.max(pvt['PRES'])
         p_norm = (values[:, 0] - values[0, 0]) / (p_max - values[0, 0])
 
         output[interpolated_rs] = {
@@ -254,54 +254,50 @@ def _process_bot_vot(tables, pvt):
     return output
 
 
-def _get_compressibility(tables):
+def _get_compressibility(tables, p_norm):
     """Build compressibility table, and interpolator."""
-    p_norm = np.array([])
-    for rs in tables:
-        p_norm = np.append(p_norm, tables[rs]['PRES_NORM'])
-    p_norm = np.unique(p_norm)
-    p_norm = np.sort(p_norm)
-
-    rs = np.array(list(tables))
+    rs = np.sort(np.array(list(tables)))
     comp = []
     for rsi in rs:
-        p_norm_ = tables[rsi]['PRES_NORM']
-        pres_ = tables[rsi]['PRES']
-        val_ = tables[rsi]['val']
+        pres = tables[rsi]['PRES']
+        val = tables[rsi]['val']
+
+        pres_ = np.linspace(pres[0], pres[-1], num=INTERP_PTS)
+        val_ = 1/np.interp(pres_, pres, 1/val)
+
         comp_ = (val_[1:] - val_[:-1]) / (pres_[1:] - pres_[:-1]) / val_[:-1]
-        comp.append(np.interp(p_norm, p_norm_[:-1], comp_))
-    comp = np.array(comp)
-    interp_comp = RegularGridInterpolator((rs, p_norm), comp)
-    return rs, p_norm, comp, interp_comp
+        comp.append(np.concatenate([comp_, comp_[-1:]]))
+    interp_comp = RegularGridInterpolator((rs, p_norm), np.array(comp))
+    return rs, comp, interp_comp
 
 
 def _build_interpolation(table, pvt, col_name):
     """Build interpolation table."""
-    rs_, p_norm, comp, interp_comp = _get_compressibility(table)
+    p_norm = np.linspace(0, 1, num=INTERP_PTS)
+    rs_undersat, comp, interp_comp = _get_compressibility(table, p_norm)
 
-    rs = np.concatenate([rs_, pvt['RS']])
+    rs = np.concatenate([rs_undersat, pvt['RS']])
     rs = np.sort(np.unique(rs))
 
-    p_max = np.max(pvt['PRES']) + EPS
-    vals = []
+    p_max = np.max(pvt['PRES'])
 
+    vals = []
     for rsi in rs:
         if rsi in table:
-            vals.append(np.interp(p_norm, table[rsi]['PRES_NORM'], table[rsi]['val']))
+            vals.append(1/np.interp(p_norm, table[rsi]['PRES_NORM'], 1/table[rsi]['val']))
         else:
-            if rsi < rs_[0]:
+            if rsi < rs_undersat[0]:
                 comp_ = comp[0]
-            elif rsi > rs_[-1]:
+            elif rsi > rs_undersat[-1]:
                 comp_ = comp[-1]
             else:
                 rs_vector = np.repeat([rsi], p_norm.shape[0])
                 comp_ = interp_comp(np.stack([rs_vector, p_norm], axis=1))
-            val_sat = np.interp(rsi, pvt['RS'], pvt[col_name])
-            vals_ = [val_sat]
+            vals_ = [1/np.interp(rsi, pvt['RS'], 1/pvt[col_name])]
             psat = np.interp(rsi, pvt['RS'], pvt['PRES'])
             pres = psat + (p_max - psat) * p_norm
-            for i in range(1, p_norm.shape[0]):
-                vals_.append(vals_[i-1] + comp_[i-1] * (pres[i] - pres[i-1]) * vals_[i-1])
+            for i in range(1, INTERP_PTS):
+                vals_.append(vals_[i-1] * (1 + comp_[i-1] * (pres[i] - pres[i-1])))
             vals.append(vals_)
 
     return {
@@ -396,6 +392,34 @@ def get_psat(table, rs):
     return np.interp(rs, sat['RS'], sat['PRES'])
 
 
+def _get_p_norm(p, psat, sat):
+    """Get normalized undersat pressure."""
+    p_max = sat['PRES'].max()
+    p_norm = np.where((p_max - psat) <= 0, 0, (p - psat) / (p_max - psat))
+    return p_norm
+
+
+def _get_bo_uo(table, p, rs, col_name, psat=None):
+    if 'sat' not in table:
+        raise ValueError("Missing saturated data in PVT table.")
+    if f'usat_{col_name.lower()}' not in table:
+        raise ValueError(f"Missing undersaturated {col_name.title()} data in PVT table.")
+
+    vals = table[f'usat_{col_name.lower()}']
+
+    interp = RegularGridInterpolator(
+        (vals['RS'], vals['PRES_NORM']),
+        vals[col_name.upper()],
+        bounds_error=False,
+        fill_value=None,
+    )
+    sat = table['sat']
+    if psat is None:
+        psat = get_psat(table, rs)
+    p_norm = _get_p_norm(p, psat, sat)
+    return interp(np.stack([rs, p_norm], axis=1))
+
+
 def get_bo(table, p, rs, psat=None):
     """
     Get oil formation volume factor for a given pressure and solubility ratio.
@@ -424,24 +448,7 @@ def get_bo(table, p, rs, psat=None):
     float
         Oil formation volume factor.
     """
-    if 'sat' not in table:
-        raise ValueError("Missing saturated data in PVT table.")
-    if 'usat_bo' not in table:
-        raise ValueError("Missing undersaturated Bo data in PVT table.")
-
-    bo = table['usat_bo']
-
-    interp_bo = RegularGridInterpolator(
-        (bo['RS'], bo['PRES_NORM']),
-        bo['BO'],
-        bounds_error=False,
-        fill_value=None,
-    )
-    sat = table['sat']
-    if psat is None:
-        psat = get_psat(table, rs)
-    p_norm = (p - psat) / (sat['PRES'].max() + EPS - psat)
-    return interp_bo(np.stack([rs, p_norm], axis=1))
+    return _get_bo_uo(table, p, rs, 'BO', psat)
 
 
 def get_uo(table, p, rs, psat=None):
@@ -472,24 +479,7 @@ def get_uo(table, p, rs, psat=None):
     float
         Oil viscosity.
     """
-    if 'sat' not in table:
-        raise ValueError("Missing saturated data in PVT table.")
-    if 'usat_uo' not in table:
-        raise ValueError("Missing undersaturated Uo data in PVT table.")
-
-    uo = table['usat_uo']
-    interp_uo = RegularGridInterpolator(
-        (uo['RS'], uo['PRES_NORM']),
-        uo['UO'],
-        bounds_error=False,
-        fill_value=None,
-    )
-
-    sat = table['sat']
-    if psat is None:
-        psat = get_psat(table, rs)
-    p_norm = (p - psat) / (sat['PRES'].max() + EPS - psat)
-    return interp_uo(np.stack([rs, p_norm], axis=1))
+    return _get_bo_uo(table, p, rs, 'UO', psat)
 
 
 def get_pvt_values(table, data, check_psat=True):
