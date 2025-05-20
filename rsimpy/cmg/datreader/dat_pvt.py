@@ -5,7 +5,7 @@ Functions
 ---------
 get_from_dat(file_path, abs_path=None, encoding='utf-8', verbose=False):
     Get PVT tables from a CMG dat file.
-get_pvt_from_dat_data(data, verbose=False):
+get_from_dat_data(data, verbose=False):
     Get PVTtables from a CMG dat file processed data.
 get_eg(table, p):
     Get gas expansion factor for a given pressure.
@@ -184,10 +184,15 @@ def _process_pvt_lines(table, num_tables, z_transform, verbose=False):
     bot = _process_bot_vot(table['BOT'], pvt)
     uot = _process_bot_vot(table['VOT'], pvt)
 
+    rs_bo, bo = _build_interpolation(bot, pvt, 'BO')
+    rs_uo, uo = _build_interpolation(uot, pvt, 'UO')
+
     table = {
         'sat': pd.DataFrame(pvt),
-        'usat_bo': _build_interpolation(bot, pvt, 'BO'),
-        'usat_uo': _build_interpolation(uot, pvt, 'UO'),
+        'rs_bo': rs_bo,
+        'bo': bo,
+        'rs_uo': rs_uo,
+        'uo': uo,
     }
 
     return table
@@ -300,11 +305,7 @@ def _build_interpolation(table, pvt, col_name):
                 vals_.append(vals_[i-1] * (1 + comp_[i-1] * (pres[i] - pres[i-1])))
             vals.append(vals_)
 
-    return {
-        'RS': rs,
-        'PRES_NORM': p_norm,
-        col_name: np.array(vals),
-    }
+    return np.array(rs), np.array(vals)
 
 
 # MARK: Get
@@ -402,14 +403,17 @@ def _get_p_norm(p, psat, sat):
 def _get_bo_uo(table, p, rs, col_name, psat=None):
     if 'sat' not in table:
         raise ValueError("Missing saturated data in PVT table.")
-    if f'usat_{col_name.lower()}' not in table:
+    if f'rs_{col_name.lower()}' not in table:
+        raise ValueError(f"Missing undersaturated {col_name.title()} data in PVT table.")
+    if col_name.lower() not in table:
         raise ValueError(f"Missing undersaturated {col_name.title()} data in PVT table.")
 
-    vals = table[f'usat_{col_name.lower()}']
+    rs_table = table[f'rs_{col_name.lower()}']
+    vals = table[col_name.lower()]
+    pres_norm = np.linspace(0, 1, num=vals.shape[1])
 
     interp = RegularGridInterpolator(
-        (vals['RS'], vals['PRES_NORM']),
-        vals[col_name.upper()],
+        (rs_table, pres_norm), vals,
         bounds_error=False,
         fill_value=None,
     )
@@ -502,13 +506,6 @@ def get_pvt_values(table, data, check_psat=True):
         If False, will set pressure to Psat if it is smaller.
         Default: True.
     """
-    if len(table) != 3:
-        raise ValueError(f"Expected 3 items in PVT table. Found {len(table)}.")
-
-    for key in ['sat', 'usat_bo', 'usat_uo']:
-        if key not in table:
-            raise ValueError(f"Missing {key} in PVT table.")
-
     rs = data[:, 0]
     p = data[:, 1]
 
