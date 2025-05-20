@@ -4,10 +4,11 @@ outreader module tests
 import unittest
 
 from pathlib import Path
-import context  # noqa # pylint: disable=unused-import
-from rsimpy.cmg.datreader import dat_dates, dat_parser, dat_run, sch_to_daily, dat_pvt
 import os
 import numpy as np
+
+import context  # noqa # pylint: disable=unused-import
+from rsimpy.cmg.datreader import dat_dates, dat_parser, dat_run, sch_to_daily, dat_pvt
 
 
 def compare_files(file1, file2):
@@ -173,6 +174,7 @@ class TestTemplate(unittest.TestCase):
             5400.01,
             "Second value for P11 is not correct")
 
+
     def test_add_dates(self):
         """Check adding dates to a schedule file"""
         file_path = Path('../SimModels/Unisim_iv_2024/hist/Schedule_history_2024_mod.hist')
@@ -191,6 +193,7 @@ class TestTemplate(unittest.TestCase):
 
         os.remove(file_path)
         os.remove(output_path)
+
 
     def test_read_pvt(self):
         """Check reading PVT data in dat file"""
