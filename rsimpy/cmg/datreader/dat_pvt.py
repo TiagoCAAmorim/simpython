@@ -7,6 +7,18 @@ get_from_dat(file_path, abs_path=None, encoding='utf-8', verbose=False):
     Get PVT tables from a CMG dat file.
 get_pvt_from_dat_data(data, verbose=False):
     Get PVTtables from a CMG dat file processed data.
+get_eg(table, p):
+    Get gas expansion factor for a given pressure.
+get_ug(table, p, eg=None):
+    Get gas viscosity for a given pressure.
+get_psat(table, rs):
+    Get saturation pressure for a given solubility ratio.
+get_bo(table, p, rs, psat=None):
+    Get oil formation volume factor for a given pressure and solubility ratio.
+get_uo(table, p, rs, psat=None, bo=None):
+    Get oil viscosity for a given pressure and solubility ratio.
+get_pvt_values(table, data, check_psat=True)
+    Get PVT values for a given RS and Pressure.
 """
 import numpy as np
 import pandas as pd
@@ -71,7 +83,7 @@ def get_from_dat(file_path, abs_path=None, encoding='utf-8', verbose=False, _deb
     return get_from_dat_data(parser.get(), verbose=verbose)
 
 
-def get_from_dat_data(data, verbose=False): # pylint: disable=too-many-branches
+def get_from_dat_data(data, verbose=False):
     """
     Get PVT tables from a CMG dat file processed data.
 
@@ -130,14 +142,13 @@ def get_from_dat_data(data, verbose=False): # pylint: disable=too-many-branches
             if len(table) == 0:
                 raise ValueError("VOT keyword found before PVT keyword.")
             table['VOT'].append(line)
-    if len(table) != 0:
-        tables.append(
-            _process_pvt_lines(table, len(tables), alpha / t_res, verbose=verbose)
-        )
-
-    if len(tables) == 0:
+    if len(table) == 0:
         if verbose:
             print('No PVT keywords found.')
+        return []
+    tables.append(
+        _process_pvt_lines(table, len(tables), alpha / t_res, verbose=verbose)
+    )
 
     return tables
 
@@ -170,15 +181,15 @@ def _process_pvt_lines(table, num_tables, z_transform, verbose=False):
     """Process PVT data from lines in dat file."""
     pvt = _process_pvt(table['PVT'], num_tables, z_transform, verbose)
     bot = _process_bot_vot(table['BOT'], pvt)
-    vot = _process_bot_vot(table['VOT'], pvt)
+    uot = _process_bot_vot(table['VOT'], pvt)
 
     bot = _build_inv_bo_interpolation(bot, pvt)
-    vot = _build_inv_bo_uo_interpolation(vot, bot, pvt)
+    uot = _build_inv_bo_uo_interpolation(uot, bot, pvt)
 
     table = {
         'sat': pd.DataFrame(pvt),
         'usat_bo': bot,
-        'usat_vo': vot,
+        'usat_uo': uot,
     }
 
     return table
@@ -304,9 +315,9 @@ def _build_inv_bo_interpolation(bot, pvt):
     }
 
 
-def _build_inv_bo_uo_interpolation(vot, inv_bo_interp, pvt):
+def _build_inv_bo_uo_interpolation(uot, inv_bo_interp, pvt):
     """Build 1/BoUo interpolation table."""
-    rs_, p_norm, comp, interp_comp = _get_compressibility(vot)
+    rs_, p_norm, comp, interp_comp = _get_compressibility(uot)
 
     rs = np.concatenate([rs_, pvt['RS']])
     rs = np.unique(rs)
@@ -315,8 +326,8 @@ def _build_inv_bo_uo_interpolation(vot, inv_bo_interp, pvt):
     p_max = np.max(pvt['PRES']) + EPS
     uo_inv = []
     for rsi in rs:
-        if rsi in vot:
-            uo_inv.append(1/np.interp(p_norm, vot[rsi]['PRES_NORM'], vot[rsi]['val']))
+        if rsi in uot:
+            uo_inv.append(1/np.interp(p_norm, uot[rsi]['PRES_NORM'], uot[rsi]['val']))
         else:
             if rsi < rs_[0]:
                 comp_ = comp[0]
@@ -342,18 +353,210 @@ def _build_inv_bo_uo_interpolation(vot, inv_bo_interp, pvt):
         fill_value=None,
     )
 
-    bovo_inv = []
+    bouo_inv = []
     for rsi, uo_inv_ in zip(rs, uo_inv):
         rs_vector = np.repeat([rsi], p_norm.shape[0])
         bo_inv = interp_inv_bo(np.stack([rs_vector, p_norm], axis=1))
-        bovo_inv.append(bo_inv * uo_inv_)
-    bovo_inv = np.array(bovo_inv)
+        bouo_inv.append(bo_inv * uo_inv_)
+    bouo_inv = np.array(bouo_inv)
 
     return {
         'RS': rs,
         'PRES_NORM': p_norm,
-        '1/BOUO': bovo_inv,
+        '1/BOUO': bouo_inv,
     }
+
+
+def get_eg(table, p):
+    """
+    Get gas expansion factor for a given pressure.
+
+    This function linearly interpolates the inverse of
+    gas formation volume factor with pressure: 1/Bg = Eg = f(p)
+
+    Parameters
+    ----------
+    table : dict
+        PVT table with the following keys:
+        - 'sat': Saturated table (Pres = Psat).
+        - 'usat_bo': Undersaturated table for BO (Pres > Psat).
+        - 'usat_uo': Undersaturated  table for UO (Pres > Psat).
+    p : np.array
+        Pressure.
+
+    Returns
+    -------
+    float
+        Gas expansion factor (Eg=1/Bg).
+    """
+    if 'sat' not in table:
+        raise ValueError("Missing saturated data in PVT table.")
+    sat = table['sat']
+    return np.interp(p, sat['PRES'], sat['EG'])
+
+
+def get_ug(table, p, eg=None):
+    """
+    Get gas viscosity for a given pressure.
+
+    This function linearly interpolates the inverse of gas viscosity
+    times gas formation volume factor with pressure:
+    1/(Ug*Bg) = Eg/Ug = f(p)
+
+    Parameters
+    ----------
+    table : dict
+        PVT table with the following keys:
+        - 'sat': Saturated table (Pres = Psat).
+        - 'usat_bo': Undersaturated table for BO (Pres > Psat).
+        - 'usat_uo': Undersaturated  table for UO (Pres > Psat).
+    p : np.array
+        Pressure.
+    eg : np.array, optional
+        Gas expansion factor. If not provided, it will be calculated
+        using the get_eg function.
+
+    Returns
+    -------
+    float
+        Gas viscosity.
+    """
+    if 'sat' not in table:
+        raise ValueError("Missing saturated data in PVT table.")
+    sat = table['sat']
+    if eg is None:
+        eg = get_eg(table, p)
+    return eg/np.interp(p, sat['PRES'], 1/sat['UG']*sat['EG'])
+
+
+def get_psat(table, rs):
+    """
+    Get saturation pressure for a given solubility ratio.
+
+    Saturation pressure is linearly interpolated with solubility ratio:
+    Psat = f(rs)
+
+    Parameters
+    ----------
+    table : dict
+        PVT table with the following keys:
+        - 'sat': Saturated table (Pres = Psat).
+        - 'usat_bo': Undersaturated table for BO (Pres > Psat).
+        - 'usat_uo': Undersaturated  table for UO (Pres > Psat).
+    rs : np.array
+        Solubility ratio.
+
+    Returns
+    -------
+    float
+        Saturation pressure.
+    """
+    if 'sat' not in table:
+        raise ValueError("Missing saturated data in PVT table.")
+    sat = table['sat']
+    return np.interp(rs, sat['RS'], sat['PRES'])
+
+
+def get_bo(table, p, rs, psat=None):
+    """
+    Get oil formation volume factor for a given pressure and solubility ratio.
+
+    This function linearly interpolates the inverse of oil formation
+    volume factor with solubility ration and normalized pressure above
+    saturation pressure: 1/Bo = f(rs, (p-psat)/(pmax-psat))
+
+    Parameters
+    ----------
+    table : dict
+        PVT table with the following keys:
+        - 'sat': Saturated table (Pres = Psat).
+        - 'usat_bo': Undersaturated table for BO (Pres > Psat).
+        - 'usat_uo': Undersaturated  table for UO (Pres > Psat).
+    p : np.array
+        Pressure.
+    rs : np.array
+        Solubility ratio.
+    psat : np.array, optional
+        Saturation pressure. If not provided, it will be calculated
+        from saturated data.
+
+    Returns
+    -------
+    float
+        Oil formation volume factor.
+    """
+    if 'sat' not in table:
+        raise ValueError("Missing saturated data in PVT table.")
+    if 'usat_bo' not in table:
+        raise ValueError("Missing undersaturated Bo data in PVT table.")
+
+    inv_bo = table['usat_bo']
+
+    interp_bo = RegularGridInterpolator(
+        (inv_bo['RS'], inv_bo['PRES_NORM']),
+        inv_bo['1/BO'],
+        bounds_error=False,
+        fill_value=None,
+    )
+    sat = table['sat']
+    if psat is None:
+        psat = get_psat(table, rs)
+    p_norm = (p - psat) / (sat['PRES'].max() + EPS - psat)
+    return 1/interp_bo(np.stack([rs, p_norm], axis=1))
+
+
+def get_uo(table, p, rs, psat=None, bo=None):
+    """
+    Get oil viscosity for a given pressure and solubility ratio.
+
+    This function linearly interpolates the inverse of oil formation
+    volume factor times the inverse of oil viscosity with
+    solubility ration and normalized pressure above
+    saturation pressure: 1/(Bo*Uo) = f(rs, (p-psat)/(pmax-psat))
+
+    Parameters
+    ----------
+    table : dict
+        PVT table with the following keys:
+        - 'sat': Saturated table (Pres = Psat).
+        - 'usat_bo': Undersaturated table for BO (Pres > Psat).
+        - 'usat_uo': Undersaturated  table for UO (Pres > Psat).
+    p : np.array
+        Pressure.
+    rs : np.array
+        Solubility ratio.
+    psat : np.array, optional
+        Saturation pressure. If not provided, it will be calculated
+        from saturated data.
+    bo : np.array, optional
+        Oil formation volume factor. If not provided, it will be
+        calculated using the get_bo function.
+
+    Returns
+    -------
+    float
+        Oil viscosity.
+    """
+    if 'sat' not in table:
+        raise ValueError("Missing saturated data in PVT table.")
+    if 'usat_uo' not in table:
+        raise ValueError("Missing undersaturated Uo data in PVT table.")
+
+    inv_bouo = table['usat_uo']
+    interp_bouo = RegularGridInterpolator(
+        (inv_bouo['RS'], inv_bouo['PRES_NORM']),
+        inv_bouo['1/BOUO'],
+        bounds_error=False,
+        fill_value=None,
+    )
+
+    sat = table['sat']
+    if psat is None:
+        psat = get_psat(table, rs)
+    if bo is None:
+        bo = get_bo(table, p, rs)
+    p_norm = (p - psat) / (sat['PRES'].max() + EPS - psat)
+    return 1/bo/interp_bouo(np.stack([rs, p_norm], axis=1))
 
 
 def get_pvt_values(table, data, check_psat=True):
@@ -366,56 +569,36 @@ def get_pvt_values(table, data, check_psat=True):
         PVT table with the following keys:
         - 'sat': Saturated table (Pres = Psat).
         - 'usat_bo': Undersaturated table for BO (Pres > Psat).
-        - 'usat_vo': Undersaturated  table for UO (Pres > Psat).
+        - 'usat_uo': Undersaturated  table for UO (Pres > Psat).
     data : np.array
         Array of (np_points, 2) with the first column being
         solution gas-oil ratio (Rs) and the second
         column being pressure.
     check_psat : bool
         If True, check if Psat is smaller or equal to the pressure.
+        If False, will set pressure to Psat if it is smaller.
         Default: True.
     """
     if len(table) != 3:
         raise ValueError(f"Expected 3 items in PVT table. Found {len(table)}.")
 
-    for key in ['sat', 'usat_bo', 'usat_vo']:
+    for key in ['sat', 'usat_bo', 'usat_uo']:
         if key not in table:
             raise ValueError(f"Missing {key} in PVT table.")
 
     rs = data[:, 0]
     p = data[:, 1]
-    sat = table['sat']
-    psat = np.interp(rs, sat['RS'], sat['PRES'])
-    _check_pvt_limits(rs, p, sat, psat, check_psat)
 
-    eg = np.interp(p, sat['PRES'], sat['EG'])
-    ug = eg/np.interp(p, sat['PRES'], 1/sat['UG']*sat['EG'])
+    psat = get_psat(table, rs)
+    p = _check_pvt_limits(rs, p, table['sat'], psat, check_psat)
 
-    inv_bo = table['usat_bo']
-    inv_bovo = table['usat_vo']
-
-    interp_bo = RegularGridInterpolator(
-        (inv_bo['RS'], inv_bo['PRES_NORM']),
-        inv_bo['1/BO'],
-        bounds_error=False,
-        fill_value=None,
-    )
-    interp_bovo = RegularGridInterpolator(
-        (inv_bovo['RS'], inv_bovo['PRES_NORM']),
-        inv_bovo['1/BOUO'],
-        bounds_error=False,
-        fill_value=None,
-    )
-
-    p_norm = (p - psat) / (sat['PRES'].max() + EPS - psat)
-    bo = 1/interp_bo(np.stack([rs, p_norm], axis=1))
-    uo = 1/bo/interp_bovo(np.stack([rs, p_norm], axis=1))
+    eg = get_eg(table, p)
+    ug = get_ug(table, p, eg)
+    bo = get_bo(table, p, rs, psat)
+    uo = get_uo(table, p, rs, psat, bo)
 
     return {
-        'RS': rs,
-        'PRES': p,
         'PSAT': psat,
-        'PNORM': p_norm,
         'BO': bo,
         'EG': eg,
         'BG': 1/eg,
@@ -424,19 +607,20 @@ def get_pvt_values(table, data, check_psat=True):
     }
 
 
-def _check_pvt_limits(rs, p, sat, psat, check_psat):
-    if rs.min() < sat['RS'].min() or rs.max() > sat['RS'].max():
+def _check_pvt_limits(rs, p, sat_table, psat, check_psat):
+    if rs.min() < sat_table['RS'].min() or rs.max() > sat_table['RS'].max():
         range_rs = f"[{rs.min()}, {rs.max()}]"
-        range_ = f"[{sat['RS'].min()}, {sat['RS'].max()}]"
+        range_ = f"[{sat_table['RS'].min()}, {sat_table['RS'].max()}]"
         raise ValueError(f"RS values ({range_rs}) is out of range ({range_}).")
 
-    if p.min() < sat['PRES'].min() or p.max() > sat['PRES'].max():
+    if p.min() < sat_table['PRES'].min() or p.max() > sat_table['PRES'].max():
         range_p = f"[{p.min()}, {p.max()}]"
-        range_ = f"[{sat['PRES'].min()}, {sat['PRES'].max()}]"
+        range_ = f"[{sat_table['PRES'].min()}, {sat_table['PRES'].max()}]"
         raise ValueError(f"Pressure values ({range_p}) is out of range ({range_}).")
 
     if check_psat and np.any(p < psat):
         raise ValueError(f"{np.sum(p < psat)} pressure values less than associated Psat.")
+    return np.where(p < psat, psat, p)
 
 
 if __name__ == "__main__":
