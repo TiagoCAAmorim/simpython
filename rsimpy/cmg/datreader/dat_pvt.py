@@ -1,6 +1,12 @@
 """
 Module to PVT tables from CMG dat files.
 
+Keywords processed: PVT, BOT, VOT, DENSITY OIL, DENSITY GAS
+and GRAVITY GAS.
+Water density is not saved in PVT table.
+It is assumed all undersaturated data has is from the saturation
+pressure to the max pressure in the satured table.
+
 Functions
 ---------
 get_from_dat(file_path, abs_path=None, encoding='utf-8', verbose=False):
@@ -128,12 +134,19 @@ def get_from_dat_data(data, verbose=False):
     for line in data:
         if line[0] == 'TRES':
             t_res = float(line[1]) + t_delta
-        if line[0] == 'PVT':
+        elif line[0] == 'PVT':
             if len(table) != 0:
                 tables.append(
                     _process_pvt_lines(table, len(tables), alpha / t_res, verbose=verbose)
                 )
-            table = {'PVT': line, 'BOT':[], 'VOT': []}
+            table = {'PVT': line, 'BOT':[], 'VOT': [], 'DENOIL': -999.99, 'DENGAS': -999.99}
+        elif line[0] == 'DENSITY':
+            table[f'DEN{line[1]}'] = float(line[2])
+        elif line[0] == 'GRAVITY':
+            if line[1] == 'GAS':
+                table['DENGAS'] = float(line[2]) * 1.2222
+            else:
+                print(f"Unknown gravity option: {line[1]}. Expected 'GAS'.")
         elif line[0] == 'BOT':
             if len(table) == 0:
                 raise ValueError("BOT keyword found before PVT keyword.")
@@ -193,6 +206,8 @@ def _process_pvt_lines(table, num_tables, z_transform, verbose=False):
         'bo': bo,
         'rs_uo': rs_uo,
         'uo': uo,
+        'denoil': table['DENOIL'],
+        'dengas': table['DENGAS'],
     }
 
     return table
@@ -321,8 +336,12 @@ def get_eg(table, p):
     table : dict
         PVT table with the following keys:
         - 'sat': Saturated table (Pres = Psat).
-        - 'usat_bo': Undersaturated table for BO (Pres > Psat).
-        - 'usat_uo': Undersaturated  table for UO (Pres > Psat).
+        - 'rs_bo': Solubility ratio for undersaturated Bo table.
+        - 'bo': Undersaturated Bo table (Pres > Psat).
+        - 'rs_uo': Solubility ratio for undersaturated Uo table.
+        - 'uo': Undersaturated Uo table (Pres > Psat).
+        - 'denoil': Oil density.
+        - 'dengas': Gas density.
     p : np.array
         Pressure.
 
@@ -349,8 +368,12 @@ def get_ug(table, p):
     table : dict
         PVT table with the following keys:
         - 'sat': Saturated table (Pres = Psat).
-        - 'usat_bo': Undersaturated table for BO (Pres > Psat).
-        - 'usat_uo': Undersaturated  table for UO (Pres > Psat).
+        - 'rs_bo': Solubility ratio for undersaturated Bo table.
+        - 'bo': Undersaturated Bo table (Pres > Psat).
+        - 'rs_uo': Solubility ratio for undersaturated Uo table.
+        - 'uo': Undersaturated Uo table (Pres > Psat).
+        - 'denoil': Oil density.
+        - 'dengas': Gas density.
     p : np.array
         Pressure.
 
@@ -377,8 +400,12 @@ def get_psat(table, rs):
     table : dict
         PVT table with the following keys:
         - 'sat': Saturated table (Pres = Psat).
-        - 'usat_bo': Undersaturated table for BO (Pres > Psat).
-        - 'usat_uo': Undersaturated  table for UO (Pres > Psat).
+        - 'rs_bo': Solubility ratio for undersaturated Bo table.
+        - 'bo': Undersaturated Bo table (Pres > Psat).
+        - 'rs_uo': Solubility ratio for undersaturated Uo table.
+        - 'uo': Undersaturated Uo table (Pres > Psat).
+        - 'denoil': Oil density.
+        - 'dengas': Gas density.
     rs : np.array
         Solubility ratio.
 
@@ -437,8 +464,12 @@ def get_bo(table, p, rs, psat=None):
     table : dict
         PVT table with the following keys:
         - 'sat': Saturated table (Pres = Psat).
-        - 'usat_bo': Undersaturated table for BO (Pres > Psat).
-        - 'usat_uo': Undersaturated  table for UO (Pres > Psat).
+        - 'rs_bo': Solubility ratio for undersaturated Bo table.
+        - 'bo': Undersaturated Bo table (Pres > Psat).
+        - 'rs_uo': Solubility ratio for undersaturated Uo table.
+        - 'uo': Undersaturated Uo table (Pres > Psat).
+        - 'denoil': Oil density.
+        - 'dengas': Gas density.
     p : np.array
         Pressure.
     rs : np.array
@@ -468,8 +499,12 @@ def get_uo(table, p, rs, psat=None):
     table : dict
         PVT table with the following keys:
         - 'sat': Saturated table (Pres = Psat).
-        - 'usat_bo': Undersaturated table for BO (Pres > Psat).
-        - 'usat_uo': Undersaturated  table for UO (Pres > Psat).
+        - 'rs_bo': Solubility ratio for undersaturated Bo table.
+        - 'bo': Undersaturated Bo table (Pres > Psat).
+        - 'rs_uo': Solubility ratio for undersaturated Uo table.
+        - 'uo': Undersaturated Uo table (Pres > Psat).
+        - 'denoil': Oil density.
+        - 'dengas': Gas density.
     p : np.array
         Pressure.
     rs : np.array
@@ -486,6 +521,75 @@ def get_uo(table, p, rs, psat=None):
     return _get_bo_uo(table, p, rs, 'UO', psat)
 
 
+def get_rhoo(table, p, rs, bo=None, psat=None):
+    """
+    Get oil density for a given pressure and solubility ratio.
+
+    Parameters
+    ----------
+    table : dict
+        PVT table with the following keys:
+        - 'sat': Saturated table (Pres = Psat).
+        - 'rs_bo': Solubility ratio for undersaturated Bo table.
+        - 'bo': Undersaturated Bo table (Pres > Psat).
+        - 'rs_uo': Solubility ratio for undersaturated Uo table.
+        - 'uo': Undersaturated Uo table (Pres > Psat).
+        - 'denoil': Oil density.
+        - 'dengas': Gas density.
+    p : np.array
+        Pressure.
+    rs : np.array
+        Solubility ratio.
+    bo : np.array, optional
+        Oil formation volume factor. If not provided, it will be
+        calculated from undersaturated data.
+    psat : np.array, optional
+        Saturation pressure. If not provided, it will be calculated
+        from saturated data.
+
+    Returns
+    -------
+    float
+        Oil density.
+    """
+    if bo is None:
+        if psat is None:
+            psat = get_psat(table, rs)
+        bo = get_bo(table, p, rs, psat)
+    return (rs * table['dengas'] + table['denoil']) / bo
+
+
+def get_rhog(table, p, eg=None):
+    """
+    Get gas density for a given pressure.
+
+    Parameters
+    ----------
+    table : dict
+        PVT table with the following keys:
+        - 'sat': Saturated table (Pres = Psat).
+        - 'rs_bo': Solubility ratio for undersaturated Bo table.
+        - 'bo': Undersaturated Bo table (Pres > Psat).
+        - 'rs_uo': Solubility ratio for undersaturated Uo table.
+        - 'uo': Undersaturated Uo table (Pres > Psat).
+        - 'denoil': Oil density.
+        - 'dengas': Gas density.
+    p : np.array
+        Pressure.
+    eg : np.array, optional
+        Gas expansion factor. If not provided, it will be
+        calculated from saturated data.
+
+    Returns
+    -------
+    float
+        Gas density.
+    """
+    if eg is None:
+        eg = get_eg(table, p)
+    return table['dengas'] * eg
+
+
 def get_pvt_values(table, data, check_psat=True):
     """
     Get PVT values for a given RS and Pressure.
@@ -495,8 +599,12 @@ def get_pvt_values(table, data, check_psat=True):
     table : dict
         PVT table with the following keys:
         - 'sat': Saturated table (Pres = Psat).
-        - 'usat_bo': Undersaturated table for BO (Pres > Psat).
-        - 'usat_uo': Undersaturated  table for UO (Pres > Psat).
+        - 'rs_bo': Solubility ratio for undersaturated Bo table.
+        - 'bo': Undersaturated Bo table (Pres > Psat).
+        - 'rs_uo': Solubility ratio for undersaturated Uo table.
+        - 'uo': Undersaturated Uo table (Pres > Psat).
+        - 'denoil': Oil density.
+        - 'dengas': Gas density.
     data : np.array
         Array of (np_points, 2) with the first column being
         solution gas-oil ratio (Rs) and the second
@@ -516,6 +624,8 @@ def get_pvt_values(table, data, check_psat=True):
     ug = get_ug(table, p)
     bo = get_bo(table, p, rs, psat)
     uo = get_uo(table, p, rs, psat)
+    rhoo = get_rhoo(table, p, rs, bo, psat)
+    rhog = get_rhog(table, p)
 
     return {
         'PSAT': psat,
@@ -524,6 +634,8 @@ def get_pvt_values(table, data, check_psat=True):
         'BG': 1/eg,
         'UO': uo,
         'UG': ug,
+        'DENO': rhoo,
+        'DENG': rhog,
     }
 
 
