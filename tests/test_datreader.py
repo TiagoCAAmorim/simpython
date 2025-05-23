@@ -4,9 +4,11 @@ outreader module tests
 import unittest
 
 from pathlib import Path
-import context  # noqa # pylint: disable=unused-import
-from rsimpy.cmg.datreader import dat_dates, dat_parser, dat_run, sch_to_daily
 import os
+import numpy as np
+
+import context  # noqa # pylint: disable=unused-import
+from rsimpy.cmg.datreader import dat_dates, dat_parser, dat_run, sch_to_daily, dat_pvt
 
 
 def compare_files(file1, file2):
@@ -172,16 +174,17 @@ class TestTemplate(unittest.TestCase):
             5400.01,
             "Second value for P11 is not correct")
 
+
     def test_add_dates(self):
         """Check adding dates to a schedule file"""
-        file_path = Path('../SimModels/Unisim_iv_2024/hist/Schedule_history_2024_mod2.hist')
-        output_path = Path('../SimModels/Unisim_iv_2024/hist/Schedule_history_2024_mod2a.hist')
+        file_path = Path('../SimModels/Unisim_iv_2024/hist/Schedule_history_2024_mod.hist')
+        output_path = Path('../SimModels/Unisim_iv_2024/hist/Schedule_history_2024_mod_alt.hist')
         sch_to_daily.process(file_path, output_path, delta_days=5, encoding='utf-8')
 
         self.assertTrue(output_path.is_file(), "Output file was not created")
 
-        file_path = Path('../SimModels/Unisim_iv_2024/hist/Schedule_history_2024_mod2a.hist')
-        output_path = Path('../SimModels/Unisim_iv_2024/hist/Schedule_history_2024_mod2b.hist')
+        file_path = Path('../SimModels/Unisim_iv_2024/hist/Schedule_history_2024_mod_alt.hist')
+        output_path = Path('../SimModels/Unisim_iv_2024/hist/Schedule_history_2024_mod_alt2.hist')
         sch_to_daily.process(file_path, output_path, delta_days=5, encoding='utf-8')
 
         with open(file_path, 'r', encoding='utf-8') as f1:
@@ -190,6 +193,46 @@ class TestTemplate(unittest.TestCase):
 
         os.remove(file_path)
         os.remove(output_path)
+
+
+    def test_read_pvt(self):
+        """Check reading PVT data in dat file"""
+        path = '../SimModels/Unisim_iv_2024/dat_bo/base_case_bo.dat'
+        pvt = dat_pvt.get_from_dat(path, verbose=False)
+
+        self.assertEqual(len(pvt), 1, "Should read 1 PVT table")
+
+        data = np.array([
+            [152.7532, 270],  #Saturated, has undersaturated
+            [152.7532, 450],  #Undersaturated, has undersaturated
+            [275.5254, 450],  #Saturated, no undersaturated
+            [275.5254, 510],  #Undersaturated, no undersaturated
+        ])
+        interp_ = dat_pvt.get_pvt_values(pvt[0], data, check_psat=True)
+
+        true_ = {
+            'RS': [152.7532, 152.7532, 275.5254, 275.5254,],
+            'PRES': [270, 450, 450, 510],
+            'PSAT': [270, 270, 450, 450],
+            'PNORM': [0.0, 0.642857143, 0.0, 0.6],
+            'BO': [1.3877, 1.3595, 1.6554, 999.999],
+            'BG': [0.00373 , 0.00288, 0.00288, 0.00275],
+            'EG': [1/0.00373 , 1/0.00288, 1/0.00288, 1/0.00275],
+            'UO': [1.4887, 1.8318, 0.9242, 999.999],
+            'UG': [0.03638, 0.06156, 0.06156, 0.07026],
+        }
+
+        for key, values in true_.items():
+            for i, val in enumerate(values):
+                if val == 999.999:
+                    continue
+                self.assertAlmostEqual(
+                    interp_[key][i],
+                    val,
+                    msg=f"{i+1}th value for {key} is not correct",
+                    places=4
+                )
+
 
 if __name__ == '__main__':
     unittest.main()
