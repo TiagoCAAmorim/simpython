@@ -172,6 +172,10 @@ class KrelHandler:
         return len(self._krel_tables)
 
 
+    def __len__(self):
+        return self.get_number_of_tables()
+
+
 # MARK: Save Data
 
     def to_csv(self,
