@@ -70,7 +70,7 @@ class TestTemplate(unittest.TestCase):
         rs = file_read["RS"].values.flatten()
         pres = file_read["PRES"].values.flatten()
         data = np.stack([rs, pres], axis=1)
-        interp_ = dat_pvt.get_pvt_values(pvt[0], data, check_psat=False)
+        interp_ = dat_pvt.get_pvt_values(pvt[0], data, check_limits=False)
 
         for key, interp_values in interp_.items():
             key_ = key.replace("U", "VIS")
@@ -85,6 +85,7 @@ class TestTemplate(unittest.TestCase):
                 if corr < 0.99999:
                     csv_path = _save_worst(rs, pres, key, interp_values, original_values)
                     _plot_errors(key, interp_values, original_values)
+                    print(f"Offending samples saved to {csv_path}")
                     # self.assertTrue(corr > 0.99999,
                     #     f"Correlation for {key} is too low: {corr:.6f}. "
                     #     f"Check offending samples saved to {csv_path}")

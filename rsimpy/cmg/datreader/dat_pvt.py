@@ -4,7 +4,7 @@ Module to PVT tables from CMG dat files.
 Keywords processed: PVT, BOT, VOT, DENSITY OIL, DENSITY GAS
 and GRAVITY GAS.
 Water density is not saved in PVT table.
-It is assumed all undersaturated data has is from the saturation
+It is assumed all undersaturated data is from the saturation
 pressure to the max pressure in the satured table.
 
 Functions
@@ -590,7 +590,7 @@ def get_rhog(table, p, eg=None):
     return table['dengas'] * eg
 
 
-def get_pvt_values(table, data, check_psat=True):
+def get_pvt_values(table, data, check_limits=True):
     """
     Get PVT values for a given RS and Pressure.
 
@@ -609,16 +609,36 @@ def get_pvt_values(table, data, check_psat=True):
         Array of (np_points, 2) with the first column being
         solution gas-oil ratio (Rs) and the second
         column being pressure.
-    check_psat : bool
-        If True, check if Psat is smaller or equal to the pressure.
-        If False, will set pressure to Psat if it is smaller.
+    check_limits : bool
+        If True, check if Rs and pressure values are within the
+        table limits. Checks is the given pressure is greater than
+        the saturation pressure for the given Rs.
+        If False, if the given pressure is smaller than the saturation
+        pressure, assumes the pressure is the saturation pressure.
         Default: True.
+
+    Returns
+    -------
+    dict
+        Dictionary with the following keys:
+        - 'PSAT': Saturation pressure.
+        - 'BO': Oil formation volume factor.
+        - 'EG': Gas expansion factor.
+        - 'BG': Gas formation volume factor (1/EG).
+        - 'UO': Oil viscosity.
+        - 'UG': Gas viscosity.
+        - 'DENO': Oil density.
+        - 'DENG': Gas density.
     """
     rs = data[:, 0]
     p = data[:, 1]
 
     psat = get_psat(table, rs)
-    p = _check_pvt_limits(rs, p, table['sat'], psat, check_psat)
+    if check_limits:
+        if np.any(p < psat):
+            raise ValueError(f"{np.sum(p < psat)} pressure values less than associated Psat.")
+        _check_pvt_limits(rs, p, table['sat'])
+    # p = np.where(p < psat, psat, p)
 
     eg = get_eg(table, p)
     ug = get_ug(table, p)
@@ -639,7 +659,7 @@ def get_pvt_values(table, data, check_psat=True):
     }
 
 
-def _check_pvt_limits(rs, p, sat_table, psat, check_psat):
+def _check_pvt_limits(rs, p, sat_table):
     if rs.min() < sat_table['RS'].min() or rs.max() > sat_table['RS'].max():
         range_rs = f"[{rs.min()}, {rs.max()}]"
         range_ = f"[{sat_table['RS'].min()}, {sat_table['RS'].max()}]"
@@ -649,10 +669,6 @@ def _check_pvt_limits(rs, p, sat_table, psat, check_psat):
         range_p = f"[{p.min()}, {p.max()}]"
         range_ = f"[{sat_table['PRES'].min()}, {sat_table['PRES'].max()}]"
         raise ValueError(f"Pressure values ({range_p}) is out of range ({range_}).")
-
-    if check_psat and np.any(p < psat):
-        raise ValueError(f"{np.sum(p < psat)} pressure values less than associated Psat.")
-    return np.where(p < psat, psat, p)
 
 
 if __name__ == "__main__":
