@@ -65,7 +65,7 @@ class TestTemplate(unittest.TestCase):
         sr3 = Sr3Reader(path.with_suffix('.sr3'))
         file_read = sr3.data.get(
             element_type="grid",
-            properties=["PRES", "RS", "BO", "EG", "VISO", "VISG","MASDENO","MASDENG"])
+            properties=["PRES", "RS", "BO", "EG", "VISO", "VISG", "MASDENO", "MASDENG"])
 
         rs = file_read["RS"].values.flatten()
         pres = file_read["PRES"].values.flatten()
@@ -85,10 +85,7 @@ class TestTemplate(unittest.TestCase):
                 if corr < 0.99999:
                     csv_path = _save_worst(rs, pres, key, interp_values, original_values)
                     _plot_errors(key, interp_values, original_values)
-                    print(f"Offending samples saved to {csv_path}")
-                    # self.assertTrue(corr > 0.99999,
-                    #     f"Correlation for {key} is too low: {corr:.6f}. "
-                    #     f"Check offending samples saved to {csv_path}")
+                    print(f"  Worst offending samples saved to {csv_path}")
 
 
 if __name__ == '__main__':
