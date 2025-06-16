@@ -6,6 +6,8 @@ import numpy as np
 from scipy.interpolate import RegularGridInterpolator
 
 
+EPS = 1e-10  # Small value to avoid division by zero in inverse interpolation
+
 @staticmethod
 def interp_extrap(x, y, new_x, extrap=True):
     """
@@ -86,7 +88,7 @@ def alt_interp1d(x, y, x_new, x_inversion=-np.inf, inverse_smaller=True, extrap=
         mask = x_new > x_inversion
 
     y_interp = np.zeros_like(x_new)
-    y_interp[mask] = 1/interp_extrap(x, 1/y, x_new[mask], extrap=extrap)
+    y_interp[mask] = 1/interp_extrap(x, 1/(y+EPS), x_new[mask], extrap=extrap)
     y_interp[~mask] = interp_extrap(x, y, x_new[~mask], extrap=extrap)
 
     return y_interp
