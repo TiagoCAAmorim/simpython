@@ -16,7 +16,7 @@ def _plot_errors(key, interp_values, original_values):
     _, ax = plt.subplots(1, 2, figsize=(12, 5))
 
     # Scatter plot: Original vs Interpolated
-    ax[0].scatter(original_values, interp_values, alpha=0.5)
+    ax[0].scatter(original_values, interp_values, alpha=0.5, s=10)
     ax[0].set_xlabel(f"Original {key}")
     ax[0].set_ylabel(f"Interpolated {key}")
     ax[0].set_title(f"Scatter plot of {key}: Original vs Interpolated")
@@ -78,11 +78,12 @@ class TestTemplate(unittest.TestCase):
             if key_ in file_read:
                 original_values = file_read[key_].values.flatten()
                 corr = np.corrcoef(original_values, interp_values)[0, 1]
+                max_diff = np.max(np.abs(original_values - interp_values))
+                max_rel_diff = np.max(np.abs(original_values - interp_values)/original_values)
                 print(f"Correlation for {key}: {corr:0.6f}")
-                print(f"   Max difference: {np.max(np.abs(original_values - interp_values)):.6f}")
-                print(f"   Max relative diff.: {
-                    np.max(np.abs(original_values - interp_values)/original_values)*100:.4f}%")
-                if corr < 0.99999:
+                print(f"   Max difference: {max_diff:.6f}")
+                print(f"   Max relative diff.: {max_rel_diff*100:.4f}%")
+                if max_rel_diff > 0.001:  # Threshold for significant difference
                     csv_path = _save_worst(rs, pres, key, interp_values, original_values)
                     _plot_errors(key, interp_values, original_values)
                     print(f"  Worst offending samples saved to {csv_path}")

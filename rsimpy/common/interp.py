@@ -105,6 +105,7 @@ def interp2d(x, y, new_x, interpolator=None, extrap=True):
         Known x-coordinates for each dimension.
     y : array_like
         Known y-coordinates corresponding to the grid defined by x.
+        Ignored if interpolator is provided.
     new_x : array_like
         New x-coordinates where interpolation/extrapolation is desired.
     interpolator : RegularGridInterpolator, optional
@@ -122,7 +123,6 @@ def interp2d(x, y, new_x, interpolator=None, extrap=True):
     x_ = []
     for xi in x:
         x_.append(np.asarray(xi))
-    y = np.asarray(y)
 
     extrap = np.asarray(extrap, dtype=bool)
     if extrap.ndim == 0:
@@ -133,6 +133,7 @@ def interp2d(x, y, new_x, interpolator=None, extrap=True):
     new_x = np.asarray(new_x).copy()
 
     if interpolator is None:
+        y = np.asarray(y)
         interpolator = RegularGridInterpolator(x_, y, bounds_error=False, fill_value=None)
 
     for i in range(new_x.shape[1]):
