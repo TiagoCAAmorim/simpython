@@ -4,9 +4,9 @@ import json
 from pathlib import Path
 
 try:
-    from rsimpy.cmg.datreader.common import safe_file_read, safe_file_read_by_line
+    from rsimpy.cmg.datreader.dat_common import safe_file_read, safe_file_read_by_line
 except ImportError:
-    from common import safe_file_read, safe_file_read_by_line
+    from dat_common import safe_file_read, safe_file_read_by_line
 
 # MARK: Constants
 SECTION_keys = ['TITLE1','GRID','ROCKFLUID','INITIAL','NUMERICAL','RUN']

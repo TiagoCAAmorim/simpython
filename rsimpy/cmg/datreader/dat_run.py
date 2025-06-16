@@ -10,10 +10,11 @@ get_well_key(data, keyword, verbose=False):
 """
 
 try:
-    from rsimpy.cmg.datreader import dat_dates, common
+    from rsimpy.cmg.datreader import dat_dates
+    from rsimpy.cmg.datreader.dat_common import get_section
 except ImportError:
     import dat_dates
-    import common
+    from dat_common import get_section
 import fnmatch
 
 
@@ -38,7 +39,7 @@ def get_wells(data, keep_only_first=False, verbose=False): # pylint: disable=too
     """
     dates = []
     wells = []
-    for line in common.get_section(data,'RUN'):
+    for line in get_section(data,'RUN'):
         if not dat_dates.solve_dates(dates, line):
             solve_wells(wells, dates, line, keep_only_first)
 
@@ -94,7 +95,7 @@ def get_well_key(data, keyword, verbose=False): # pylint: disable=too-many-branc
     dates = []
     wells = []
     key_data = []
-    for line in common.get_section(data,'RUN'):
+    for line in get_section(data,'RUN'):
         if not dat_dates.solve_dates(dates, line):
             if not solve_wells(wells, dates, line):
                 solve_well_key(key_data, wells, dates, keyword, line, verbose)

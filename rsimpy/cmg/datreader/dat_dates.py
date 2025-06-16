@@ -22,10 +22,10 @@ from collections import Counter
 
 try:
     from rsimpy.cmg.datreader.dat_parser import DatParser
-    from rsimpy.cmg.datreader import common
+    from rsimpy.cmg.datreader import dat_common
 except ImportError:
     from dat_parser import DatParser
-    import common
+    import dat_common
 
 
 def get_from_dat(file_path, abs_path=None, encoding='utf-8', verbose=False, _debug=False):
@@ -79,7 +79,7 @@ def get_from_dat_data(data, verbose=False): # pylint: disable=too-many-branches
     list
         Dates as datetime objects.
     """
-    data = common.get_section(data, 'RUN')
+    data = dat_common.get_section(data, 'RUN')
 
     dates = []
     for line in data:
@@ -189,7 +189,7 @@ def get_from_log(file_path, encoding='utf-8', verbose=False):
     - Dates are in ascending order.
       - Succesive equal dates are allowed.
     """
-    txt = common.safe_file_read(file_path, default=encoding).split('\n')
+    txt = dat_common.safe_file_read(file_path, default=encoding).split('\n')
     results = _read_all_dates(txt)
 
     if len(results) == 0:
