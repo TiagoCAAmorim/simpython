@@ -58,7 +58,7 @@ class TestTemplate(unittest.TestCase):
 
 
     def test_read_pvt(self):
-        """Check reading PVT data in dat file"""
+        """Check interpolating PVT data"""
         path = Path('../SimModels/Unisim_iv_2024/dat_bo/base_case_bo.dat')
         pvt = dat_pvt.get_from_dat(path, verbose=False)
         self.assertEqual(len(pvt), 1, "Should read 1 PVT table")
@@ -89,6 +89,44 @@ class TestTemplate(unittest.TestCase):
                     _plot_errors(key, interp_values, original_values)
                     print(f"  Worst offending samples saved to {csv_path}")
 
+
+    def test_pvt_extrap(self):
+        """Check extrapolating PVT data"""
+        path = Path('../SimModels/Unisim_iv_2024/dat_bo/base_case_bo.dat')
+        pvt = dat_pvt.get_from_dat(path, verbose=False)
+        self.assertEqual(len(pvt), 1, "Should read 1 PVT table")
+
+        rs = np.linspace(-100, 500, 10)
+        pres = np.linspace(-100, 1000, 1000)
+
+        rs_grid, pres_grid = np.meshgrid(rs, pres, indexing='ij')
+        rs_flat = rs_grid.flatten()
+        pres_flat = pres_grid.flatten()
+
+        data = np.stack([rs_flat, pres_flat], axis=1)
+        interp_ = dat_pvt.get_pvt_values(pvt[0], data, check_limits=False)
+        print(f'Interpolated {interp_['BO'].shape[0]:,} values.')
+
+        for key, arr in interp_.items():
+            if np.isnan(arr).any():
+                raise ValueError(f"NaN values found in interpolated array for {key}")
+            if np.isinf(arr).any():
+                raise ValueError(f"Inf values found in interpolated array for {key}")
+
+        for key in ['BO', 'UO']:
+            bo_grid = interp_[key].reshape(len(rs), len(pres))
+            plt.figure(figsize=(10, 6))
+            for i, rs_val in enumerate(rs):
+                plt.plot(pres, bo_grid[i], label=f'RS={rs_val:.1f}')
+            plt.plot(pvt[0]['sat']['PRES'], pvt[0]['sat'][f'{key.upper()}'], 'k--', label='Sat. Value', alpha=0.5)
+            plt.xlabel('PRES')
+            plt.ylabel(key)
+            plt.yscale('log')
+            plt.title(f'{key} Extrapolation')
+            plt.legend(fontsize='small', ncol=2, bbox_to_anchor=(1.05, 1), loc='upper left')
+            plt.tight_layout()
+            plt.savefig(f'./{key.lower()}_extrapolation.png')
+            plt.close()
 
 if __name__ == '__main__':
     unittest.main()
