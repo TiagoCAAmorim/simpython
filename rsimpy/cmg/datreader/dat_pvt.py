@@ -625,7 +625,7 @@ def _get_bo_uo(table, p, rs, col_name, psat=None):
     beta_interp = 1/interp.interp2d(
         x=(betas[0], betas[1]),
         y=None,
-        new_x=np.stack((p, sub_sat), axis=1),
+        new_x=np.stack((psat, sub_sat), axis=1),
         interpolator=betas[2],
         extrap=[False, False])
 

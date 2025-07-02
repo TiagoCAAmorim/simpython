@@ -31,7 +31,8 @@ def _plot_errors(key, interp_values, original_values):
     ax[1].grid(True)
 
     plt.tight_layout()
-    plt.show()
+    plt.savefig(f"./offending_{key}.png")
+    plt.close()
 
 
 def _save_worst(rs, pres, key, interp_values, original_values):
