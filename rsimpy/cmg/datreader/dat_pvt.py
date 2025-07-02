@@ -29,17 +29,27 @@ get_pvt_values(table, data, check_psat=True)
 import numpy as np
 import pandas as pd
 from scipy.interpolate import RegularGridInterpolator
+from scipy.stats import linregress
 
 try:
     from rsimpy.cmg.datreader.dat_parser import DatParser
-    from rsimpy.cmg.datreader import common
+    from rsimpy.cmg.datreader.dat_common import get_section
+    from rsimpy.common import interp
 except ImportError:
-    from dat_parser import DatParser
-    import common
+    # If running as a script, import from parent directory
+    import sys
+    from pathlib import Path
+    print(Path(__file__).resolve().parent.parent.parent)
+    sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
+    from cmg.datreader.dat_common import get_section
+    from cmg.datreader.dat_parser import DatParser
+    from common import interp
 
 
 COLS = ['PRES', 'RS', 'BO', 'EG', 'UO', 'UG']
 INTERP_PTS = 1000
+EPS = 1e-20
+
 
 # MARK: Read
 def get_from_dat(file_path, abs_path=None, encoding='utf-8', verbose=False, _debug=False):
@@ -100,15 +110,8 @@ def get_from_dat_data(data, verbose=False):
 
     Parameters
     ----------
-    file_path : str
-        Path to the dat file.
-    abs_path : dict
-        Dictionary with changes to absolute pathes. Keys are the
-        strings to be searched in the start of the include path,
-        and values are the strings to replace any positive search.
-        If None, no search is performed. Default: None.
-    encoding : str
-        File encoding. Default: 'utf-8'.
+    data : output of DatParser.get()
+        Processed data from a CMG dat file.
     verbose : bool
         Print messages. Default: False.
 
@@ -125,8 +128,32 @@ def get_from_dat_data(data, verbose=False):
         - 'Uo': Oil viscosity.
         - 'Ug': Gas viscosity.
     """
+    tables = _read_data(data, verbose=verbose)
+    if len(tables) == 0:
+        if verbose:
+            print('No PVT tables found.')
+        return []
+    return [_build_subsat_interp(table) for table in tables]
+
+
+def _read_data(data, verbose=False):
+    """
+    Read PVT tables from a CMG dat file processed data.
+    Data is read from the PVT, BOT and VOT keywords.
+
+    Returns
+    -------
+    list of dicts
+        List of dictionaries with the PVT tables.
+        Each dictionary has the following keys:
+        - 'PVT': PVT keyword data.
+        - 'BOT': list of BOT keyword data.
+        - 'VOT': list of VOT keyword data.
+        - 'DENOIL': oil density.
+        - 'DENGAS': gas density.
+    """
     alpha, t_delta = _read_units(data)
-    data = common.get_section(data, 'GRID')
+    data = get_section(data, 'GRID')
 
     t_res = None
     tables = []
@@ -162,13 +189,12 @@ def get_from_dat_data(data, verbose=False):
     tables.append(
         _process_pvt_lines(table, len(tables), alpha / t_res, verbose=verbose)
     )
-
     return tables
 
 
 def _read_units(data):
     """Read units from the data and definte t_std/p_std."""
-    data = common.get_section(data, 'TITLE1')
+    data = get_section(data, 'TITLE1')
 
     t_delta = 273.15
     p_std = 101.325
@@ -197,20 +223,26 @@ def _process_pvt_lines(table, num_tables, z_transform, verbose=False):
     bot = _process_bot_vot(table['BOT'], pvt)
     uot = _process_bot_vot(table['VOT'], pvt)
 
-    rs_bo, bo = _build_interpolation(bot, pvt, 'BO')
-    rs_uo, uo = _build_interpolation(uot, pvt, 'UO')
-
     table = {
-        'sat': pd.DataFrame(pvt),
-        'rs_bo': rs_bo,
-        'bo': bo,
-        'rs_uo': rs_uo,
-        'uo': uo,
+        'sat': pvt,
+        'bot': bot,
+        'uot': uot,
         'denoil': table['DENOIL'],
         'dengas': table['DENGAS'],
     }
 
     return table
+
+
+def _build_subsat_interp(pvt_table):
+    """Build subsaturated Bo and Uo interpolators."""
+    return {
+        'sat': pd.DataFrame(pvt_table['sat']),
+        'bo': _build_interpolation(pvt_table['bot']),
+        'uo': _build_interpolation(pvt_table['uot']),
+        'denoil': pvt_table['denoil'],
+        'dengas': pvt_table['dengas'],
+    }
 
 
 def _process_pvt(table, num_tables, z_transform, verbose):
@@ -262,65 +294,64 @@ def _process_bot_vot(tables, pvt):
         psat_values = pvt['PRES']
         rs_values = pvt['RS']
         interpolated_rs = np.interp(values[0, 0], psat_values, rs_values)
-        p_max = np.max(pvt['PRES'])
-        p_norm = (values[:, 0] - values[0, 0]) / (p_max - values[0, 0])
 
         output[interpolated_rs] = {
             'PRES': values[:, 0],
-            'PRES_NORM': p_norm,
             'val': values[:, 1],
             }
 
     return output
 
 
-def _get_compressibility(tables, p_norm):
-    """Build compressibility table, and interpolator."""
-    rs = np.sort(np.array(list(tables)))
-    comp = []
-    for rsi in rs:
-        pres = tables[rsi]['PRES']
-        val = tables[rsi]['val']
+def _build_interpolation(tables):
+    """
+    Build interpolation table.
 
-        pres_ = np.linspace(pres[0], pres[-1], num=INTERP_PTS)
-        val_ = 1/np.interp(pres_, pres, 1/val)
+    It is assumed that Bo and Uo hold an approximate linear
+    relationship between the subsaturated pressure and then
+    'compressibility' of the quantity.
+    A single slope is calculated for each table (Rs value).
+    The constant is calculated for each pressure point in the
+    tables.
 
-        comp_ = (val_[1:] - val_[:-1]) / (pres_[1:] - pres_[:-1]) / val_[:-1]
-        comp.append(np.concatenate([comp_, comp_[-1:]]))
-    interp_comp = RegularGridInterpolator((rs, p_norm), np.array(comp))
-    return rs, comp, interp_comp
+    This function returns a list of alphas (slopes) with saturation
+    pressure, and a 2D interpolator of the constants (betas) as a
+    function of saturation pressure and subsaturated pressure.
+    """
+    psat = []
+    alphas = []
+    betas = []
+    for table in tables.values():
+        psat.append(table['PRES'][0])
+        p_subsat = table['PRES'][:-1] - table['PRES'][0]
 
+        d_pres = table['PRES'][1:] - table['PRES'][:-1]
+        d_val = table['val'][1:] - table['val'][:-1]
+        comp = d_val/d_pres / table['val'][:-1]
 
-def _build_interpolation(table, pvt, col_name):
-    """Build interpolation table."""
-    p_norm = np.linspace(0, 1, num=INTERP_PTS)
-    rs_undersat, comp, interp_comp = _get_compressibility(table, p_norm)
+        slope, _, _, _, _ = linregress(p_subsat, 1 / (comp+EPS))
+        alphas.append([psat[-1], slope])
 
-    rs = np.concatenate([rs_undersat, pvt['RS']])
-    rs = np.sort(np.unique(rs))
+        delta_p = table['PRES'][1:] - table['PRES'][0]
+        relative_val = table['val'][1:]/table['val'][0]
+        beta = slope * delta_p / (np.power(relative_val, slope) - 1)
+        betas.append([delta_p, beta])
 
-    p_max = np.max(pvt['PRES'])
+    #Build interpolator
+    all_deltas = np.concatenate([x[0] for x in betas])
+    all_deltas = np.unique(all_deltas)
+    all_deltas = np.sort(all_deltas)
 
-    vals = []
-    for rsi in rs:
-        if rsi in table:
-            vals.append(1/np.interp(p_norm, table[rsi]['PRES_NORM'], 1/table[rsi]['val']))
-        else:
-            if rsi < rs_undersat[0]:
-                comp_ = comp[0]
-            elif rsi > rs_undersat[-1]:
-                comp_ = comp[-1]
-            else:
-                rs_vector = np.repeat([rsi], p_norm.shape[0])
-                comp_ = interp_comp(np.stack([rs_vector, p_norm], axis=1))
-            vals_ = [1/np.interp(rsi, pvt['RS'], 1/pvt[col_name])]
-            psat = np.interp(rsi, pvt['RS'], pvt['PRES'])
-            pres = psat + (p_max - psat) * p_norm
-            for i in range(1, INTERP_PTS):
-                vals_.append(vals_[i-1] * (1 + comp_[i-1] * (pres[i] - pres[i-1])))
-            vals.append(vals_)
+    all_betas = []
+    for beta in betas:
+        beta_interp = 1/interp.interp_extrap(beta[0], 1/beta[1], all_deltas, extrap=False)
+        all_betas.append(beta_interp)
+    all_betas = np.array(all_betas)
 
-    return np.array(rs), np.array(vals)
+    beta_interp2d = RegularGridInterpolator(
+        (psat, all_deltas), 1/all_betas,
+        bounds_error=False, fill_value=None)
+    return np.array(alphas), (psat, all_deltas, beta_interp2d)
 
 
 # MARK: Get
@@ -329,7 +360,10 @@ def get_eg(table, p):
     Get gas expansion factor for a given pressure.
 
     This function linearly interpolates the inverse of
-    gas formation volume factor with pressure: 1/Bg = Eg = f(p)
+    gas formation volume factor with pressure: 1/Bg = Eg = f(p),
+    except for the values below the lowest pressure
+    where it is assumed a linear extrapolation of the inverse function:
+    Eg = f(1/p)
 
     Parameters
     ----------
@@ -353,7 +387,14 @@ def get_eg(table, p):
     if 'sat' not in table:
         raise ValueError("Missing saturated data in PVT table.")
     sat = table['sat']
-    return np.interp(p, sat['PRES'], sat['EG'])
+    return interp.alt_interp1d(
+        x=sat['PRES'],
+        y=sat['EG'],
+        x_new=p,
+        x_inversion=sat['PRES'].min(),
+        extrap=True,
+        inverse_smaller=True,
+        )
 
 
 def get_ug(table, p):
@@ -361,7 +402,10 @@ def get_ug(table, p):
     Get gas viscosity for a given pressure.
 
     This function linearly interpolates gas viscosity
-    with pressure: Ug = f(p)
+    with pressure: Ug = f(p),
+    except for the values below the lowest pressure
+    where it is assumed a linear extrapolation of the inverse function:
+    Ug = f(1/p)
 
     Parameters
     ----------
@@ -385,7 +429,14 @@ def get_ug(table, p):
     if 'sat' not in table:
         raise ValueError("Missing saturated data in PVT table.")
     sat = table['sat']
-    return np.interp(p, sat['PRES'], sat['UG'])
+    return interp.alt_interp1d(
+        x=sat['PRES'],
+        y=sat['UG'],
+        x_new=p,
+        x_inversion=sat['PRES'].min(),
+        extrap=True,
+        inverse_smaller=True,
+        )
 
 
 def get_psat(table, rs):
@@ -393,7 +444,10 @@ def get_psat(table, rs):
     Get saturation pressure for a given solubility ratio.
 
     Saturation pressure is linearly interpolated with solubility ratio:
-    Psat = f(rs)
+    Psat = f(Rs),
+    except for the values below the lowest solubility ratio
+    where it is assumed a linear extrapolation of the inverse function:
+    Psat = f(1/Rs),
 
     Parameters
     ----------
@@ -417,47 +471,186 @@ def get_psat(table, rs):
     if 'sat' not in table:
         raise ValueError("Missing saturated data in PVT table.")
     sat = table['sat']
-    return np.interp(rs, sat['RS'], sat['PRES'])
+    return interp.alt_interp1d(
+        x=sat['RS'],
+        y=sat['PRES'],
+        x_new=rs,
+        x_inversion=sat['RS'].min(),
+        extrap=True,
+        inverse_smaller=True,
+        )
 
 
-def _get_p_norm(p, psat, sat):
-    """Get normalized undersat pressure."""
-    p_max = sat['PRES'].max()
-    p_norm = np.where((p_max - psat) <= 0, 0, (p - psat) / (p_max - psat))
-    return p_norm
+def get_rs(table, psat):
+    """
+    Get solubility ratio for a given saturation pressure.
+
+    Solubility ratio is linearly interpolated with saturation pressure:
+    Rs = f(Psat),
+    except for the values below the lowest saturation pressure
+    where it is assumed a linear extrapolation of the inverse function:
+    Rs = f(1/Psat)
+
+    Parameters
+    ----------
+    table : dict
+        PVT table with the following keys:
+        - 'sat': Saturated table (Pres = Psat).
+        - 'rs_bo': Solubility ratio for undersaturated Bo table.
+        - 'bo': Undersaturated Bo table (Pres > Psat).
+        - 'rs_uo': Solubility ratio for undersaturated Uo table.
+        - 'uo': Undersaturated Uo table (Pres > Psat).
+        - 'denoil': Oil density.
+        - 'dengas': Gas density.
+    psat : np.array
+        Saturation pressure.
+
+    Returns
+    -------
+    float
+        Saturation pressure.
+    """
+    if 'sat' not in table:
+        raise ValueError("Missing saturated data in PVT table.")
+    sat = table['sat']
+    return interp.alt_interp1d(
+        x=sat['PRES'],
+        y=sat['RS'],
+        x_new=psat,
+        x_inversion=sat['PRES'].min(),
+        extrap=True,
+        inverse_smaller=True,
+        )
+
+
+def get_bo_sat(table, psat):
+    """
+    Oil formation volume factor for a given saturation pressure.
+
+    Oil formation volume factor is linearly interpolated with saturation pressure:
+    Bo = f(Psat),
+    except for the values below the lowest saturation pressure
+    where it is assumed a linear extrapolation of the inverse function:
+    Bo = f(1/Psat)
+
+    Parameters
+    ----------
+    table : dict
+        PVT table with the following keys:
+        - 'sat': Saturated table (Pres = Psat).
+        - 'rs_bo': Solubility ratio for undersaturated Bo table.
+        - 'bo': Undersaturated Bo table (Pres > Psat).
+        - 'rs_uo': Solubility ratio for undersaturated Uo table.
+        - 'uo': Undersaturated Uo table (Pres > Psat).
+        - 'denoil': Oil density.
+        - 'dengas': Gas density.
+    psat : np.array
+        Saturation pressure.
+
+    Returns
+    -------
+    float
+        Oil formation volume factor at the saturation pressure.
+    """
+    if 'sat' not in table:
+        raise ValueError("Missing saturated data in PVT table.")
+    sat = table['sat']
+    return interp.alt_interp1d(
+        x=sat['PRES'],
+        y=sat['BO'],
+        x_new=psat,
+        x_inversion=sat['PRES'].min(),
+        extrap=True,
+        inverse_smaller=True,
+        )
+
+
+def get_uo_sat(table, psat):
+    """
+    Oil viscosity for a given saturation pressure.
+
+    Oil viscosity is linearly interpolated with saturation pressure:
+    Uo = f(Psat),
+    except for the values above the highest saturation pressure
+    where it is assumed a linear extrapolation of the inverse function:
+    Uo = f(1/Psat)
+
+    Parameters
+    ----------
+    table : dict
+        PVT table with the following keys:
+        - 'sat': Saturated table (Pres = Psat).
+        - 'rs_bo': Solubility ratio for undersaturated Bo table.
+        - 'bo': Undersaturated Bo table (Pres > Psat).
+        - 'rs_uo': Solubility ratio for undersaturated Uo table.
+        - 'uo': Undersaturated Uo table (Pres > Psat).
+        - 'denoil': Oil density.
+        - 'dengas': Gas density.
+    psat : np.array
+        Saturation pressure.
+
+    Returns
+    -------
+    float
+        Oil viscosity at the saturation pressure.
+    """
+    if 'sat' not in table:
+        raise ValueError("Missing saturated data in PVT table.")
+    sat = table['sat']
+    return interp.alt_interp1d(
+        x=sat['PRES'],
+        y=sat['UO'],
+        x_new=psat,
+        x_inversion=sat['PRES'].max(),
+        extrap=True,
+        inverse_smaller=False,
+        )
 
 
 def _get_bo_uo(table, p, rs, col_name, psat=None):
-    if 'sat' not in table:
-        raise ValueError("Missing saturated data in PVT table.")
-    if f'rs_{col_name.lower()}' not in table:
-        raise ValueError(f"Missing undersaturated {col_name.title()} data in PVT table.")
-    if col_name.lower() not in table:
-        raise ValueError(f"Missing undersaturated {col_name.title()} data in PVT table.")
-
-    rs_table = table[f'rs_{col_name.lower()}']
-    vals = table[col_name.lower()]
-    pres_norm = np.linspace(0, 1, num=vals.shape[1])
-
-    interp = RegularGridInterpolator(
-        (rs_table, pres_norm), vals,
-        bounds_error=False,
-        fill_value=None,
-    )
-    sat = table['sat']
     if psat is None:
         psat = get_psat(table, rs)
-    p_norm = _get_p_norm(p, psat, sat)
-    return interp(np.stack([rs, p_norm], axis=1))
+    sub_sat = p - psat
+
+    if col_name.lower() == 'bo':
+        vsat = get_bo_sat(table, psat)
+    elif col_name.lower() == 'uo':
+        vsat = get_uo_sat(table, psat)
+    else:
+        raise ValueError(f"Unknown column name: {col_name}. Expected 'bo' or 'uo'.")
+
+    alphas, betas = table[col_name.lower()]
+    alpha = interp.interp_extrap(alphas[:,0], alphas[:,1], psat, extrap=False)
+
+    beta_interp = 1/interp.interp2d(
+        x=(betas[0], betas[1]),
+        y=None,
+        new_x=np.stack((psat, sub_sat), axis=1),
+        interpolator=betas[2],
+        extrap=[False, False])
+
+    s = alpha * sub_sat / beta_interp + 1
+    s[s < EPS] =  - EPS / sub_sat[s < EPS] # avoid negative values inside the power
+    return vsat * np.power(s, 1/alpha)
 
 
 def get_bo(table, p, rs, psat=None):
     """
     Get oil formation volume factor for a given pressure and solubility ratio.
 
-    This function linearly interpolates oil formation volume factor
-    with solubility ration and normalized pressure above
-    saturation pressure: 1/Bo = f(rs, (p-psat)/(pmax-psat))
+    This function assumes that the oil formation volume factor (Bo) 'compressibility'
+    varies linearly with the subsaturated pressure. The slope (alpha) and constant
+    term (beta) are interpolated from the undersaturated Bo tables. No extrapolation
+    is performed, using the values from the nearest saturated table.
+
+    Bo values are then calculated as:
+        Bo = Bo_sat * (alpha * (p - psat) / beta + 1)^(1/alpha)
+
+    where:
+        - Bo_sat is the oil formation volume factor at saturation pressure.
+        - p is the pressure.
+        - psat is the saturation pressure.
+    This formula is the integral of the 'linear compressibility' model.
 
     Parameters
     ----------
@@ -490,9 +683,19 @@ def get_uo(table, p, rs, psat=None):
     """
     Get oil viscosity for a given pressure and solubility ratio.
 
-    This function linearly interpolates oil viscosity with
-    solubility ration and normalized pressure above
-    saturation pressure: Uo = f(rs, (p-psat)/(pmax-psat))
+    This function assumes that the oil viscosity (Uo) 'compressibility'
+    varies linearly with the subsaturated pressure. The slope (alpha) and constant
+    term (beta) are interpolated from the undersaturated Uo tables. No extrapolation
+    is performed, using the values from the nearest saturated table.
+
+    Uo values are then calculated as:
+        Uo = Uo_sat * (alpha * (p - psat) / beta + 1)^(1/alpha)
+
+    where:
+        - Uo_sat is the oil viscosity at saturation pressure.
+        - p is the pressure.
+        - psat is the saturation pressure.
+    This formula is the integral of the 'linear compressibility' model.
 
     Parameters
     ----------
@@ -590,7 +793,7 @@ def get_rhog(table, p, eg=None):
     return table['dengas'] * eg
 
 
-def get_pvt_values(table, data, check_limits=True):
+def get_pvt_values(table, data, check_limits=False):
     """
     Get PVT values for a given RS and Pressure.
 
@@ -611,11 +814,11 @@ def get_pvt_values(table, data, check_limits=True):
         column being pressure.
     check_limits : bool
         If True, check if Rs and pressure values are within the
-        table limits. Checks is the given pressure is greater than
+        table limits. Checks if the given pressure is greater than
         the saturation pressure for the given Rs.
         If False, if the given pressure is smaller than the saturation
         pressure, assumes the pressure is the saturation pressure.
-        Default: True.
+        Default: False.
 
     Returns
     -------
@@ -636,9 +839,8 @@ def get_pvt_values(table, data, check_limits=True):
     psat = get_psat(table, rs)
     if check_limits:
         if np.any(p < psat):
-            raise ValueError(f"{np.sum(p < psat)} pressure values less than associated Psat.")
+            p = np.where(p < psat, psat, p)
         _check_pvt_limits(rs, p, table['sat'])
-    # p = np.where(p < psat, psat, p)
 
     eg = get_eg(table, p)
     ug = get_ug(table, p)
@@ -648,6 +850,8 @@ def get_pvt_values(table, data, check_limits=True):
     rhog = get_rhog(table, p)
 
     return {
+        'RS': rs,
+        'PRES': p,
         'PSAT': psat,
         'BO': bo,
         'EG': eg,

@@ -208,13 +208,12 @@ class TestTemplate(unittest.TestCase):
             [275.5254, 450],  #Saturated, no undersaturated
             [275.5254, 510],  #Undersaturated, no undersaturated
         ])
-        interp_ = dat_pvt.get_pvt_values(pvt[0], data, check_psat=True)
+        interp_ = dat_pvt.get_pvt_values(pvt[0], data, check_limits=True)
 
         true_ = {
             'RS': [152.7532, 152.7532, 275.5254, 275.5254,],
             'PRES': [270, 450, 450, 510],
             'PSAT': [270, 270, 450, 450],
-            'PNORM': [0.0, 0.642857143, 0.0, 0.6],
             'BO': [1.3877, 1.3595, 1.6554, 999.999],
             'BG': [0.00373 , 0.00288, 0.00288, 0.00275],
             'EG': [1/0.00373 , 1/0.00288, 1/0.00288, 1/0.00275],
