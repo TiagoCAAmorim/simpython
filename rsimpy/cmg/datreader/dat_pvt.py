@@ -3,9 +3,8 @@ Module to PVT tables from CMG dat files.
 
 Keywords processed: PVT, BOT, VOT, DENSITY OIL, DENSITY GAS
 and GRAVITY GAS.
-Water density is not saved in PVT table.
-It is assumed all undersaturated data is from the saturation
-pressure to the max pressure in the satured table.
+Water properties are not saved in PVT table.
+
 
 Functions
 ---------
