@@ -329,7 +329,7 @@ def _build_interpolation(tables):
         comp = d_val/d_pres / table['val'][:-1]
 
         slope, _, _, _, _ = linregress(p_subsat, 1 / (comp+EPS))
-        alphas.append([psat[-1], slope])
+        alphas.append(slope)
 
         delta_p = table['PRES'][1:] - table['PRES'][0]
         relative_val = table['val'][1:]/table['val'][0]
@@ -345,12 +345,32 @@ def _build_interpolation(tables):
     for beta in betas:
         beta_interp = 1/interp.interp_extrap(beta[0], 1/beta[1], all_deltas, extrap=False)
         all_betas.append(beta_interp)
+
+    alphas = np.array(alphas)
+    psat = np.array(psat)
+    all_deltas = np.array(all_deltas)
     all_betas = np.array(all_betas)
 
-    beta_interp2d = RegularGridInterpolator(
-        (psat, all_deltas), 1/all_betas,
-        bounds_error=False, fill_value=None)
-    return np.array(alphas), (psat, all_deltas, beta_interp2d)
+    return _pack_interpolator(alphas, psat, all_deltas, 1/all_betas)
+
+
+def _pack_interpolator(alphas, psat, sub_sat, inv_betas):
+    """Pack interpolator data into a single matrix."""
+    out = np.zeros((len(psat)+1, len(sub_sat)+2), dtype=float)
+    out[1:, 0] = psat
+    out[1:, 1] = alphas
+    out[0, 2:] = sub_sat
+    out[1:, 2:] = inv_betas
+    return out
+
+
+def _unpack_interpolator(interpolator):
+    """Unpack the interpolator into alphas, psat, sub_sat and inv_betas."""
+    psat = interpolator[1:, 0]
+    alphas = interpolator[1:, 1]
+    sub_sat = interpolator[0, 2:]
+    inv_betas = interpolator[1:, 2:]
+    return alphas, psat, sub_sat, inv_betas
 
 
 # MARK: Get
@@ -618,17 +638,24 @@ def _get_bo_uo(table, p, rs, col_name, psat=None):
     else:
         raise ValueError(f"Unknown column name: {col_name}. Expected 'bo' or 'uo'.")
 
-    alphas, betas = table[col_name.lower()]
-    alpha = interp.interp_extrap(alphas[:,0], alphas[:,1], psat, extrap=False)
+    alphas, psat_table, sub_sat_table, inv_betas = _unpack_interpolator(
+        table[col_name.lower()]
+    )
 
-    beta_interp = 1/interp.interp2d(
-        x=(betas[0], betas[1]),
+    alpha = interp.interp_extrap(psat_table, alphas, psat, extrap=False)
+
+    inv_beta_interp2d = RegularGridInterpolator(
+        (psat_table, sub_sat_table), inv_betas,
+        bounds_error=False, fill_value=None)
+
+    inv_beta = interp.interp2d(
+        x=(psat_table, sub_sat_table),
         y=None,
         new_x=np.stack((psat, sub_sat), axis=1),
-        interpolator=betas[2],
+        interpolator=inv_beta_interp2d,
         extrap=[False, False])
 
-    s = alpha * sub_sat / beta_interp + 1
+    s = alpha * sub_sat * inv_beta + 1
     s[s < EPS] =  - EPS / sub_sat[s < EPS] # avoid negative values inside the power
     return vsat * np.power(s, 1/alpha)
 

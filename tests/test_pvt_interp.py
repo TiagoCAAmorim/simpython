@@ -49,7 +49,6 @@ def _save_worst(rs, pres, key, interp_values, original_values):
         delimiter=",",
         header="RS,PRES,Original,Interpolated",
         comments="")
-    print(f"Saved {n} most offending samples for {key} to {csv_path}")
     return csv_path
 
 
