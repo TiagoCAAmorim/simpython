@@ -389,9 +389,7 @@ def get_eg(table, p):
     table : dict
         PVT table with the following keys:
         - 'sat': Saturated table (Pres = Psat).
-        - 'rs_bo': Solubility ratio for undersaturated Bo table.
         - 'bo': Undersaturated Bo table (Pres > Psat).
-        - 'rs_uo': Solubility ratio for undersaturated Uo table.
         - 'uo': Undersaturated Uo table (Pres > Psat).
         - 'denoil': Oil density.
         - 'dengas': Gas density.
@@ -431,9 +429,7 @@ def get_ug(table, p):
     table : dict
         PVT table with the following keys:
         - 'sat': Saturated table (Pres = Psat).
-        - 'rs_bo': Solubility ratio for undersaturated Bo table.
         - 'bo': Undersaturated Bo table (Pres > Psat).
-        - 'rs_uo': Solubility ratio for undersaturated Uo table.
         - 'uo': Undersaturated Uo table (Pres > Psat).
         - 'denoil': Oil density.
         - 'dengas': Gas density.
@@ -473,9 +469,7 @@ def get_psat(table, rs):
     table : dict
         PVT table with the following keys:
         - 'sat': Saturated table (Pres = Psat).
-        - 'rs_bo': Solubility ratio for undersaturated Bo table.
         - 'bo': Undersaturated Bo table (Pres > Psat).
-        - 'rs_uo': Solubility ratio for undersaturated Uo table.
         - 'uo': Undersaturated Uo table (Pres > Psat).
         - 'denoil': Oil density.
         - 'dengas': Gas density.
@@ -515,9 +509,7 @@ def get_rs(table, psat):
     table : dict
         PVT table with the following keys:
         - 'sat': Saturated table (Pres = Psat).
-        - 'rs_bo': Solubility ratio for undersaturated Bo table.
         - 'bo': Undersaturated Bo table (Pres > Psat).
-        - 'rs_uo': Solubility ratio for undersaturated Uo table.
         - 'uo': Undersaturated Uo table (Pres > Psat).
         - 'denoil': Oil density.
         - 'dengas': Gas density.
@@ -557,9 +549,7 @@ def get_bo_sat(table, psat):
     table : dict
         PVT table with the following keys:
         - 'sat': Saturated table (Pres = Psat).
-        - 'rs_bo': Solubility ratio for undersaturated Bo table.
         - 'bo': Undersaturated Bo table (Pres > Psat).
-        - 'rs_uo': Solubility ratio for undersaturated Uo table.
         - 'uo': Undersaturated Uo table (Pres > Psat).
         - 'denoil': Oil density.
         - 'dengas': Gas density.
@@ -599,9 +589,7 @@ def get_uo_sat(table, psat):
     table : dict
         PVT table with the following keys:
         - 'sat': Saturated table (Pres = Psat).
-        - 'rs_bo': Solubility ratio for undersaturated Bo table.
         - 'bo': Undersaturated Bo table (Pres > Psat).
-        - 'rs_uo': Solubility ratio for undersaturated Uo table.
         - 'uo': Undersaturated Uo table (Pres > Psat).
         - 'denoil': Oil density.
         - 'dengas': Gas density.
@@ -683,9 +671,7 @@ def get_bo(table, p, rs, psat=None):
     table : dict
         PVT table with the following keys:
         - 'sat': Saturated table (Pres = Psat).
-        - 'rs_bo': Solubility ratio for undersaturated Bo table.
         - 'bo': Undersaturated Bo table (Pres > Psat).
-        - 'rs_uo': Solubility ratio for undersaturated Uo table.
         - 'uo': Undersaturated Uo table (Pres > Psat).
         - 'denoil': Oil density.
         - 'dengas': Gas density.
@@ -728,9 +714,7 @@ def get_uo(table, p, rs, psat=None):
     table : dict
         PVT table with the following keys:
         - 'sat': Saturated table (Pres = Psat).
-        - 'rs_bo': Solubility ratio for undersaturated Bo table.
         - 'bo': Undersaturated Bo table (Pres > Psat).
-        - 'rs_uo': Solubility ratio for undersaturated Uo table.
         - 'uo': Undersaturated Uo table (Pres > Psat).
         - 'denoil': Oil density.
         - 'dengas': Gas density.
@@ -759,9 +743,7 @@ def get_rhoo(table, p, rs, bo=None, psat=None):
     table : dict
         PVT table with the following keys:
         - 'sat': Saturated table (Pres = Psat).
-        - 'rs_bo': Solubility ratio for undersaturated Bo table.
         - 'bo': Undersaturated Bo table (Pres > Psat).
-        - 'rs_uo': Solubility ratio for undersaturated Uo table.
         - 'uo': Undersaturated Uo table (Pres > Psat).
         - 'denoil': Oil density.
         - 'dengas': Gas density.
@@ -797,9 +779,7 @@ def get_rhog(table, p, eg=None):
     table : dict
         PVT table with the following keys:
         - 'sat': Saturated table (Pres = Psat).
-        - 'rs_bo': Solubility ratio for undersaturated Bo table.
         - 'bo': Undersaturated Bo table (Pres > Psat).
-        - 'rs_uo': Solubility ratio for undersaturated Uo table.
         - 'uo': Undersaturated Uo table (Pres > Psat).
         - 'denoil': Oil density.
         - 'dengas': Gas density.
@@ -828,9 +808,7 @@ def get_pvt_values(table, data, check_limits=False):
     table : dict
         PVT table with the following keys:
         - 'sat': Saturated table (Pres = Psat).
-        - 'rs_bo': Solubility ratio for undersaturated Bo table.
         - 'bo': Undersaturated Bo table (Pres > Psat).
-        - 'rs_uo': Solubility ratio for undersaturated Uo table.
         - 'uo': Undersaturated Uo table (Pres > Psat).
         - 'denoil': Oil density.
         - 'dengas': Gas density.
