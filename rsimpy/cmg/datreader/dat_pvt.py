@@ -286,7 +286,10 @@ def _process_bot_vot(tables, pvt):
     """Process BOT or VOT keywords from lines in a dat file."""
     output = {}
     for table in tables:
-        values = np.array(table[1:], dtype=float).reshape(-1, 2)
+        if len(table) % 2 == 0:
+            values = np.array(table[2:], dtype=float).reshape(-1, 2)
+        else:
+            values = np.array(table[1:], dtype=float).reshape(-1, 2)
         if len(values) == 0:
             raise ValueError("No values found in keyword table.")
 
