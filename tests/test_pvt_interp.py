@@ -49,7 +49,6 @@ def _save_worst(rs, pres, key, interp_values, original_values):
         delimiter=",",
         header="RS,PRES,Original,Interpolated",
         comments="")
-    print(f"Saved {n} most offending samples for {key} to {csv_path}")
     return csv_path
 
 
@@ -58,7 +57,8 @@ class TestTemplate(unittest.TestCase):
 
 
     def test_read_pvt(self):
-        """Check reading PVT data in dat file"""
+        """Check interpolating PVT data"""
+        print("\nTest PVT interpolation")
         path = Path('../SimModels/Unisim_iv_2024/dat_bo/base_case_bo.dat')
         pvt = dat_pvt.get_from_dat(path, verbose=False)
         self.assertEqual(len(pvt), 1, "Should read 1 PVT table")
@@ -88,6 +88,133 @@ class TestTemplate(unittest.TestCase):
                     csv_path = _save_worst(rs, pres, key, interp_values, original_values)
                     _plot_errors(key, interp_values, original_values)
                     print(f"  Worst offending samples saved to {csv_path}")
+
+
+    def test_read_pvt_inv(self):
+        """Check interpolating the inverse of PVT data"""
+        print("\nTest inverse PVT interpolation")
+        path = Path('../SimModels/Unisim_iv_2024/dat_bo/base_case_bo.dat')
+        pvt = dat_pvt.get_from_dat(path, verbose=False)
+        self.assertEqual(len(pvt), 1, "Should read 1 PVT table")
+
+        sr3 = Sr3Reader(path.with_suffix('.sr3'))
+        file_read = sr3.data.get(
+            element_type="grid",
+            properties=["PRES", "RS", "BO", "EG", "VISO", "VISG"])
+
+        rs = file_read["RS"].values.flatten()
+        pres = file_read["PRES"].values.flatten()
+
+        eg = file_read["EG"].values.flatten()
+        pres_eg = dat_pvt.get_eg_inv(pvt[0], eg)
+
+        ug = file_read["VISG"].values.flatten()
+        pres_ug = dat_pvt.get_ug_inv(pvt[0], ug)
+
+        bo = file_read["BO"].values.flatten()
+        pres_bo = dat_pvt.get_bo_inv(pvt[0], bo, rs)
+
+        uo = file_read["VISO"].values.flatten()
+        pres_uo = dat_pvt.get_uo_inv(pvt[0], uo, rs)
+
+        results = np.stack([pres_eg, pres_ug, pres_bo, pres_uo], axis=1).T
+
+        for i, key in enumerate(['EG', 'UG', 'BO', 'UO']):
+            corr = np.corrcoef(pres, results[i])[0, 1]
+            max_diff = np.max(np.abs(pres - results[i]))
+            max_rel_diff = np.max(np.abs(pres - results[i]) / pres)
+            print(f"Correlation for {key}: {corr:0.6f}")
+            print(f"   Max difference: {max_diff:.6f}")
+            print(f"   Max relative diff.: {max_rel_diff*100:.4f}%")
+            if max_rel_diff > 0.001:  # Threshold for significant difference
+                csv_path = _save_worst(rs, pres, f'inv_{key}', results[i], pres)
+                _plot_errors(f'inv_{key}', results[i], pres)
+                print(f"  Worst offending samples saved to {csv_path}")
+
+
+    def test_pvt_extrap(self):
+        """Check extrapolating PVT data"""
+        path = Path('../SimModels/Unisim_iv_2024/dat_bo/base_case_bo.dat')
+        pvt = dat_pvt.get_from_dat(path, verbose=False)
+        self.assertEqual(len(pvt), 1, "Should read 1 PVT table")
+
+        rs = np.linspace(-100, 500, 10)
+        pres = np.linspace(-100, 1000, 1000)
+
+        rs_grid, pres_grid = np.meshgrid(rs, pres, indexing='ij')
+        rs_flat = rs_grid.flatten()
+        pres_flat = pres_grid.flatten()
+
+        data = np.stack([rs_flat, pres_flat], axis=1)
+        interp_ = dat_pvt.get_pvt_values(pvt[0], data, check_limits=False)
+        print(f'Interpolated {interp_['BO'].shape[0]:,} values.')
+
+        for key, arr in interp_.items():
+            if np.isnan(arr).any():
+                raise ValueError(f"NaN values found in interpolated array for {key}")
+            if np.isinf(arr).any():
+                raise ValueError(f"Inf values found in interpolated array for {key}")
+
+        for key in ['BO', 'UO']:
+            bo_grid = interp_[key].reshape(len(rs), len(pres))
+            plt.figure(figsize=(10, 6))
+            for i, rs_val in enumerate(rs):
+                plt.plot(pres, bo_grid[i], label=f'RS={rs_val:.1f}')
+            plt.plot(
+                pvt[0]['sat']['PRES'], pvt[0]['sat'][f'{key.upper()}'],
+                'k--', label='Sat. Value', alpha=0.5)
+            plt.xlabel('PRES')
+            plt.ylabel(key)
+            plt.yscale('log')
+            plt.title(f'{key} Extrapolation')
+            plt.legend(fontsize='small', ncol=2, bbox_to_anchor=(1.05, 1), loc='upper left')
+            plt.tight_layout()
+            plt.savefig(f'./{key.lower()}_extrapolation.png')
+            plt.close()
+
+
+    def test_read_water_pvt(self):
+        """Check interpolating por and water PVT data"""
+        print("\nTest por and water PVT interpolation")
+        path = Path('../SimModels/Unisim_iv_2024/dat_bo/base_case_bo.dat')
+        pvt = dat_pvt.get_from_dat(path, verbose=False)
+        self.assertEqual(len(pvt), 1, "Should read 1 PVT table")
+
+        sr3 = Sr3Reader(path.with_suffix('.sr3'))
+        file_read = sr3.data.get(
+            element_type="grid",
+            properties=["PRES", "POROS", "VISW", "MASDENW"])
+        file_read_por = sr3.data.get(
+            element_type="grid",
+            properties=["POR"], days=[0])
+
+        poros = file_read["POROS"].values.flatten()
+        uw = file_read["VISW"].values.flatten()
+        rhow = file_read["MASDENW"].values.flatten()
+
+        por = file_read_por["POR"].values.flatten()
+        por = np.stack([por] * (poros.shape[0] // por.shape[0]), axis=0).T.flatten()
+        pres = file_read["PRES"].values.flatten()
+        poros_ = dat_pvt.get_por_mod(pvt[0], pres) * por
+        bw_ = dat_pvt.get_bw(pvt[0], pres)
+        uw_ = dat_pvt.get_uw(pvt[0], pres)
+        rhow_ = dat_pvt.get_rhow(pvt[0], pres, bw_)
+
+        results = np.stack([poros, uw, rhow], axis=1).T
+        results_ = np.stack([poros_, uw_, rhow_], axis=1).T
+
+        for i, key in enumerate(['Poros', 'Uw', 'rhow']):
+            corr = np.corrcoef(results[i], results_[i])[0, 1]
+            max_diff = np.max(np.abs(results[i] - results_[i]))
+            max_rel_diff = np.max(np.abs(results[i] - results_[i]) / results[i])
+            print(f"Correlation for {key}: {corr:0.6f}")
+            print(f"   Max difference: {max_diff:.6f}")
+            print(f"   Max relative diff.: {max_rel_diff*100:.4f}%")
+            if max_rel_diff > 0.001:  # Threshold for significant difference
+                csv_path = _save_worst(por, pres, f'{key}', results_[i], results[i])
+                _plot_errors(f'{key}', results_[i], results[i])
+                print(f"  Worst offending samples saved to {csv_path}")
+
 
 
 if __name__ == '__main__':
