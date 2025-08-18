@@ -15,6 +15,9 @@ def interp_extrap(x, y, new_x, extrap=True):
 
     Extrapolates using the two lowest or two largest points if new_x is outside x range.
 
+    Will try to invert x and y if x is not strictly increasing. If that fails,
+    will sort x and y according to x.
+
     Parameters
     ----------
     x : array_like
@@ -33,6 +36,18 @@ def interp_extrap(x, y, new_x, extrap=True):
     """
     x = np.asarray(x)
     y = np.asarray(y)
+
+    if not np.all(np.diff(x) > 0):
+        x = x[::-1]
+        if not np.all(np.diff(x) > 0):
+            sort_indices = np.argsort(x)
+            x = x[sort_indices]
+            if not np.all(np.diff(x) > 0):
+                raise ValueError("Input x must be strictly increasing.")
+            y = y[sort_indices]
+        else:
+            y = y[::-1]
+
     new_x = np.asarray(new_x)
     y_interp = np.interp(new_x, x, y)
     if not extrap:
@@ -81,6 +96,7 @@ def alt_interp1d(x, y, x_new, x_inversion=-np.inf, inverse_smaller=True, extrap=
     """
     x = np.asarray(x)
     y = np.asarray(y)
+    x_new = np.asarray(x_new)
 
     if inverse_smaller:
         mask = x_new < x_inversion
@@ -88,8 +104,10 @@ def alt_interp1d(x, y, x_new, x_inversion=-np.inf, inverse_smaller=True, extrap=
         mask = x_new > x_inversion
 
     y_interp = np.zeros_like(x_new)
-    y_interp[mask] = 1/interp_extrap(x, 1/(y+EPS), x_new[mask], extrap=extrap)
-    y_interp[~mask] = interp_extrap(x, y, x_new[~mask], extrap=extrap)
+    if mask.any():
+        y_interp[mask] = 1/interp_extrap(x, 1/(y+EPS), x_new[mask], extrap=extrap)
+    if (~mask).any():
+        y_interp[~mask] = interp_extrap(x, y, x_new[~mask], extrap=extrap)
 
     return y_interp
 
