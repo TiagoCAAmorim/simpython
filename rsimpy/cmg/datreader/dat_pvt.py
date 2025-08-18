@@ -63,6 +63,9 @@ get_uw_inv(table, uw)
     Get pressure for a given water viscosity.
 get_rhow(table, p, bw=None)
     Get water density for a given pressure.
+
+find_equilibrium(pvt, vo_std, vg_std, vw_std, vpor_ref, max_iter=10, tol=1e-6)
+    Find the equilibrium pressure using the secant method.
 """
 
 import numpy as np
@@ -300,7 +303,9 @@ def _process_pvt_lines(table, num_tables, z_transform, verbose=False):
         'bot': _process_bot_vot(table['BOT'], pvt),
         'uot': _process_bot_vot(table['VOT'], pvt),
     }
-    for k in ['DENOIL', 'DENGAS', 'DENWAT', 'CPOR', 'PRPOR', 'DCPOR', 'REFPW', 'BWI', 'CW', 'VWI', 'CVW']:
+    for k in ['DENOIL', 'DENGAS', 'DENWAT',
+              'CPOR', 'PRPOR', 'DCPOR',
+              'REFPW', 'BWI', 'CW', 'VWI', 'CVW']:
         table_out[k.lower()] = table.get(k, 0.0)
     return table_out
 
@@ -312,7 +317,9 @@ def _build_subsat_interp(pvt_table):
         'bo': _build_interpolation(pvt_table['bot']),
         'uo': _build_interpolation(pvt_table['uot']),
     }
-    for k in ['DENOIL', 'DENGAS', 'DENWAT', 'CPOR', 'PRPOR', 'DCPOR', 'REFPW', 'BWI', 'CW', 'VWI', 'CVW']:
+    for k in ['DENOIL', 'DENGAS', 'DENWAT',
+              'CPOR', 'PRPOR', 'DCPOR',
+              'REFPW', 'BWI', 'CW', 'VWI', 'CVW']:
         table[k.lower()] = pvt_table.get(k.lower(), 0.0)
     return table
 
@@ -1351,6 +1358,120 @@ def _check_pvt_limits(rs, p, sat_table):
         range_p = f"[{p.min()}, {p.max()}]"
         range_ = f"[{sat_table['PRES'].min()}, {sat_table['PRES'].max()}]"
         raise ValueError(f"Pressure values ({range_p}) is out of range ({range_}).")
+
+
+# MARK: Equilibrium
+def _get_vol_error(pvt, vo_std, vg_std, vw_std, vpor_ref, p, rs=None, psat=None, is_sat=None):
+    """Calculate the volume error for a given pressure."""
+    if is_sat is None:
+        rs = vg_std / (vo_std + EPS)
+        psat = get_psat(pvt, rs=rs)
+        is_sat = psat > p
+
+    if (is_sat).any():
+        rs[is_sat] = get_rs(pvt, psat=p[is_sat])
+        psat[is_sat] = p[is_sat]
+
+    vpor = vpor_ref * get_por_mod(pvt, p=p)
+    vo = vo_std * get_bo(pvt, p=p, rs=rs, psat=psat)
+    vg = (vg_std - rs * vo_std) / get_eg(pvt, p=p)
+    vw = vw_std * get_bw(pvt, p=p)
+    v_total = vo + vg + vw
+    v_error = v_total - vpor
+    return v_error
+
+
+def find_equilibrium(pvt, vo_std, vg_std, vw_std, vpor_ref, max_iter=10, tol=1e-6):
+    """
+    Find the equilibrium pressure using the secant method.
+
+    First it is tested the saturation pressure. With this information
+    the algorithm can determine if the system is saturated or not.
+    The secant method is used to find the equilibrium pressure.
+
+    Arguments
+    ---------
+    pvt : dict
+        PVT data.
+    vo_std : np.ndarray
+        Standard oil volume.
+    vg_std : np.ndarray
+        Standard gas volume.
+    vw_std : np.ndarray
+        Standard water volume.
+    vpor_ref : np.ndarray
+        Reference pore volume.
+    max_iter : int
+        Maximum number of iterations.
+        Defaults to 10.
+    tol : float
+        Tolerance for equilibrium pressure convergence (p_i+1 - p_i).
+        Defaults to 1e-6.
+
+    Returns
+    -------
+    np.ndarray
+        Equilibrium pressure.
+    """
+    vo_std = np.asarray(vo_std)
+    vg_std = np.asarray(vg_std)
+    vw_std = np.asarray(vw_std)
+    vpor_ref = np.asarray(vpor_ref)
+
+    # Check if equilibrium is saturated or undersaturated
+    rs = vg_std / (vo_std + EPS)
+    psat = get_psat(pvt, rs=rs)
+    error_ = _get_vol_error(
+        pvt, vo_std, vg_std, vw_std, vpor_ref,
+        p=psat,
+        rs=rs,
+        psat=psat,
+        is_sat=np.zeros_like(psat, dtype=bool)
+    )
+
+    p0 = psat.copy()
+    filter_ = psat > pvt['sat']['PRES'].max()
+    p0[filter_] = pvt['sat']['PRES'].max()
+
+    e0 = error_.copy()
+    e0[filter_] = _get_vol_error(
+        pvt, vo_std[filter_], vg_std[filter_], vw_std[filter_], vpor_ref[filter_],
+        p=p0[filter_]
+    )
+
+    is_sat = error_ < 0
+    p1 = np.zeros_like(psat)
+    if is_sat.any():
+        p1[is_sat] = p0[is_sat] - (p0[is_sat] - pvt['sat']['PRES'].min()) / 2
+    if (~is_sat).any():
+        p1[~is_sat] = p0[~is_sat] + (pvt['sat']['PRES'].max() - p0[~is_sat]) / 2
+
+    # Apply secant method
+    for _ in range(max_iter):
+        e1 = _get_vol_error(
+            pvt, vo_std, vg_std, vw_std, vpor_ref,
+            p=p1,
+            rs=rs,
+            psat=psat,
+            is_sat=is_sat
+        )
+
+        denom = e1 - e0
+        p_star = np.where(
+            (np.abs(denom) < EPS) | (np.abs(p0 - p1) < tol),
+            (p0 + p1) / 2,
+            (p0 * e1 - p1 * e0) / np.where(np.abs(denom) < EPS, EPS, denom)
+        )
+
+        if (np.abs(p_star - p1) < tol).all():
+            return p_star
+
+        filter_ =  np.abs(e1) < np.abs(e0)
+        p0[filter_] = p1[filter_]
+        e0[filter_] = e1[filter_]
+        p1 = p_star
+
+    return p_star
 
 
 if __name__ == "__main__":
