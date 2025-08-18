@@ -419,8 +419,6 @@ def _build_interpolation(tables):
         d_val = table['val'][1:] - table['val'][:-1]
         comp = d_val/d_pres / table['val'][:-1]
 
-        slope, _, _, _, _ = linregress(p_subsat, 1 / (comp+EPS))
-        alphas.append(slope)
         alpha, _, _, _, _ = linregress(p_subsat, 1 / (comp+EPS))
         alphas.append(alpha)
 
