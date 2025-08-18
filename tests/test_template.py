@@ -29,7 +29,7 @@ def process_temporary_file(text, verbose=False, variables_df=None,
 
         return template.TemplateProcessor(template_path=temp_file_path,
                                           verbose=verbose,
-                                          variables_table_path=temp_csv_file_path,
+                                          variables_table=temp_csv_file_path,
                                           output_file_path=output_file_path,
                                           all_uniform=all_uniform,
                                           n_samples=n_samples)

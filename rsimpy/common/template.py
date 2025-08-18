@@ -47,7 +47,7 @@ class TemplateProcessor:
         Sets the encoding used for reading and writing files.
     set_n_samples(n_samples)
         Sets the number of samples to be generated.
-    read_variables_table(variables_table_path)
+    read_variables_table(variables_table)
         Reads csv file with values for the Table variables.
     set_variable_active(variable, active=True):
         Sets a variable to active/inactive.
@@ -61,7 +61,7 @@ class TemplateProcessor:
     """
 
     def __init__(self, template_path, verbose=False, output_file_path=None,
-                 variables_table_path=None, all_uniform=False, n_samples=0,
+                 variables_table=None, all_uniform=False, n_samples=0,
                  encoding='utf-8'):
         """
         Parameters
@@ -74,9 +74,10 @@ class TemplateProcessor:
         output_file_path : str, optional
             Path to the files to be written.
             (default: None)
-        variables_table_path : str, optional
-            Path to csv file to be read with values of the
-            Table type variables.
+        variables_table : [str, Path, pandas.DataFrame], optional
+            If str or Path, it is the path to a csv file to be read.
+            If pandas.DataFrame, it is the DataFrame with values to be used.
+            If None, no data is read.
             (default: None)
         all_uniform : boolean, optional
             Indicates if distributions should be ignored and a
@@ -132,8 +133,8 @@ class TemplateProcessor:
         self.variables_raw = self._extract_raw_text()
         self.variables = self._parse_variables()
 
-        if variables_table_path is not None:
-            self.read_variables_table(variables_table_path)
+        if variables_table is not None:
+            self.read_variables_table(variables_table)
 
         self.experiments_table = None
         self._current_distribution = None
@@ -460,14 +461,15 @@ class TemplateProcessor:
         """
         self._n_samples = n_samples
 
-    def read_variables_table(self, variables_table_path):
+    def read_variables_table(self, data):
         """Reads csv file with values for the Table variables.
 
         Parameters
         ----------
-        variables_table_path : str
-            Path to csv file to be read with values of the
-            Table type variables.
+        data: [str, Path, pandas.DataFrame]
+            If str or Path, it is the path to a csv file to be read.
+            If pandas.DataFrame, it is the DataFrame with values to be used.
+            If None, no data is read.
 
         Raises
         ------
@@ -475,28 +477,36 @@ class TemplateProcessor:
             If an error is found when reading file.
         """
 
-        if not Path(variables_table_path).exists():
-            print(f"CSV file '{variables_table_path}' not found.")
-        else:
+        if isinstance(data, pd.DataFrame):
+            df = data
+        elif isinstance(data, (str, Path)):
+            variables_table_path = Path(data)
+            if not Path(variables_table_path).exists():
+                msg = f"CSV file '{variables_table_path}' not found."
+                raise FileNotFoundError(msg)
             try:
                 df = pd.read_csv(variables_table_path, skipinitialspace=True)
-                if (df.columns[0] is None) or ('index' in df.columns and df.columns[0] == 'index'):
-                    df.drop(columns=df.columns[0], axis=1, inplace=True)
-                for key in df.columns:
-                    if key not in self.variables:
-                        msg1 = f"Variable '{key}' not found in template."
-                        msg2 = "Will ignore data."
-                        print(" ".join([msg1,msg2]))
-                        continue
-                    if self.variables[key]['distribution'] != 'table':
-                        msg1 = f"Variable '{key}' already has a distribution."
-                        msg2 = "Will ignore data."
-                        print(" ".join([msg1,msg2]))
-                        continue
-                    self.variables[key]['values'] = list(df[key])
             except (ValueError, TypeError, NameError) as e:
                 msg = 'Error reading variables table file:'
                 raise ValueError(" ".join([msg, variables_table_path])) from e
+        else:
+            msg = f"Invalid data type: {type(data)}. Expected str, Path, or pandas.DataFrame."
+            raise ValueError(msg)
+
+        if (df.columns[0] is None) or ('index' in df.columns and df.columns[0] == 'index'):
+            df.drop(columns=df.columns[0], axis=1, inplace=True)
+        for key in df.columns:
+            if key not in self.variables:
+                msg1 = f"Variable '{key}' not found in template."
+                msg2 = "Will ignore data."
+                print(" ".join([msg1,msg2]))
+                continue
+            if self.variables[key]['distribution'] != 'table':
+                msg1 = f"Variable '{key}' already has a distribution."
+                msg2 = "Will ignore data."
+                print(" ".join([msg1,msg2]))
+                continue
+            self.variables[key]['values'] = list(df[key])
 
     def _check_generate_experiments(self, n_samples=0):
         tables_n_values = []
