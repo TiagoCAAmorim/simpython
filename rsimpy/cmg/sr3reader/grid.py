@@ -385,12 +385,12 @@ class GridHandler:
         if active_index is None:
             return self._active_index
         i = self._active_index[np.array(active_index)-1]
-        if isinstance(i, int):
+        if isinstance(active_index, int):
             return i[0]
         return i
 
 
-    def n2ijk(self, n, as_string=False):
+    def n2ijk(self, n, as_active=False, as_string=False):
         """Returns (i,j,k) coordinates of the n-th cell.
 
             Parameters
@@ -398,6 +398,9 @@ class GridHandler:
             n : int or [int]
                 Cell number, from 1 to ni*nj*nk or
                 2*ni*nj*nk, if has_fracture is True.
+            as_active : bool, optional
+                If True, assumes the cell number refers
+                to the active cells only.
             as_string : bool, optional
                 If True, returns the coordinates as
                 strings.
@@ -410,6 +413,8 @@ class GridHandler:
             ValueError
                 If shape is not defined.
         """
+        if as_active:
+            n = self.active2complete(n)
         ijk = _n2ijk(self._sizes["nijk"], n, self.has_fracture())
         if as_string:
             ijk = [','.join([str(c) for c in c]) for c in ijk]
