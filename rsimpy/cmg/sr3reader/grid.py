@@ -385,8 +385,8 @@ class GridHandler:
         if active_index is None:
             return self._active_index
         i = self._active_index[np.array(active_index)-1]
-        if isinstance(active_index, int):
-            return i[0]
+        if not hasattr(active_index, '__iter__') or isinstance(active_index, (str, bytes)):
+            return i.item() if hasattr(i, 'item') else i
         return i
 
 
