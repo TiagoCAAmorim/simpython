@@ -197,10 +197,10 @@ class KrelHandler:
         if table is None:
             table = self.get(table_number)
         if use_quadratic_correction:
-            qg_quad = (sg - table.attrs['sgcrit'])**2 / \
+            sg_quad = (sg - table.attrs['sgcrit'])**2 / \
                 (table.attrs['sg_quad'] - table.attrs['sgcrit']) + \
                 table.attrs['sgcrit']
-            sg = np.where(sg > table.attrs['sg_quad'], sg, qg_quad)
+            sg = np.where(sg > table.attrs['sg_quad'], sg, sg_quad)
 
         if (table['sl'].values[-1] - table['sl'].values[0]) > 0:
             krg = np.interp(1-sg,
@@ -237,7 +237,8 @@ class KrelHandler:
         krw = self.get_krw(table_number, sw, table=table)
         krow = self.get_krw(table_number, sw, table=table, kr_string='krow')
         krg = self.get_krg(table_number, sg, table=table)
-        krog = self.get_krg(table_number, sg, table=table, kr_string='krog', use_quadratic_correction=False)
+        krog = self.get_krg(table_number, sg, table=table, kr_string='krog',
+                            use_quadratic_correction=False)
 
         kro_cw = table.attrs['kro_max']
         kro = kro_cw * ( (krow/kro_cw + krw) * (krog/kro_cw + krg) - krw - krg )
