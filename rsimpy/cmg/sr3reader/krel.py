@@ -108,6 +108,8 @@ class KrelHandler:
             'sgcrit':   go_table['sg'].values[go_table['krg'].values==0].max(),
             'sorw':     wo_table['so'].values[wo_table['krow'].values==0].max(),
             'sorg':     go_table['so'].values[go_table['krog'].values==0].max(),
+            'sg_quad':  go_table['sg'].values[go_table['krg'].values>0].min(),
+            'sog_quad': go_table['sg'].values[go_table['krog'].values>0].min(),
             'krw_max':  wo_table['krw'].max(),
             'krg_max':  go_table['krg'].max(),
             'kro_max':  wo_table['krow'].max(),
@@ -141,6 +143,106 @@ class KrelHandler:
                 xr_dataset[c] = _new_data_array(wo_table, 'sw', c)
 
         return xr_dataset
+
+
+    def get_krw(self, table_number, sw, table=None, kr_string='krw'):
+        """Returns krw for given sw from specified table.
+
+        Parameters
+        ----------
+        table_number: int
+            Associated table number.
+        sw: float or np.ndarray
+            Water saturation.
+        table: xr.Dataset, optional
+            Pre-fetched table data.
+        kr_string: str, optional
+            Specifies which krw curve to use. Defaults to 'krw'.
+
+        Raises
+        ------
+        ValueError
+            If table_number is invalid.
+        """
+        if table is None:
+            table = self.get(table_number)
+        krw = np.interp(sw,
+                        table['sw'].values,
+                        table[kr_string].values)
+        return krw
+
+
+    def get_krg(self, table_number, sg, table=None, kr_string='krg', use_quadratic_correction=True):
+        """Returns krg for given sg from specified table.
+
+        Parameters
+        ----------
+        table_number: int
+            Associated table number.
+        sg: float or np.ndarray
+            Gas saturation.
+        table: xr.Dataset, optional
+            Pre-fetched table data.
+        kr_string: str, optional
+            Specifies which krg curve to use. Defaults to 'krg'.
+        use_quadratic_correction: bool, optional
+            Whether to apply quadratic correction for sg below sg_quad.
+            Defaults to True.
+
+        Raises
+        ------
+        ValueError
+            If table_number is invalid.
+        """
+        if table is None:
+            table = self.get(table_number)
+        if use_quadratic_correction:
+            qg_quad = (sg - table.attrs['sgcrit'])**2 / \
+                (table.attrs['sg_quad'] - table.attrs['sgcrit']) + \
+                table.attrs['sgcrit']
+            sg = np.where(sg > table.attrs['sg_quad'], sg, qg_quad)
+
+        if (table['sl'].values[-1] - table['sl'].values[0]) > 0:
+            krg = np.interp(1-sg,
+                            table['sl'].values,
+                            table[kr_string].values)
+        else:
+            krg = np.interp(sg,
+                            1-table['sl'].values,
+                            table[kr_string].values)
+        return krg
+
+
+    def get_kro(self, table_number, sw, sg):
+        """Returns kro for given sw and sg from specified table.
+
+        Stone II model is assumed.
+
+        Parameters
+        ----------
+        table_number: int
+            Associated table number.
+        sw: float or np.ndarray
+            Water saturation.
+        sg: float or np.ndarray
+            Gas saturation.
+
+        Raises
+        ------
+        ValueError
+            If table_number is invalid.
+        """
+        table = self.get(table_number)
+
+        krw = self.get_krw(table_number, sw, table=table)
+        krow = self.get_krw(table_number, sw, table=table, kr_string='krow')
+        krg = self.get_krg(table_number, sg, table=table)
+        krog = self.get_krg(table_number, sg, table=table, kr_string='krog', use_quadratic_correction=False)
+
+        kro_cw = table.attrs['kro_max']
+        kro = kro_cw * ( (krow/kro_cw + krw) * (krog/kro_cw + krg) - krw - krg )
+
+        return kro.clip(min=0.0)
 
 
     def get(self,table_number):
