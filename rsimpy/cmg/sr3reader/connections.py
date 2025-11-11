@@ -368,8 +368,9 @@ class ConnectionsHandler:
         vi = Q / Ai = Tran * (kr/B.mu) * dPhi * sqrt(Di.Di) / (A.Di)
         ti = sqrt(Di.Di) / vi = sqrt(Di.Di) * (A.Di) / (Tran * (kr/B.mu) * dPhi * sqrt(Di.Di))
            = (A.Di) / (Tran * (kr/B.mu) * dPhi)
-        tof_i = (A.Di) / Tran
-        tof = tof_i + tof_j = (A.Di + A.Dj) / Tran
+        Assuming (kr/B.mu) * dPhi / sqrt(Di.Di) = cte
+        tof_i = (A.Di/sqrt(Di.Di)) / Tran
+        tof = tof_i + tof_j = (A.Di/sqrt(Di.Di) + A.Dj/sqrt(Dj.Dj)) / Tran
 
         vi: Velocity from the center of cell i to the common face.
         Q: Flow rate through the connection.
@@ -431,7 +432,7 @@ class ConnectionsHandler:
         tran = 1/np.sum(1/t, axis=1)
 
         if tof:
-            tof_values = np.sum(ad, axis=1) / tran
+            tof_values = np.sum(ad / np.sqrt(dd), axis=1) / tran
             return np.stack((tran, tof_values), axis=1)
 
         return tran
