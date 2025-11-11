@@ -128,7 +128,8 @@ class ConnectionsHandler:
         return self._connections
 
 
-    def get_transmissibilities(self, connections=None, add_areas=False, force_recalc=False):
+    def get_transmissibilities(self, connections=None, add_areas=False,
+                               force_recalc=False, tof=False):
         """
         Calculates the transmissibility for each connection.
 
@@ -145,6 +146,22 @@ class ConnectionsHandler:
         Dix, Diy,Diz: X-, Y- and Z-components of the distance between the center of cell i.
         and the center of the relevant face of cell i.
 
+        vi = Q / Ai = Tran * (kr/B.mu) * dPhi * sqrt(Di.Di) / (A.Di)
+        ti = sqrt(Di.Di) / vi = sqrt(Di.Di) * (A.Di) / (Tran * (kr/B.mu) * dPhi * sqrt(Di.Di))
+           = (A.Di) / (Tran * (kr/B.mu) * dPhi)
+        tof_i = (A.Di) / Tran
+        tof = tof_i + tof_j = (A.Di + A.Dj) / Tran
+
+        vi: Velocity from the center of cell i to the common face.
+        Q: Flow rate through the connection.
+        Ai: Area of the common face projected in the flow direction = (A.Di) / sqrt(Di.Di).
+        kr: Relative permeability.
+        B: Formation volume factor.
+        mu: Viscosity.
+        dPhi: Pressure difference between the two cells.
+        ti: Time for a particle to travel from the center of cell i to the common face.
+        tof: Normalized time of flight through the connection.
+
         Parameters:
         connections (np.ndarray): Array of shape (n_connections, 3) where each row
             contains the two connected cells ("+" face and "-" face) and the
@@ -155,21 +172,28 @@ class ConnectionsHandler:
             with a more precise method.
         force_recalc (bool): If True, the function will recalculate the transmissibilities
             even if they were previously calculated.
+        tof (bool): If True, the function will return the normalized time of flight in
+            addition to the transmissibilities.
 
         Returns:
         np.ndarray: Array of shape (n_connections,) containing the transmissibility
-            for each connection."
+            for each connection. If tof is True, it returns an array (n_connections,2),
+            with the second column containing the time of flight.
         """
         if connections is None:
-            if self._transmissibilities is None or force_recalc:
-                connections = self.get_connections()
-                self._transmissibilities = self._get_transmissibilities(
-                    connections=connections, add_areas=add_areas)
+            connections = self.get_connections()
+            transmissibilities = self._transmissibilities
+            if self._transmissibilities is None or force_recalc or tof:
+                transmissibilities = self._get_transmissibilities(
+                    connections=connections, add_areas=add_areas, tof=tof)
+            if tof:
+                self._transmissibilities = transmissibilities[:,0]
+                return transmissibilities
+            self._transmissibilities = transmissibilities
             return self._transmissibilities
 
         return self._get_transmissibilities(
-            connections=connections, add_areas=add_areas)
-
+            connections=connections, add_areas=add_areas, tof=tof)
 
 # MARK: Setters
     def set_epsilon(self, epsilon):
@@ -271,11 +295,12 @@ class ConnectionsHandler:
 
 
     def _get_ad_dd(self, connections, add_areas=False):
-        """Calculates the a.d/d.d ratio for each side of the given connections.
+        """Calculates the a.d and d.d for each side of the given connections.
 
         a is the normal of the area common to the two cell faces.
         d is the distance between the center of the cell and the center of the
         corresponding face.
+        The absolute value is taken for the dot product a.d to ensure positivity.
 
         Parameters:
         connections (np.ndarray): Array of shape (n_connections, 3) where each row
@@ -286,28 +311,26 @@ class ConnectionsHandler:
             by the sum of the areas of the triangles.
 
         Returns:
-        np.ndarray: Array of shape (n_connections, 2) containing the a.d/d.d ratio
+        np.ndarray: Tuple of two arrays each of shape (n_connections, 2) containing the a.d and d.d
             for each side of the connections.
         """
         cell_centers = np.stack([
             self._grid.coordinates.get_center(connections[:,0]),
             self._grid.coordinates.get_center(connections[:,1])
-            ], axis=1)
+            ], axis=1) #[n_connections, 2, 3]
         con_type = np.stack([
             2*connections[:,2]-1,
             2*connections[:,2]-2
-            ], axis=1)
+            ], axis=1).flatten() #[n_connections*2]
 
-        con_array = connections[:,[0,1]].flatten()
-        con_type_array = con_type.flatten()
+        cells = connections[:,[0,1]].flatten() #[n_connections*2]
 
         faces = np.zeros([cell_centers.shape[0], 2, 4, 3])
         faces_array = faces.reshape((-1,4,3))
         for i in range(6):
-            filter_ = con_type_array == i
+            filter_ = con_type == i
             if np.any(filter_):
-                faces_array[filter_] = self._grid.coordinates.get(con_array[filter_], i)
-
+                faces_array[filter_] = self._grid.coordinates.get(cells[filter_], i)
         face_centers = np.zeros_like(cell_centers)
         face_centers_array = face_centers.reshape((-1, 3))
         face_centers_array[:] = np.mean(faces_array, axis=1)
@@ -319,17 +342,14 @@ class ConnectionsHandler:
             ])
 
         di = face_centers - cell_centers
-        di = np.abs(di)
-
-        normals = np.abs(normals)
         normals = np.stack([normals]*2, axis=1)
-        ad = np.sum(di * normals, axis=2)
+        ad = np.abs(np.sum(di * normals, axis=2))
         dd = np.sum(di * di, axis=2)
 
-        return ad/dd
+        return ad, dd
 
 
-    def _get_transmissibilities(self, connections, add_areas=False):
+    def _get_transmissibilities(self, connections, add_areas=False, tof=False):
         """Calculates the transmissibility for each connection.
 
         Tran = 1 / (1/Ti + 1/Tj)
@@ -345,19 +365,38 @@ class ConnectionsHandler:
         Dix, Diy,Diz: X-, Y- and Z-components of the distance between the center of cell i.
         and the center of the relevant face of cell i.
 
+        vi = Q / Ai = Tran * (kr/B.mu) * dPhi * sqrt(Di.Di) / (A.Di)
+        ti = sqrt(Di.Di) / vi = sqrt(Di.Di) * (A.Di) / (Tran * (kr/B.mu) * dPhi * sqrt(Di.Di))
+           = (A.Di) / (Tran * (kr/B.mu) * dPhi)
+        tof_i = (A.Di) / Tran
+        tof = tof_i + tof_j = (A.Di + A.Dj) / Tran
+
+        vi: Velocity from the center of cell i to the common face.
+        Q: Flow rate through the connection.
+        Ai: Area of the common face projected in the flow direction = (A.Di) / sqrt(Di.Di).
+        kr: Relative permeability.
+        B: Formation volume factor.
+        mu: Viscosity.
+        dPhi: Pressure difference between the two cells.
+        ti: Time for a particle to travel from the center of cell i to the common face.
+        tof: Normalized time of flight through the connection.
+
         Parameters:
         connections (np.ndarray): Array of shape (n_connections, 3) where each row
             contains the two connected cells ("+" face and "-" face) and the
             connection type (1=I, 2=J, 3=K, 4=Mat-Frac). For connections with
             type 4, the cell order is matrix cell and fracture cell.
         add_areas (bool): If True, the function will calculate the area of the common face
-        with a more precise method.
+            with a more precise method.
+        tof (bool): If True, the function will return the normalized time of flight in
+            addition to the transmissibilities.
 
         Returns:
         np.ndarray: Array of shape (n_connections,) containing the transmissibility
-            for each connection."
+            for each connection. If tof is True, it returns an array (n_connections,2),
+            with the second column containing the time of flight.
         """
-        ad_dd = self._get_ad_dd(connections, add_areas=add_areas)
+        ad, dd = self._get_ad_dd(connections, add_areas=add_areas)
 
         props = ["PERMI","PERMJ","PERMK"]
         prop_list = self._properties.get(element_type='grid').keys()
@@ -388,8 +427,12 @@ class ConnectionsHandler:
             perm[cons==i] = perms[i,cells[cons==i]]
             ntg[cons==i] = ntgs[i,cells[cons==i]]
 
-        t = (perm * ntg * ad_dd.flatten()).reshape((-1,2))
+        t = (perm * ntg * (ad/dd).flatten()).reshape((-1,2))
         tran = 1/np.sum(1/t, axis=1)
+
+        if tof:
+            tof_values = np.sum(ad, axis=1) / tran
+            return np.stack((tran, tof_values), axis=1)
 
         return tran
 

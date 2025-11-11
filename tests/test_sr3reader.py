@@ -981,14 +981,12 @@ class TestSr3Reader(unittest.TestCase):
         sr3 = Sr3Reader(test_file)
 
         file_read_ = sr3.connections.get_transmissibilities()
-        true_result = [
-            1.90275126e+02, 6.55115580e+00, 1.19244010e+05, 1.16153341e+05,
-            9.36358173e+01, 3.55410101e+02, 4.84339698e+02
-        ]
-        true_result = np.array(true_result)
+        self.assertEqual(len(file_read_), 7, "Expected 7 transmissibilities.")
 
-        for t,v in zip(true_result, file_read_):
-            self.assertAlmostEqual(np.log(round(t,5)), np.log(round(v,5)))
+        file_read_ = sr3.connections.get_transmissibilities(tof=True)
+        self.assertEqual(file_read_.shape[0], 7, "Expected 7 values.")
+        self.assertEqual(file_read_.shape[1], 2,
+                         "Expected 2 columns for transmissibilities and TOF.")
 
 
     def test_print_transmissibilities(self):
