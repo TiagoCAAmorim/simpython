@@ -18,16 +18,18 @@ def plot_polygon_grid(vertices, values, width=800, height=600,
                        color_limits=None, out_of_range_colors=None,
                        nan_inf_color=None, value_names=None):
     """
-    Plot a grid of 4-sided polygons in 2D with color-coded values using Bokeh.
+    Plot a grid of n-sided polygons in 2D with color-coded values using Bokeh.
     Interactive plot with hover functionality showing face number and value.
 
     Parameters
     ----------
-    vertices : array-like, shape (n_polygons, 4, 2)
-        Coordinates of polygon vertices. Each polygon has 4 vertices,
-        and each vertex has (x, y) coordinates.
-        vertices[i] contains the 4 vertices of polygon i.
+    vertices : array-like, shape (n_polygons, n_vertices, 2)
+        Coordinates of polygon vertices. Each polygon can have any number of vertices
+        (minimum 3), and each vertex has (x, y) coordinates.
+        vertices[i] contains all vertices of polygon i.
         vertices[i, j] contains the (x, y) coordinates of vertex j.
+        Note: All polygons must have the same number of vertices, or you can provide
+        a list of arrays with varying sizes.
     values : array-like, shape (n_polygons,) or (n_polygons, m)
         Values associated with each polygon. These determine the fill color.
         Can be a 1D array or 2D matrix. If 2D, a dropdown control will be
@@ -125,6 +127,35 @@ def plot_polygon_grid(vertices, values, width=800, height=600,
     ... )
     >>> show(panel)  # Only polygons 0 and 2 are shown
 
+    >>> # N-sided polygons: triangles
+    >>> triangles = np.array([
+    ...     [[0, 0], [1, 0], [0.5, 0.9]],  # Triangle 1
+    ...     [[1, 0], [2, 0], [1.5, 0.9]],  # Triangle 2
+    ... ])
+    >>> values_tri = np.array([10, 20])
+    >>> panel = plot_polygon_grid(triangles, values_tri)
+    >>> show(panel)
+
+    >>> # N-sided polygons: hexagons (or any n-sided)
+    >>> import math
+    >>> def make_hexagon(cx, cy, r):
+    ...     return np.array([[cx + r*math.cos(i*math.pi/3),
+    ...                       cy + r*math.sin(i*math.pi/3)]
+    ...                      for i in range(6)])
+    >>> hexagons = np.array([make_hexagon(0, 0, 1), make_hexagon(1.5, 0, 1)])
+    >>> panel = plot_polygon_grid(hexagons, np.array([1, 2]))
+    >>> show(panel)
+
+    >>> # Mixed polygons with different number of vertices
+    >>> mixed_polygons = [
+    ...     np.array([[0, 0], [1, 0], [0.5, 1]]),  # Triangle
+    ...     np.array([[1.5, 0], [2.5, 0], [2.5, 1], [1.5, 1]]),  # Square
+    ...     np.array([[3, 0], [3.5, 0], [3.7, 0.5], [3.5, 1], [3, 1], [2.8, 0.5]]),  # Hexagon
+    ... ]
+    >>> values_mixed = np.array([5, 10, 15])
+    >>> panel = plot_polygon_grid(mixed_polygons, values_mixed)
+    >>> show(panel)
+
     >>> # Matrix values with interactive selector
     >>> values_matrix = np.array([
     ...     [10, 100, 0.2],  # Temperature, Pressure, Porosity for cell 0
@@ -140,17 +171,48 @@ def plot_polygon_grid(vertices, values, width=800, height=600,
     ... )
     >>> show(panel)  # Dropdown selector will appear to choose columns
     """
-    # Convert to numpy arrays
-    vertices = np.asarray(vertices)
+    # Convert to numpy arrays (or handle list of arrays with different sizes)
+    if isinstance(vertices, (list, tuple)) and len(vertices) > 0:
+        # Check if it's a list of arrays with potentially different sizes
+        if isinstance(vertices[0], np.ndarray) or isinstance(vertices[0], (list, tuple)):
+            # Each element is a polygon with potentially different number of vertices
+            vertices_list = [np.asarray(v) for v in vertices]
+            n_polygons = len(vertices_list)
+            # Validate each polygon
+            for i, v in enumerate(vertices_list):
+                if v.ndim != 2 or v.shape[1] != 2:
+                    raise ValueError(
+                        f"vertices[{i}] must have shape (n_vertices, 2), got {v.shape}"
+                    )
+                if v.shape[0] < 3:
+                    raise ValueError(
+                        f"vertices[{i}] must have at least 3 vertices, got {v.shape[0]}"
+                    )
+            vertices_are_ragged = True
+        else:
+            # It's a regular array
+            vertices = np.asarray(vertices)
+            vertices_are_ragged = False
+    else:
+        vertices = np.asarray(vertices)
+        vertices_are_ragged = False
+
+    if not vertices_are_ragged:
+        # Validate uniform array
+        if vertices.ndim != 3 or vertices.shape[2] != 2:
+            raise ValueError(
+                f"vertices must have shape (n_polygons, n_vertices, 2), got {vertices.shape}"
+            )
+        if vertices.shape[1] < 3:
+            raise ValueError(
+                f"Each polygon must have at least 3 vertices, got {vertices.shape[1]}"
+            )
+        n_polygons = vertices.shape[0]
+        # Convert to list for uniform processing
+        vertices_list = [vertices[i] for i in range(n_polygons)]
+
     values = np.asarray(values)
-
-    # Validate inputs
-    if vertices.ndim != 3 or vertices.shape[1] != 4 or vertices.shape[2] != 2:
-        raise ValueError(
-            f"vertices must have shape (n_polygons, 4, 2), got {vertices.shape}"
-        )
-
-    n_polygons = vertices.shape[0]
+    n_polygons = len(vertices_list)
 
     # Check if values is a matrix
     is_matrix = values.ndim == 2
@@ -267,8 +329,9 @@ def plot_polygon_grid(vertices, values, width=800, height=600,
 
     for i in range(n_polygons):
         # Extract x and y coordinates for this polygon
-        poly_x = vertices[i, :, 0].tolist()
-        poly_y = vertices[i, :, 1].tolist()
+        poly_vertices = vertices_list[i]
+        poly_x = poly_vertices[:, 0].tolist()
+        poly_y = poly_vertices[:, 1].tolist()
 
         xs.append(poly_x)
         ys.append(poly_y)
@@ -301,8 +364,8 @@ def plot_polygon_grid(vertices, values, width=800, height=600,
             in_range_mask[idx] = True
 
     # Calculate plot range with margins
-    all_x = vertices[:, :, 0].flatten()
-    all_y = vertices[:, :, 1].flatten()
+    all_x = np.concatenate([v[:, 0] for v in vertices_list])
+    all_y = np.concatenate([v[:, 1] for v in vertices_list])
     x_range = all_x.max() - all_x.min()
     y_range = all_y.max() - all_y.min()
     x_margin = x_range * 0.02 if x_range > 0 else 1
@@ -639,14 +702,14 @@ if __name__ == "__main__":
     # show(panel_log)
 
     # Example with color limits
-    vertices_limits = np.array([
+    vertices_limits = [
         [[0.5, 0.5], [1, 0], [1, 1]],
         [[1, 0], [2, 0], [2, 1], [1, 1]],
         [[0, 1], [1, 1], [1, 2], [0, 2]],
         [[1, 1], [2, 1], [2, 2], [1, 2]],
         [[2, 0], [3, 0], [3, 1], [2, 1]],
         [[2, 1], [3.2, 1], [3, 2], [2, 2.2]],
-    ])
+    ]
     values_limits = np.array([[5, 15, 25, 35, 45, 55],[15, 115, 125, 135, 145, 155]]).T
     labels_limits = np.array(['V=5', 'V=15', 'V=25', 'V=35', 'V=45', 'V=55'])
 
@@ -654,6 +717,7 @@ if __name__ == "__main__":
         vertices_limits, values_limits,
         labels=labels_limits,
         color_limits=(20, 40),
+        out_of_range_colors=('blue', 'red'),
         nan_inf_color='gray',
         colorbar_label='Value',
         title='Color Limits Example (20-40, others gray)'
