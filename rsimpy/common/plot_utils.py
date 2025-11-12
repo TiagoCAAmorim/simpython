@@ -5,7 +5,7 @@ import numpy as np
 from bokeh.plotting import figure
 from bokeh.models import (
     HoverTool, LinearColorMapper, LogColorMapper,
-    ColorBar, BasicTicker, LogTicker, Select, ColumnDataSource, CustomJS
+    ColorBar, BasicTicker, LogTicker, Select, ColumnDataSource, CustomJS, Slider
 )
 from bokeh.palettes import (
     Viridis256, Turbo256, Plasma256, Inferno256, Magma256,
@@ -20,7 +20,9 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
                        colorbar=True, colorbar_label=None, log_scale=False,
                        title='Polygon Grid', labels=None,
                        color_limits=None, out_of_range_colors=None,
-                       nan_inf_color=None, value_names=None):
+                       nan_inf_color=None, value_names=None,
+                       connections=None, connection_values=None,
+                       connection_width=3.0, connection_border_color='white'):
     """
     Plot a grid of n-sided polygons in 2D with color-coded values using Bokeh.
     Interactive plot with hover functionality showing face number and value.
@@ -88,6 +90,21 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
     value_names : array-like of str, optional
         Names for each column in the values matrix. Used as options in the
         dropdown selector when values is 2D. If None, uses 'Column 0', 'Column 1', etc.
+    connections : array-like, shape (2, n_connections) or (n_connections, 2), optional
+        Array defining connections between polygons. Each column (or row) contains
+        a pair of polygon indices [i, j] indicating a connection from polygon i to j.
+        If provided, lines will be drawn between polygon centers.
+    connection_values : array-like, shape (n_connections,) or (n_connections, m), optional
+        Values associated with each connection. These determine the line colors.
+        Can be 1D array or 2D matrix. If 2D, must match the number of columns in values.
+        If None and connections is provided, all connection values are set to 0.
+        Uses the same color scale as the polygons.
+    connection_width : float, default=3.0
+        Initial width of connection lines in pixels. Can be adjusted via a slider
+        in the plot controls.
+    connection_border_color : str, default='white'
+        Color of the border around connection lines. This helps distinguish lines
+        from colored polygons. Set to None for no border.
 
     Returns
     -------
@@ -190,6 +207,18 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
     ...     title='Hexagonal Grid Geometry'
     ... )
     >>> show(panel)  # Useful for mesh visualization without data
+
+    >>> # With connections between polygons
+    >>> connections = np.array([[0, 1], [1, 3], [0, 2], [2, 3]])  # Connect pairs
+    >>> conn_values = np.array([10, 20, 15, 25])  # Flow rates
+    >>> panel = plot_polygon_grid(
+    ...     vertices, values,
+    ...     connections=connections,
+    ...     connection_values=conn_values,
+    ...     connection_width=5.0,
+    ...     title='Grid with Flow Connections'
+    ... )
+    >>> show(panel)  # Lines drawn between connected polygons
     """
     # Handle values=None case by inferring polygon count from vertices
     if values is None:
@@ -415,6 +444,70 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
                 f"labels must have length {n_polygons}, got {labels.shape[0]}"
             )
 
+    # Process connections if provided
+    has_connections = False
+    if connections is not None:
+        connections = np.asarray(connections)
+
+        # Accept both (2, n) and (n, 2) formats
+        if connections.ndim != 2:
+            raise ValueError(f"connections must be 2D array, got shape {connections.shape}")
+
+        if connections.shape[0] == 2:
+            # Shape is (2, n_connections) - transpose to (n_connections, 2)
+            connections = connections.T
+        elif connections.shape[1] != 2:
+            raise ValueError(
+                f"connections must have shape (2, n_connections) or (n_connections, 2), "
+                f"got {connections.shape}"
+            )
+
+        n_connections = connections.shape[0]
+        has_connections = True
+
+        # Validate connection indices
+        if np.any(connections < 0) or np.any(connections >= n_polygons):
+            raise ValueError(
+                f"connection indices must be in range [0, {n_polygons}), "
+                f"got min={connections.min()}, max={connections.max()}"
+            )
+
+        # Process connection values
+        if connection_values is None:
+            # Default to zeros, replicated for all columns
+            connection_values = np.zeros((n_connections, n_columns))
+        else:
+            connection_values = np.asarray(connection_values)
+
+            # Check if it's a matrix
+            if connection_values.ndim == 2:
+                if connection_values.shape[0] != n_connections:
+                    raise ValueError(
+                        f"connection_values must have {n_connections} rows, "
+                        f"got {connection_values.shape[0]}"
+                    )
+                if connection_values.shape[1] != n_columns:
+                    raise ValueError(
+                        f"connection_values must have {n_columns} columns to match values, "
+                        f"got {connection_values.shape[1]}"
+                    )
+            elif connection_values.ndim == 1:
+                if len(connection_values) != n_connections:
+                    raise ValueError(
+                        f"connection_values must have length {n_connections}, "
+                        f"got {len(connection_values)}"
+                    )
+                # Make it a column vector for consistency
+                connection_values = connection_values.reshape(-1, 1)
+                # Replicate for all columns if values is a matrix
+                if n_columns > 1:
+                    connection_values = np.tile(connection_values, (1, n_columns))
+            else:
+                raise ValueError("connection_values must be 1D or 2D array")
+    else:
+        n_connections = 0
+        connection_values = np.zeros((0, n_columns))  # Empty array with correct shape
+
     # Normalize out_of_range_colors to tuple format
     if out_of_range_colors is None:
         color_below_min = None
@@ -526,6 +619,36 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
             label_list.append(labels[i])
         else:
             label_list.append("")
+
+    # Calculate polygon centers for connections (for all polygon sets)
+    if has_connections:
+        # Store centers for each column's polygon set
+        all_centers = []
+        for col_idx in range(n_columns):
+            col_vertices = all_vertices_lists[col_idx]
+            centers = []
+            for poly_verts in col_vertices:
+                # Calculate centroid
+                center_x = np.mean(poly_verts[:, 0])
+                center_y = np.mean(poly_verts[:, 1])
+                centers.append([center_x, center_y])
+            all_centers.append(np.array(centers))
+
+        # Prepare connection line data for first column
+        current_centers = all_centers[0]
+        conn_x0 = []
+        conn_y0 = []
+        conn_x1 = []
+        conn_y1 = []
+        conn_vals = []
+
+        for conn_idx in range(n_connections):
+            i, j = connections[conn_idx]
+            conn_x0.append(current_centers[i, 0])
+            conn_y0.append(current_centers[i, 1])
+            conn_x1.append(current_centers[j, 0])
+            conn_y1.append(current_centers[j, 1])
+            conn_vals.append(connection_values[conn_idx, 0])
 
     # Start with the first column (or only column)
     current_values = values[:, 0]
@@ -734,6 +857,59 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
     else:
         source_nan_inf = None
 
+    # Add connection lines if provided
+    connection_renderers = []
+    if has_connections:
+        # Create data source for connections
+        conn_data = {
+            'x0': conn_x0,
+            'y0': conn_y0,
+            'x1': conn_x1,
+            'y1': conn_y1,
+            'value': conn_vals,
+            'conn_id': list(range(n_connections)),
+        }
+
+        # Store all connection data for column switching
+        for col_idx in range(n_columns):
+            conn_data[f'value_{col_idx}'] = connection_values[:, col_idx].tolist()
+            # Store centers for this column
+            centers = all_centers[col_idx]
+            x0_col = [centers[connections[i, 0], 0] for i in range(n_connections)]
+            y0_col = [centers[connections[i, 0], 1] for i in range(n_connections)]
+            x1_col = [centers[connections[i, 1], 0] for i in range(n_connections)]
+            y1_col = [centers[connections[i, 1], 1] for i in range(n_connections)]
+            conn_data[f'x0_{col_idx}'] = x0_col
+            conn_data[f'y0_{col_idx}'] = y0_col
+            conn_data[f'x1_{col_idx}'] = x1_col
+            conn_data[f'y1_{col_idx}'] = y1_col
+
+        source_connections = ColumnDataSource(data=conn_data)
+
+        # Draw border lines (white/light) first for visibility
+        if connection_border_color is not None:
+            border_width = connection_width + 2  # Border slightly wider
+            conn_border = p.segment(
+                x0='x0', y0='y0', x1='x1', y1='y1',
+                source=source_connections,
+                line_color=connection_border_color,
+                line_width=border_width,
+                line_cap='round'
+            )
+            connection_renderers.append(conn_border)
+
+        # Draw colored connection lines
+        conn_lines = p.segment(
+            x0='x0', y0='y0', x1='x1', y1='y1',
+            source=source_connections,
+            line_color={'field': 'value', 'transform': mapper},
+            line_width=connection_width,
+            line_cap='round'
+        )
+        connection_renderers.append(conn_lines)
+    else:
+        source_connections = None
+
     # Add hover tool
     tooltips = [
         ('Face', '@face'),
@@ -835,12 +1011,14 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
                 source_below=source_below_min,
                 source_above=source_above_max,
                 source_nan=source_nan_inf,
+                source_conn=source_connections if has_connections else None,
                 select=select,
                 value_names=value_names,
                 n_columns=n_columns,
                 vmin=vmin,
                 vmax=vmax,
                 nan_inf_color=nan_inf_color,
+                has_connections=has_connections,
             ),
             code="""
                 // Find which column was selected
@@ -927,18 +1105,101 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
                     updateSource(source_nan, nan_inf);
                 }
 
+                // Update connections if present
+                if (has_connections && source_conn !== null) {
+                    const conn_data = source_conn.data;
+                    conn_data['value'] = conn_data['value_' + col_idx];
+                    conn_data['x0'] = conn_data['x0_' + col_idx];
+                    conn_data['y0'] = conn_data['y0_' + col_idx];
+                    conn_data['x1'] = conn_data['x1_' + col_idx];
+                    conn_data['y1'] = conn_data['y1_' + col_idx];
+                    source_conn.change.emit();
+                }
+
                 source.change.emit();
             """
         )
 
         select.js_on_change('value', callback)
 
-        # Create layout with selectors and plot
-        controls = row(select, palette_select)
-        panel = column(controls, p)
+        # Add connection width slider if connections are present
+        if has_connections:
+            conn_width_slider = Slider(
+                start=0.5,
+                end=10.0,
+                value=connection_width,
+                step=0.5,
+                title="Connection Line Width:",
+                width=200
+            )
+
+            # JavaScript callback to update connection line widths
+            conn_width_callback = CustomJS(
+                args=dict(
+                    slider=conn_width_slider,
+                    renderers=connection_renderers,
+                    border_offset=2 if connection_border_color is not None else 0
+                ),
+                code="""
+                    const width = slider.value;
+                    // Update each renderer
+                    for (let i = 0; i < renderers.length; i++) {
+                        if (i === 0 && border_offset > 0) {
+                            // First renderer is border (if present)
+                            renderers[i].glyph.line_width = width + border_offset;
+                        } else {
+                            // Main line renderer
+                            renderers[i].glyph.line_width = width;
+                        }
+                    }
+                """
+            )
+            conn_width_slider.js_on_change('value', conn_width_callback)
+
+            # Create layout with all selectors and plot
+            controls = row(select, palette_select, conn_width_slider)
+            panel = column(controls, p)
+        else:
+            # Create layout with selectors and plot
+            controls = row(select, palette_select)
+            panel = column(controls, p)
     else:
-        # Return as a panel with palette selector
-        panel = column(palette_select, p)
+        # No matrix values
+        if has_connections:
+            # Add connection width slider
+            conn_width_slider = Slider(
+                start=0.5,
+                end=10.0,
+                value=connection_width,
+                step=0.5,
+                title="Connection Line Width:",
+                width=200
+            )
+
+            conn_width_callback = CustomJS(
+                args=dict(
+                    slider=conn_width_slider,
+                    renderers=connection_renderers,
+                    border_offset=2 if connection_border_color is not None else 0
+                ),
+                code="""
+                    const width = slider.value;
+                    for (let i = 0; i < renderers.length; i++) {
+                        if (i === 0 && border_offset > 0) {
+                            renderers[i].glyph.line_width = width + border_offset;
+                        } else {
+                            renderers[i].glyph.line_width = width;
+                        }
+                    }
+                """
+            )
+            conn_width_slider.js_on_change('value', conn_width_callback)
+
+            controls = row(palette_select, conn_width_slider)
+            panel = column(controls, p)
+        else:
+            # Return as a panel with palette selector only
+            panel = column(palette_select, p)
 
     return panel
 
