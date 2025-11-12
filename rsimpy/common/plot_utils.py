@@ -860,6 +860,21 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
     # Add connection lines if provided
     connection_renderers = []
     if has_connections:
+        # Prepare labels for connection hover (From/To)
+        conn_from_labels = []
+        conn_to_labels = []
+        for conn_idx in range(n_connections):
+            i, j = connections[conn_idx]
+            # Use label if available, otherwise use polygon number
+            if labels is not None:
+                from_label = labels[i]
+                to_label = labels[j]
+            else:
+                from_label = str(i)
+                to_label = str(j)
+            conn_from_labels.append(from_label)
+            conn_to_labels.append(to_label)
+
         # Create data source for connections
         conn_data = {
             'x0': conn_x0,
@@ -868,6 +883,8 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
             'y1': conn_y1,
             'value': conn_vals,
             'conn_id': list(range(n_connections)),
+            'from_label': conn_from_labels,
+            'to_label': conn_to_labels,
         }
 
         # Store all connection data for column switching
@@ -907,6 +924,20 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
             line_cap='round'
         )
         connection_renderers.append(conn_lines)
+
+        # Add hover tool for connections
+        connection_tooltips = [
+            ('From', '@from_label'),
+            ('To', '@to_label'),
+            ('Value', '@value{0.0000}')
+        ]
+        connection_hover = HoverTool(
+            renderers=[conn_lines],  # Only hover on the colored lines, not the border
+            tooltips=connection_tooltips,
+            point_policy="follow_mouse",
+            attachment="vertical"
+        )
+        p.add_tools(connection_hover)
     else:
         source_connections = None
 
@@ -920,7 +951,8 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
 
     hover = HoverTool(
         renderers=all_patches,
-        tooltips=tooltips
+        tooltips=tooltips,
+        attachment="vertical"
     )
     p.add_tools(hover)
 
@@ -1206,38 +1238,6 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
 if __name__ == "__main__":
     from bokeh.plotting import show
 
-    # Example: 2x2 grid of squares
-    # vertices = np.array([
-    #     [[0, 0], [1, 0], [1, 1], [0, 1]],  # bottom-left
-    #     [[1, 0], [2, 0], [2, 1], [1, 1]],  # bottom-right
-    #     [[0, 1], [1, 1], [1, 2], [0, 2]],  # top-left
-    #     [[1, 1], [2, 1], [2, 2], [1, 2]],  # top-right
-    # ])
-    # values = np.array([1, 2, 3, 4])
-
-    # panel = plot_polygon_grid(vertices, values, colorbar_label='Value')
-    # show(panel)
-
-    # # Example with log scale and labels
-    # vertices_log = np.array([
-    #     [[0, 0], [1, 0], [1, 1], [0, 1]],
-    #     [[1, 0], [2, 0], [2, 1], [1, 1]],
-    #     [[0, 1], [1, 1], [1, 2], [0, 2]],
-    #     [[1, 1], [2, 1], [2, 2], [1, 2]],
-    # ])
-    # values_log = np.array([1, 10, 100, 1000])
-    # labels_log = np.array(['Low', 'Medium', 'High', 'Very High'])
-
-    # panel_log = plot_polygon_grid(
-    #     vertices_log, values_log,
-    #     labels=labels_log,
-    #     colorbar_label='Value (log scale)',
-    #     log_scale=True,
-    #     title='Polygon Grid - Log Scale with Labels'
-    # )
-    # show(panel_log)
-
-    # Example with color limits
     vertices1 = [
         [[0.5, 0.5], [1, 0], [1, 1]],
         [[1, 0], [2, 0], [2, 1], [1, 1]],
@@ -1254,15 +1254,23 @@ if __name__ == "__main__":
         [[2, 0], [3, 0], [3, 1], [2, 1]],
         [[2, 1], [3.2, 1], [3, 2], [2, 2.2]],
     ]
-    values_ = np.array([[5, 15, 25, np.nan, 45, 55],[15, 115, 125, 135, 145, 155]]).T
-    labels_ = np.array(['V=5', 'V=15', 'V=25', 'V=35', 'V=45', 'V=55'])
+    values_ = np.array([[5, 15, 25, np.nan, 45, 55],[15, 16, 27, 38, 49, 500]]).T
+    labels_ = np.array(['V=5', 'V=15', 'V=25', 'NaN', 'V=45', 'V=55'])
+    connections_ = np.array([[0, 1], [1, 2], [2, 3], [3, 4],
+                             [4, 5], [1, 0], [1, 4], [4, 1]])
+    connection_values_ = np.array([[10, 20], [25, 15], [50, 60], [70, 80],
+                                   [90, 100], [10, 25], [40, 55], [55, 55]])
 
     panel_limits = plot_polygon_grid(
         vertices=[vertices1, vertices2],
         values=values_,
         labels=labels_,
+        connections=connections_,
+        connection_values=connection_values_,
+        connection_width=6.0,
+        connection_border_color='black',
         palette='Turbo',
-        color_limits=(20, 50),
+        color_limits=(None, 100),
         out_of_range_colors=('blue', 'red'),
         nan_inf_color=None,
         colorbar_label='Value',
