@@ -8,16 +8,15 @@ from bokeh.models import (
     ColorBar, BasicTicker, LogTicker, Select, ColumnDataSource, CustomJS
 )
 from bokeh.palettes import Viridis256, Turbo256, Plasma256, Inferno256, Magma256
-from bokeh.layouts import column, row
+from bokeh.layouts import column
 
 
 def plot_polygon_grid(vertices, values, width=800, height=600,
                        palette='Viridis256', line_color='black', line_width=1,
-                       vmin=None, vmax=None, colorbar=True,
-                       colorbar_label=None, log_scale=False,
+                       colorbar=True, colorbar_label=None, log_scale=False,
                        title='Polygon Grid', labels=None,
-                       color_limits=None, out_of_range_color='gray',
-                       value_names=None):
+                       color_limits=None, out_of_range_color=None,
+                       show_nan_inf=True, value_names=None):
     """
     Plot a grid of 4-sided polygons in 2D with color-coded values using Bokeh.
     Interactive plot with hover functionality showing face number and value.
@@ -44,10 +43,6 @@ def plot_polygon_grid(vertices, values, width=800, height=600,
         Color of polygon borders.
     line_width : float, default=1
         Width of polygon borders.
-    vmin : float, optional
-        Minimum value for color scale. If None, uses min(values).
-    vmax : float, optional
-        Maximum value for color scale. If None, uses max(values).
     colorbar : bool, default=True
         Whether to add a colorbar to the plot.
     colorbar_label : str, optional
@@ -60,14 +55,24 @@ def plot_polygon_grid(vertices, values, width=800, height=600,
         Array of string labels for each polygon. If provided, these will be
         displayed in the hover tooltip. Length must match number of polygons.
     color_limits : tuple of (min, max), optional
-        Tuple specifying the color scale limits. Values outside these limits
-        will be displayed in out_of_range_color. Either element can be None
-        to use the data's min/max. For example:
-        - (10, 100): values < 10 or > 100 are gray
-        - (10, None): only values < 10 are gray
-        - (None, 100): only values > 100 are gray
-    out_of_range_color : str, default='gray'
-        Color to use for polygons with values outside color_limits.
+        Tuple specifying the color scale limits. Either element can be None to use
+        the data's min/max. If not provided, uses (data_min, data_max). For example:
+        - (10, 100): color scale 10-100
+        - (10, None): color scale 10 to data_max
+        - (None, 100): color scale data_min to 100
+        - None: color scale from data_min to data_max
+    out_of_range_color : str or tuple of (str, str), default=None
+        Color(s) for polygons with values outside color_limits.
+        - None (default): values outside limits get min/max colors from the palette
+        - Single color (e.g., 'gray'): both below and above limits use this color
+        - Tuple (e.g., ('blue', 'red')): (color_below_min, color_above_max)
+        - Tuple with None: e.g., (None, 'red') means below-min uses palette min color,
+          above-max uses red
+        Note: NaN and Inf values follow show_nan_inf parameter.
+    show_nan_inf : bool, default=True
+        Whether to display polygons with NaN or Inf values.
+        - True: display as gray
+        - False: hide these polygons (not rendered)
     value_names : array-like of str, optional
         Names for each column in the values matrix. Used as options in the
         dropdown selector when values is 2D. If None, uses 'Column 0', 'Column 1', etc.
@@ -80,6 +85,8 @@ def plot_polygon_grid(vertices, values, width=800, height=600,
     Examples
     --------
     >>> from bokeh.plotting import show
+    >>> import numpy as np
+    >>>
     >>> # Create a simple 2x2 grid
     >>> vertices = np.array([
     ...     [[0, 0], [1, 0], [1, 1], [0, 1]],  # bottom-left
@@ -91,6 +98,25 @@ def plot_polygon_grid(vertices, values, width=800, height=600,
     >>> panel = plot_polygon_grid(vertices, values, colorbar_label='Value')
     >>> show(panel)
 
+    >>> # With color limits and out-of-range colors
+    >>> values = np.array([5, 15, 25, 35])
+    >>> panel = plot_polygon_grid(
+    ...     vertices, values,
+    ...     color_limits=(10, 30),  # Scale from 10 to 30
+    ...     out_of_range_color=('blue', 'red'),  # Below=blue, Above=red
+    ...     colorbar_label='Value'
+    ... )
+    >>> show(panel)  # Value 5 is blue, 15 and 25 colored, 35 is red
+
+    >>> # Hide NaN/Inf polygons
+    >>> values = np.array([1, np.nan, 3, np.inf])
+    >>> panel = plot_polygon_grid(
+    ...     vertices, values,
+    ...     show_nan_inf=False,  # Don't show NaN/Inf
+    ...     colorbar_label='Value'
+    ... )
+    >>> show(panel)  # Only polygons 0 and 2 are shown
+
     >>> # Matrix values with interactive selector
     >>> values_matrix = np.array([
     ...     [10, 100, 0.2],  # Temperature, Pressure, Porosity for cell 0
@@ -101,6 +127,7 @@ def plot_polygon_grid(vertices, values, width=800, height=600,
     >>> panel = plot_polygon_grid(
     ...     vertices, values_matrix,
     ...     value_names=['Temp', 'Press', 'Poro'],
+    ...     color_limits=(15, 35),  # Applied to each column
     ...     colorbar_label='Value'
     ... )
     >>> show(panel)  # Dropdown selector will appear to choose columns
@@ -152,6 +179,19 @@ def plot_polygon_grid(vertices, values, width=800, height=600,
                 f"labels must have length {n_polygons}, got {labels.shape[0]}"
             )
 
+    # Normalize out_of_range_color to tuple format
+    if out_of_range_color is None:
+        color_below_min = None
+        color_above_max = None
+    elif isinstance(out_of_range_color, (tuple, list)):
+        if len(out_of_range_color) != 2:
+            raise ValueError("out_of_range_color tuple must have exactly 2 elements")
+        color_below_min, color_above_max = out_of_range_color
+    else:
+        # Single value - use for both
+        color_below_min = out_of_range_color
+        color_above_max = out_of_range_color
+
     # Handle color_limits parameter
     limit_min = None
     limit_max = None
@@ -160,26 +200,30 @@ def plot_polygon_grid(vertices, values, width=800, height=600,
             raise ValueError("color_limits must be a tuple of (min, max)")
         limit_min, limit_max = color_limits
 
-    # Set color scale limits using ALL values in the matrix (if not provided)
-    if vmin is None:
-        vmin = np.nanmin(values) if limit_min is None else limit_min
-    if vmax is None:
-        vmax = np.nanmax(values) if limit_max is None else limit_max
+    # Filter out NaN and Inf values for color scale calculation
+    finite_mask = np.isfinite(values)
+    finite_values = values[finite_mask]
 
-    # Override with color_limits if provided
-    if limit_min is not None:
-        vmin = limit_min
-    if limit_max is not None:
-        vmax = limit_max
+    if len(finite_values) == 0:
+        raise ValueError("All values are NaN or Inf - cannot determine color scale")
+
+    # Set color scale limits using finite values only
+    if limit_min is None:
+        limit_min = np.min(finite_values)
+    if limit_max is None:
+        limit_max = np.max(finite_values)
+
+    vmin = limit_min
+    vmax = limit_max
 
     # Handle log scale requirements
     if log_scale:
         if vmin <= 0:
             # Filter out non-positive values for log scale
-            positive_values = values[values > 0]
+            positive_values = finite_values[finite_values > 0]
             if len(positive_values) == 0:
                 raise ValueError("Cannot use log scale with all non-positive values")
-            vmin = np.nanmin(positive_values)
+            vmin = np.min(positive_values)
             print(f"Warning: Adjusting vmin to {vmin} for log scale (was <= 0)")
 
     # Get palette
@@ -229,13 +273,24 @@ def plot_polygon_grid(vertices, values, width=800, height=600,
     # Start with the first column (or only column)
     current_values = values[:, 0]
 
-    # Determine which values are in range for the current column
-    in_range_mask = np.ones(n_polygons, dtype=bool)
-    if color_limits is not None:
-        if limit_min is not None:
-            in_range_mask &= (current_values >= limit_min)
-        if limit_max is not None:
-            in_range_mask &= (current_values <= limit_max)
+    # Separate NaN/Inf from out-of-range values
+    finite_mask = np.isfinite(current_values)
+    nan_inf_mask = ~finite_mask
+
+    # For finite values, determine which are in range
+    below_min_mask = np.zeros(n_polygons, dtype=bool)
+    above_max_mask = np.zeros(n_polygons, dtype=bool)
+    in_range_mask = np.zeros(n_polygons, dtype=bool)
+
+    finite_indices = np.where(finite_mask)[0]
+    for idx in finite_indices:
+        val = current_values[idx]
+        if val < vmin:
+            below_min_mask[idx] = True
+        elif val > vmax:
+            above_max_mask[idx] = True
+        else:
+            in_range_mask[idx] = True
 
     # Calculate plot range with margins
     all_x = vertices[:, :, 0].flatten()
@@ -278,7 +333,10 @@ def plot_polygon_grid(vertices, values, width=800, height=600,
     # Create ColumnDataSource for dynamic updates
     source = ColumnDataSource(data=base_data)
 
-    # Add patches for in-range polygons (with color mapping)
+    # Create data sources and patches for each category
+    all_patches = []
+
+    # 1. In-range polygons (with color mapping)
     in_range_indices = np.where(in_range_mask)[0]
     if len(in_range_indices) > 0:
         in_range_data = {
@@ -296,34 +354,98 @@ def plot_polygon_grid(vertices, values, width=800, height=600,
             line_color=line_color,
             line_width=line_width,
         )
+        all_patches.append(patches_in_range)
     else:
         source_in_range = None
-        patches_in_range = None
 
-    # Add patches for out-of-range polygons (with fixed gray color)
-    out_of_range_indices = np.where(~in_range_mask)[0]
-    if len(out_of_range_indices) > 0:
-        out_of_range_data = {
-            'xs': [xs[i] for i in out_of_range_indices],
-            'ys': [ys[i] for i in out_of_range_indices],
-            'face': [face_ids[i] for i in out_of_range_indices],
-            'value': [current_values[i] for i in out_of_range_indices],
-            'label': [label_list[i] for i in out_of_range_indices],
+    # 2. Below minimum (use color_below_min or palette min color)
+    below_min_indices = np.where(below_min_mask)[0]
+    if len(below_min_indices) > 0:
+        below_min_data = {
+            'xs': [xs[i] for i in below_min_indices],
+            'ys': [ys[i] for i in below_min_indices],
+            'face': [face_ids[i] for i in below_min_indices],
+            'value': [current_values[i] for i in below_min_indices],
+            'label': [label_list[i] for i in below_min_indices],
         }
-        source_out_of_range = ColumnDataSource(data=out_of_range_data)
-        patches_out_of_range = p.patches(
-            'xs', 'ys',
-            source=source_out_of_range,
-            fill_color=out_of_range_color,
-            line_color=line_color,
-            line_width=line_width,
-        )
+        source_below_min = ColumnDataSource(data=below_min_data)
+        if color_below_min is None:
+            # Use palette color for vmin
+            patches_below_min = p.patches(
+                'xs', 'ys',
+                source=source_below_min,
+                fill_color={'field': 'value', 'transform': mapper},
+                line_color=line_color,
+                line_width=line_width,
+            )
+        else:
+            patches_below_min = p.patches(
+                'xs', 'ys',
+                source=source_below_min,
+                fill_color=color_below_min,
+                line_color=line_color,
+                line_width=line_width,
+            )
+        all_patches.append(patches_below_min)
     else:
-        source_out_of_range = None
-        patches_out_of_range = None
+        source_below_min = None
 
-    # Collect all patch renderers for hover tool
-    all_patches = [r for r in [patches_in_range, patches_out_of_range] if r is not None]
+    # 3. Above maximum (use color_above_max or palette max color)
+    above_max_indices = np.where(above_max_mask)[0]
+    if len(above_max_indices) > 0:
+        above_max_data = {
+            'xs': [xs[i] for i in above_max_indices],
+            'ys': [ys[i] for i in above_max_indices],
+            'face': [face_ids[i] for i in above_max_indices],
+            'value': [current_values[i] for i in above_max_indices],
+            'label': [label_list[i] for i in above_max_indices],
+        }
+        source_above_max = ColumnDataSource(data=above_max_data)
+        if color_above_max is None:
+            # Use palette color for vmax
+            patches_above_max = p.patches(
+                'xs', 'ys',
+                source=source_above_max,
+                fill_color={'field': 'value', 'transform': mapper},
+                line_color=line_color,
+                line_width=line_width,
+            )
+        else:
+            patches_above_max = p.patches(
+                'xs', 'ys',
+                source=source_above_max,
+                fill_color=color_above_max,
+                line_color=line_color,
+                line_width=line_width,
+            )
+        all_patches.append(patches_above_max)
+    else:
+        source_above_max = None
+
+    # 4. NaN/Inf polygons (show as gray or hide)
+    if show_nan_inf:
+        nan_inf_indices = np.where(nan_inf_mask)[0]
+        if len(nan_inf_indices) > 0:
+            nan_inf_data = {
+                'xs': [xs[i] for i in nan_inf_indices],
+                'ys': [ys[i] for i in nan_inf_indices],
+                'face': [face_ids[i] for i in nan_inf_indices],
+                'value': [current_values[i] for i in nan_inf_indices],
+                'label': [label_list[i] for i in nan_inf_indices],
+            }
+            source_nan_inf = ColumnDataSource(data=nan_inf_data)
+            patches_nan_inf = p.patches(
+                'xs', 'ys',
+                source=source_nan_inf,
+                fill_color='gray',
+                line_color=line_color,
+                line_width=line_width,
+            )
+            all_patches.append(patches_nan_inf)
+        else:
+            source_nan_inf = None
+    else:
+        source_nan_inf = None
 
     # Add hover tool
     tooltips = [
@@ -370,12 +492,15 @@ def plot_polygon_grid(vertices, values, width=800, height=600,
             args=dict(
                 source=source,
                 source_in=source_in_range,
-                source_out=source_out_of_range,
+                source_below=source_below_min,
+                source_above=source_above_max,
+                source_nan=source_nan_inf,
                 select=select,
                 value_names=value_names,
                 n_columns=n_columns,
-                limit_min=limit_min,
-                limit_max=limit_max,
+                vmin=vmin,
+                vmax=vmax,
+                show_nan_inf=show_nan_inf,
             ),
             code="""
                 // Find which column was selected
@@ -390,72 +515,71 @@ def plot_polygon_grid(vertices, values, width=800, height=600,
                 const new_values = data['value_' + col_idx];
                 data['value'] = new_values;
 
-                // Determine which polygons are in range
+                // Categorize polygons
                 const in_range = new Array(n_polygons);
+                const below_min = new Array(n_polygons);
+                const above_max = new Array(n_polygons);
+                const nan_inf = new Array(n_polygons);
+
                 for (let i = 0; i < n_polygons; i++) {
-                    let is_in = true;
-                    if (limit_min !== null && new_values[i] < limit_min) {
-                        is_in = false;
+                    const val = new_values[i];
+                    if (!isFinite(val)) {
+                        nan_inf[i] = true;
+                        in_range[i] = false;
+                        below_min[i] = false;
+                        above_max[i] = false;
+                    } else if (val < vmin) {
+                        below_min[i] = true;
+                        in_range[i] = false;
+                        above_max[i] = false;
+                        nan_inf[i] = false;
+                    } else if (val > vmax) {
+                        above_max[i] = true;
+                        in_range[i] = false;
+                        below_min[i] = false;
+                        nan_inf[i] = false;
+                    } else {
+                        in_range[i] = true;
+                        below_min[i] = false;
+                        above_max[i] = false;
+                        nan_inf[i] = false;
                     }
-                    if (limit_max !== null && new_values[i] > limit_max) {
-                        is_in = false;
-                    }
-                    in_range[i] = is_in;
                 }
-                data['in_range'] = in_range;
 
-                // Update in-range source
-                if (source_in !== null) {
-                    const in_data = source_in.data;
-                    const in_xs = [];
-                    const in_ys = [];
-                    const in_face = [];
-                    const in_value = [];
-                    const in_label = [];
+                // Helper function to update a source
+                function updateSource(src, mask) {
+                    if (src === null) return;
+                    const src_data = src.data;
+                    const src_xs = [];
+                    const src_ys = [];
+                    const src_face = [];
+                    const src_value = [];
+                    const src_label = [];
 
                     for (let i = 0; i < n_polygons; i++) {
-                        if (in_range[i]) {
-                            in_xs.push(data['xs'][i]);
-                            in_ys.push(data['ys'][i]);
-                            in_face.push(data['face'][i]);
-                            in_value.push(new_values[i]);
-                            in_label.push(data['label'][i]);
+                        if (mask[i]) {
+                            src_xs.push(data['xs'][i]);
+                            src_ys.push(data['ys'][i]);
+                            src_face.push(data['face'][i]);
+                            src_value.push(new_values[i]);
+                            src_label.push(data['label'][i]);
                         }
                     }
 
-                    in_data['xs'] = in_xs;
-                    in_data['ys'] = in_ys;
-                    in_data['face'] = in_face;
-                    in_data['value'] = in_value;
-                    in_data['label'] = in_label;
-                    source_in.change.emit();
+                    src_data['xs'] = src_xs;
+                    src_data['ys'] = src_ys;
+                    src_data['face'] = src_face;
+                    src_data['value'] = src_value;
+                    src_data['label'] = src_label;
+                    src.change.emit();
                 }
 
-                // Update out-of-range source
-                if (source_out !== null) {
-                    const out_data = source_out.data;
-                    const out_xs = [];
-                    const out_ys = [];
-                    const out_face = [];
-                    const out_value = [];
-                    const out_label = [];
-
-                    for (let i = 0; i < n_polygons; i++) {
-                        if (!in_range[i]) {
-                            out_xs.push(data['xs'][i]);
-                            out_ys.push(data['ys'][i]);
-                            out_face.push(data['face'][i]);
-                            out_value.push(new_values[i]);
-                            out_label.push(data['label'][i]);
-                        }
-                    }
-
-                    out_data['xs'] = out_xs;
-                    out_data['ys'] = out_ys;
-                    out_data['face'] = out_face;
-                    out_data['value'] = out_value;
-                    out_data['label'] = out_label;
-                    source_out.change.emit();
+                // Update all sources
+                updateSource(source_in, in_range);
+                updateSource(source_below, below_min);
+                updateSource(source_above, above_max);
+                if (show_nan_inf) {
+                    updateSource(source_nan, nan_inf);
                 }
 
                 source.change.emit();
