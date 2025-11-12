@@ -5,10 +5,10 @@ import numpy as np
 from bokeh.plotting import figure
 from bokeh.models import (
     HoverTool, LinearColorMapper, LogColorMapper,
-    ColorBar, BasicTicker, LogTicker
+    ColorBar, BasicTicker, LogTicker, Select, ColumnDataSource, CustomJS
 )
 from bokeh.palettes import Viridis256, Turbo256, Plasma256, Inferno256, Magma256
-from bokeh.layouts import column
+from bokeh.layouts import column, row
 
 
 def plot_polygon_grid(vertices, values, width=800, height=600,
@@ -16,7 +16,8 @@ def plot_polygon_grid(vertices, values, width=800, height=600,
                        vmin=None, vmax=None, colorbar=True,
                        colorbar_label=None, log_scale=False,
                        title='Polygon Grid', labels=None,
-                       color_limits=None, out_of_range_color='gray'):
+                       color_limits=None, out_of_range_color='gray',
+                       value_names=None):
     """
     Plot a grid of 4-sided polygons in 2D with color-coded values using Bokeh.
     Interactive plot with hover functionality showing face number and value.
@@ -28,8 +29,10 @@ def plot_polygon_grid(vertices, values, width=800, height=600,
         and each vertex has (x, y) coordinates.
         vertices[i] contains the 4 vertices of polygon i.
         vertices[i, j] contains the (x, y) coordinates of vertex j.
-    values : array-like, shape (n_polygons,)
+    values : array-like, shape (n_polygons,) or (n_polygons, m)
         Values associated with each polygon. These determine the fill color.
+        Can be a 1D array or 2D matrix. If 2D, a dropdown control will be
+        added to select which column to display.
     width : int, default=800
         Width of the plot in pixels.
     height : int, default=600
@@ -65,6 +68,9 @@ def plot_polygon_grid(vertices, values, width=800, height=600,
         - (None, 100): only values > 100 are gray
     out_of_range_color : str, default='gray'
         Color to use for polygons with values outside color_limits.
+    value_names : array-like of str, optional
+        Names for each column in the values matrix. Used as options in the
+        dropdown selector when values is 2D. If None, uses 'Column 0', 'Column 1', etc.
 
     Returns
     -------
@@ -84,6 +90,20 @@ def plot_polygon_grid(vertices, values, width=800, height=600,
     >>> values = np.array([1, 2, 3, 4])
     >>> panel = plot_polygon_grid(vertices, values, colorbar_label='Value')
     >>> show(panel)
+
+    >>> # Matrix values with interactive selector
+    >>> values_matrix = np.array([
+    ...     [10, 100, 0.2],  # Temperature, Pressure, Porosity for cell 0
+    ...     [20, 200, 0.3],
+    ...     [30, 300, 0.4],
+    ...     [40, 400, 0.5]
+    ... ])
+    >>> panel = plot_polygon_grid(
+    ...     vertices, values_matrix,
+    ...     value_names=['Temp', 'Press', 'Poro'],
+    ...     colorbar_label='Value'
+    ... )
+    >>> show(panel)  # Dropdown selector will appear to choose columns
     """
     # Convert to numpy arrays
     vertices = np.asarray(vertices)
@@ -96,10 +116,33 @@ def plot_polygon_grid(vertices, values, width=800, height=600,
         )
 
     n_polygons = vertices.shape[0]
-    if values.shape[0] != n_polygons:
-        raise ValueError(
-            f"values must have length {n_polygons}, got {values.shape[0]}"
-        )
+
+    # Check if values is a matrix
+    is_matrix = values.ndim == 2
+    if is_matrix:
+        n_values, n_columns = values.shape
+        if n_values != n_polygons:
+            raise ValueError(
+                f"values must have shape ({n_polygons}, m), got {values.shape}"
+            )
+        # Validate or create value_names
+        if value_names is not None:
+            value_names = np.asarray(value_names, dtype=str)
+            if len(value_names) != n_columns:
+                raise ValueError(
+                    f"value_names must have length {n_columns}, got {len(value_names)}"
+                )
+        else:
+            value_names = [f'Column {i}' for i in range(n_columns)]
+    else:
+        # Make it a column vector for consistency
+        if values.ndim == 1:
+            values = values.reshape(-1, 1)
+            n_columns = 1
+        if values.shape[0] != n_polygons:
+            raise ValueError(
+                f"values must have length {n_polygons}, got {values.shape[0]}"
+            )
 
     # Validate labels if provided
     if labels is not None:
@@ -117,7 +160,7 @@ def plot_polygon_grid(vertices, values, width=800, height=600,
             raise ValueError("color_limits must be a tuple of (min, max)")
         limit_min, limit_max = color_limits
 
-    # Set color scale limits
+    # Set color scale limits using ALL values in the matrix (if not provided)
     if vmin is None:
         vmin = np.nanmin(values) if limit_min is None else limit_min
     if vmax is None:
@@ -164,21 +207,11 @@ def plot_polygon_grid(vertices, values, width=800, height=600,
         mapper = LinearColorMapper(palette=color_palette, low=vmin, high=vmax)
         ticker = BasicTicker()
 
-    # Determine which values are in range
-    in_range_mask = np.ones(n_polygons, dtype=bool)
-    if color_limits is not None:
-        if limit_min is not None:
-            in_range_mask &= (values >= limit_min)
-        if limit_max is not None:
-            in_range_mask &= (values <= limit_max)
-
-    # Prepare data for patches glyph
+    # Prepare data for patches glyph - handle matrix case
     xs = []  # List of lists of x coordinates for each polygon
     ys = []  # List of lists of y coordinates for each polygon
     face_ids = []  # Face numbers
-    value_list = []  # Values for each polygon
     label_list = []  # Labels for each polygon
-    fill_colors = []  # Fill colors for each polygon
 
     for i in range(n_polygons):
         # Extract x and y coordinates for this polygon
@@ -188,19 +221,21 @@ def plot_polygon_grid(vertices, values, width=800, height=600,
         xs.append(poly_x)
         ys.append(poly_y)
         face_ids.append(i)
-        value_list.append(values[i])
         if labels is not None:
             label_list.append(labels[i])
         else:
             label_list.append("")
 
-        # Determine fill color based on whether value is in range
-        if in_range_mask[i]:
-            # Will use color mapper
-            fill_colors.append(None)
-        else:
-            # Out of range - use gray
-            fill_colors.append(out_of_range_color)
+    # Start with the first column (or only column)
+    current_values = values[:, 0]
+
+    # Determine which values are in range for the current column
+    in_range_mask = np.ones(n_polygons, dtype=bool)
+    if color_limits is not None:
+        if limit_min is not None:
+            in_range_mask &= (current_values >= limit_min)
+        if limit_max is not None:
+            in_range_mask &= (current_values <= limit_max)
 
     # Calculate plot range with margins
     all_x = vertices[:, :, 0].flatten()
@@ -224,15 +259,24 @@ def plot_polygon_grid(vertices, values, width=800, height=600,
         tools='pan,wheel_zoom,box_zoom,reset,save'
     )
 
-    # Create data source dictionary
-    source_data = {
+    # Create base data dictionary with all columns stored
+    base_data = {
         'xs': xs,
         'ys': ys,
         'face': face_ids,
-        'value': value_list,
         'label': label_list,
-        'in_range': in_range_mask.tolist()
     }
+
+    # Add all value columns to the data
+    for col_idx in range(n_columns):
+        base_data[f'value_{col_idx}'] = values[:, col_idx].tolist()
+
+    # Set the active value column
+    base_data['value'] = current_values.tolist()
+    base_data['in_range'] = in_range_mask.tolist()
+
+    # Create ColumnDataSource for dynamic updates
+    source = ColumnDataSource(data=base_data)
 
     # Add patches for in-range polygons (with color mapping)
     in_range_indices = np.where(in_range_mask)[0]
@@ -241,17 +285,19 @@ def plot_polygon_grid(vertices, values, width=800, height=600,
             'xs': [xs[i] for i in in_range_indices],
             'ys': [ys[i] for i in in_range_indices],
             'face': [face_ids[i] for i in in_range_indices],
-            'value': [value_list[i] for i in in_range_indices],
+            'value': [current_values[i] for i in in_range_indices],
             'label': [label_list[i] for i in in_range_indices],
         }
+        source_in_range = ColumnDataSource(data=in_range_data)
         patches_in_range = p.patches(
             'xs', 'ys',
-            source=in_range_data,
+            source=source_in_range,
             fill_color={'field': 'value', 'transform': mapper},
             line_color=line_color,
             line_width=line_width,
         )
     else:
+        source_in_range = None
         patches_in_range = None
 
     # Add patches for out-of-range polygons (with fixed gray color)
@@ -261,17 +307,19 @@ def plot_polygon_grid(vertices, values, width=800, height=600,
             'xs': [xs[i] for i in out_of_range_indices],
             'ys': [ys[i] for i in out_of_range_indices],
             'face': [face_ids[i] for i in out_of_range_indices],
-            'value': [value_list[i] for i in out_of_range_indices],
+            'value': [current_values[i] for i in out_of_range_indices],
             'label': [label_list[i] for i in out_of_range_indices],
         }
+        source_out_of_range = ColumnDataSource(data=out_of_range_data)
         patches_out_of_range = p.patches(
             'xs', 'ys',
-            source=out_of_range_data,
+            source=source_out_of_range,
             fill_color=out_of_range_color,
             line_color=line_color,
             line_width=line_width,
         )
     else:
+        source_out_of_range = None
         patches_out_of_range = None
 
     # Collect all patch renderers for hover tool
@@ -307,8 +355,120 @@ def plot_polygon_grid(vertices, values, width=800, height=600,
     p.grid.grid_line_alpha = 0.3
     p.toolbar.logo = None
 
-    # Return as a panel (layout)
-    panel = column(p)
+    # If matrix values, add selector control
+    if is_matrix and n_columns > 1:
+        # Create dropdown selector
+        select = Select(
+            title="Select Data Column:",
+            value=value_names[0],
+            options=list(value_names),
+            width=200
+        )
+
+        # Create JavaScript callback to update data when selection changes
+        callback = CustomJS(
+            args=dict(
+                source=source,
+                source_in=source_in_range,
+                source_out=source_out_of_range,
+                select=select,
+                value_names=value_names,
+                n_columns=n_columns,
+                limit_min=limit_min,
+                limit_max=limit_max,
+            ),
+            code="""
+                // Find which column was selected
+                const col_name = select.value;
+                const col_idx = value_names.indexOf(col_name);
+
+                // Get the data from the source
+                const data = source.data;
+                const n_polygons = data['xs'].length;
+
+                // Update the active value column
+                const new_values = data['value_' + col_idx];
+                data['value'] = new_values;
+
+                // Determine which polygons are in range
+                const in_range = new Array(n_polygons);
+                for (let i = 0; i < n_polygons; i++) {
+                    let is_in = true;
+                    if (limit_min !== null && new_values[i] < limit_min) {
+                        is_in = false;
+                    }
+                    if (limit_max !== null && new_values[i] > limit_max) {
+                        is_in = false;
+                    }
+                    in_range[i] = is_in;
+                }
+                data['in_range'] = in_range;
+
+                // Update in-range source
+                if (source_in !== null) {
+                    const in_data = source_in.data;
+                    const in_xs = [];
+                    const in_ys = [];
+                    const in_face = [];
+                    const in_value = [];
+                    const in_label = [];
+
+                    for (let i = 0; i < n_polygons; i++) {
+                        if (in_range[i]) {
+                            in_xs.push(data['xs'][i]);
+                            in_ys.push(data['ys'][i]);
+                            in_face.push(data['face'][i]);
+                            in_value.push(new_values[i]);
+                            in_label.push(data['label'][i]);
+                        }
+                    }
+
+                    in_data['xs'] = in_xs;
+                    in_data['ys'] = in_ys;
+                    in_data['face'] = in_face;
+                    in_data['value'] = in_value;
+                    in_data['label'] = in_label;
+                    source_in.change.emit();
+                }
+
+                // Update out-of-range source
+                if (source_out !== null) {
+                    const out_data = source_out.data;
+                    const out_xs = [];
+                    const out_ys = [];
+                    const out_face = [];
+                    const out_value = [];
+                    const out_label = [];
+
+                    for (let i = 0; i < n_polygons; i++) {
+                        if (!in_range[i]) {
+                            out_xs.push(data['xs'][i]);
+                            out_ys.push(data['ys'][i]);
+                            out_face.push(data['face'][i]);
+                            out_value.push(new_values[i]);
+                            out_label.push(data['label'][i]);
+                        }
+                    }
+
+                    out_data['xs'] = out_xs;
+                    out_data['ys'] = out_ys;
+                    out_data['face'] = out_face;
+                    out_data['value'] = out_value;
+                    out_data['label'] = out_label;
+                    source_out.change.emit();
+                }
+
+                source.change.emit();
+            """
+        )
+
+        select.js_on_change('value', callback)
+
+        # Create layout with selector and plot
+        panel = column(select, p)
+    else:
+        # Return as a panel (layout) without selector
+        panel = column(p)
 
     return panel
 
@@ -355,7 +515,7 @@ if __name__ == "__main__":
         [[2, 0], [3, 0], [3, 1], [2, 1]],
         [[2, 1], [3.2, 1], [3, 2], [2, 2.2]],
     ])
-    values_limits = np.array([5, 15, 25, 35, 45, 55])
+    values_limits = np.array([[5, 15, 25, 35, 45, 55],[15, 115, 125, 135, 145, 155]]).T
     labels_limits = np.array(['V=5', 'V=15', 'V=25', 'V=35', 'V=45', 'V=55'])
 
     panel_limits = plot_polygon_grid(
