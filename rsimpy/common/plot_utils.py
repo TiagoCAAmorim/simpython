@@ -15,8 +15,8 @@ def plot_polygon_grid(vertices, values, width=800, height=600,
                        palette='Viridis256', line_color='black', line_width=1,
                        colorbar=True, colorbar_label=None, log_scale=False,
                        title='Polygon Grid', labels=None,
-                       color_limits=None, out_of_range_color=None,
-                       show_nan_inf=True, value_names=None):
+                       color_limits=None, out_of_range_colors=None,
+                       nan_inf_color=None, value_names=None):
     """
     Plot a grid of 4-sided polygons in 2D with color-coded values using Bokeh.
     Interactive plot with hover functionality showing face number and value.
@@ -61,18 +61,17 @@ def plot_polygon_grid(vertices, values, width=800, height=600,
         - (10, None): color scale 10 to data_max
         - (None, 100): color scale data_min to 100
         - None: color scale from data_min to data_max
-    out_of_range_color : str or tuple of (str, str), default=None
+    out_of_range_colors : str or tuple of (str, str), default=None
         Color(s) for polygons with values outside color_limits.
         - None (default): values outside limits get min/max colors from the palette
         - Single color (e.g., 'gray'): both below and above limits use this color
         - Tuple (e.g., ('blue', 'red')): (color_below_min, color_above_max)
         - Tuple with None: e.g., (None, 'red') means below-min uses palette min color,
           above-max uses red
-        Note: NaN and Inf values follow show_nan_inf parameter.
-    show_nan_inf : bool, default=True
-        Whether to display polygons with NaN or Inf values.
-        - True: display as gray
-        - False: hide these polygons (not rendered)
+    nan_inf_color : str or None, default=None
+        Color for polygons with NaN or Inf values.
+        - None (default): hide these polygons (not rendered)
+        - Color string (e.g., 'gray'): display NaN/Inf polygons with this color
     value_names : array-like of str, optional
         Names for each column in the values matrix. Used as options in the
         dropdown selector when values is 2D. If None, uses 'Column 0', 'Column 1', etc.
@@ -103,16 +102,25 @@ def plot_polygon_grid(vertices, values, width=800, height=600,
     >>> panel = plot_polygon_grid(
     ...     vertices, values,
     ...     color_limits=(10, 30),  # Scale from 10 to 30
-    ...     out_of_range_color=('blue', 'red'),  # Below=blue, Above=red
+    ...     out_of_range_colors=('blue', 'red'),  # Below=blue, Above=red
     ...     colorbar_label='Value'
     ... )
     >>> show(panel)  # Value 5 is blue, 15 and 25 colored, 35 is red
 
-    >>> # Hide NaN/Inf polygons
+    >>> # Show NaN/Inf polygons in gray
     >>> values = np.array([1, np.nan, 3, np.inf])
     >>> panel = plot_polygon_grid(
     ...     vertices, values,
-    ...     show_nan_inf=False,  # Don't show NaN/Inf
+    ...     nan_inf_color='gray',  # Show NaN/Inf as gray
+    ...     colorbar_label='Value'
+    ... )
+    >>> show(panel)  # All polygons shown, NaN and Inf are gray
+
+    >>> # Hide NaN/Inf polygons (default)
+    >>> values = np.array([1, np.nan, 3, np.inf])
+    >>> panel = plot_polygon_grid(
+    ...     vertices, values,
+    ...     nan_inf_color=None,  # Don't show NaN/Inf (default)
     ...     colorbar_label='Value'
     ... )
     >>> show(panel)  # Only polygons 0 and 2 are shown
@@ -179,18 +187,18 @@ def plot_polygon_grid(vertices, values, width=800, height=600,
                 f"labels must have length {n_polygons}, got {labels.shape[0]}"
             )
 
-    # Normalize out_of_range_color to tuple format
-    if out_of_range_color is None:
+    # Normalize out_of_range_colors to tuple format
+    if out_of_range_colors is None:
         color_below_min = None
         color_above_max = None
-    elif isinstance(out_of_range_color, (tuple, list)):
-        if len(out_of_range_color) != 2:
-            raise ValueError("out_of_range_color tuple must have exactly 2 elements")
-        color_below_min, color_above_max = out_of_range_color
+    elif isinstance(out_of_range_colors, (tuple, list)):
+        if len(out_of_range_colors) != 2:
+            raise ValueError("out_of_range_colors tuple must have exactly 2 elements")
+        color_below_min, color_above_max = out_of_range_colors
     else:
         # Single value - use for both
-        color_below_min = out_of_range_color
-        color_above_max = out_of_range_color
+        color_below_min = out_of_range_colors
+        color_above_max = out_of_range_colors
 
     # Handle color_limits parameter
     limit_min = None
@@ -422,8 +430,8 @@ def plot_polygon_grid(vertices, values, width=800, height=600,
     else:
         source_above_max = None
 
-    # 4. NaN/Inf polygons (show as gray or hide)
-    if show_nan_inf:
+    # 4. NaN/Inf polygons (show with specified color or hide)
+    if nan_inf_color is not None:
         nan_inf_indices = np.where(nan_inf_mask)[0]
         if len(nan_inf_indices) > 0:
             nan_inf_data = {
@@ -437,7 +445,7 @@ def plot_polygon_grid(vertices, values, width=800, height=600,
             patches_nan_inf = p.patches(
                 'xs', 'ys',
                 source=source_nan_inf,
-                fill_color='gray',
+                fill_color=nan_inf_color,
                 line_color=line_color,
                 line_width=line_width,
             )
@@ -500,7 +508,7 @@ def plot_polygon_grid(vertices, values, width=800, height=600,
                 n_columns=n_columns,
                 vmin=vmin,
                 vmax=vmax,
-                show_nan_inf=show_nan_inf,
+                nan_inf_color=nan_inf_color,
             ),
             code="""
                 // Find which column was selected
@@ -578,7 +586,7 @@ def plot_polygon_grid(vertices, values, width=800, height=600,
                 updateSource(source_in, in_range);
                 updateSource(source_below, below_min);
                 updateSource(source_above, above_max);
-                if (show_nan_inf) {
+                if (nan_inf_color !== null) {
                     updateSource(source_nan, nan_inf);
                 }
 
@@ -632,7 +640,7 @@ if __name__ == "__main__":
 
     # Example with color limits
     vertices_limits = np.array([
-        [[0.5, 0.5], [1, 0], [1, 1], [0, 1]],
+        [[0.5, 0.5], [1, 0], [1, 1]],
         [[1, 0], [2, 0], [2, 1], [1, 1]],
         [[0, 1], [1, 1], [1, 2], [0, 2]],
         [[1, 1], [2, 1], [2, 2], [1, 2]],
@@ -646,6 +654,7 @@ if __name__ == "__main__":
         vertices_limits, values_limits,
         labels=labels_limits,
         color_limits=(20, 40),
+        nan_inf_color='gray',
         colorbar_label='Value',
         title='Color Limits Example (20-40, others gray)'
     )
