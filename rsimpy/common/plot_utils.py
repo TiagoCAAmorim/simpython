@@ -541,9 +541,120 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
                     connection_values = np.tile(connection_values, (1, n_columns))
             else:
                 raise ValueError("connection_values must be 1D or 2D array")
+
+        # Preprocess bidirectional connections
+        # Detect pairs where both (i,j) and (j,i) exist
+        # Determine if we'll use log scale for connections (needed for mean calculation)
+        conn_use_log_scale = connection_log_scale if connection_log_scale is not None else log_scale
+
+        # Create a dictionary to track bidirectional pairs
+        connection_map = {}  # (min_idx, max_idx) -> [list of connection indices]
+        bidirectional_info = {}  # connection_idx -> (is_bidirectional, forward_val, reverse_val, is_primary)
+
+        for conn_idx in range(n_connections):
+            i, j = connections[conn_idx]
+            # Always store with smaller index first for consistency
+            key = (min(i, j), max(i, j))
+            if key not in connection_map:
+                connection_map[key] = []
+            connection_map[key].append((conn_idx, i, j))
+
+        # Process each unique connection pair
+        processed_connections = []
+        processed_values = []
+        keep_connection = np.ones(n_connections, dtype=bool)
+
+        for key, conn_list in connection_map.items():
+            if len(conn_list) == 1:
+                # Unidirectional connection
+                conn_idx, i, j = conn_list[0]
+                bidirectional_info[conn_idx] = {
+                    'is_bidirectional': False,
+                    'from': i,
+                    'to': j,
+                    'forward_value': connection_values[conn_idx, :],
+                    'reverse_value': None,
+                    'combined_value': connection_values[conn_idx, :],
+                }
+            elif len(conn_list) == 2:
+                # Bidirectional connection - merge into one
+                conn_idx_0, i0, j0 = conn_list[0]
+                conn_idx_1, i1, j1 = conn_list[1]
+
+                # Determine which is forward and which is reverse
+                # Use the first one as the primary (keep it), discard the second
+                forward_idx = conn_idx_0
+                reverse_idx = conn_idx_1
+
+                # Get values for both directions
+                forward_values = connection_values[forward_idx, :]
+                reverse_values = connection_values[reverse_idx, :]
+
+                # Calculate combined value (geometric mean for log, arithmetic mean for linear)
+                if conn_use_log_scale:
+                    # Geometric mean: sqrt(a * b)
+                    # Handle negative and zero values
+                    combined_values = np.zeros(n_columns)
+                    for col_idx in range(n_columns):
+                        fv = forward_values[col_idx]
+                        rv = reverse_values[col_idx]
+                        if fv > 0 and rv > 0:
+                            combined_values[col_idx] = np.sqrt(fv * rv)
+                        elif fv > 0:
+                            combined_values[col_idx] = fv
+                        elif rv > 0:
+                            combined_values[col_idx] = rv
+                        else:
+                            combined_values[col_idx] = 0
+                else:
+                    # Arithmetic mean: (a + b) / 2
+                    combined_values = (forward_values + reverse_values) / 2.0
+
+                # Update the forward connection with combined value
+                connection_values[forward_idx, :] = combined_values.copy()
+
+                # Mark reverse connection for removal
+                keep_connection[reverse_idx] = False
+
+                # Store bidirectional info
+                bidirectional_info[forward_idx] = {
+                    'is_bidirectional': True,
+                    'from': i0,
+                    'to': j0,
+                    'forward_value': forward_values,
+                    'reverse_value': reverse_values,
+                    'combined_value': combined_values,
+                }
+            else:
+                # More than 2 connections between same pair - shouldn't happen normally
+                # Just keep the first one
+                for idx, (conn_idx, i, j) in enumerate(conn_list):
+                    if idx > 0:
+                        keep_connection[conn_idx] = False
+
+        # Filter out removed connections
+        connections = connections[keep_connection]
+        connection_values = connection_values[keep_connection]
+
+        # Rebuild bidirectional_info with new indices
+        old_to_new_idx = {}
+        new_idx = 0
+        for old_idx in range(n_connections):
+            if keep_connection[old_idx]:
+                old_to_new_idx[old_idx] = new_idx
+                new_idx += 1
+
+        new_bidirectional_info = {}
+        for old_idx, info in bidirectional_info.items():
+            if old_idx in old_to_new_idx:
+                new_bidirectional_info[old_to_new_idx[old_idx]] = info
+
+        bidirectional_info = new_bidirectional_info
+        n_connections = connections.shape[0]
     else:
         n_connections = 0
         connection_values = np.zeros((0, n_columns))  # Empty array with correct shape
+        bidirectional_info = {}
 
     # Normalize out_of_range_colors to tuple format
     if out_of_range_colors is None:
@@ -900,6 +1011,10 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
         # Prepare labels for connection hover (From/To)
         conn_from_labels = []
         conn_to_labels = []
+        conn_is_bidirectional = []
+        conn_forward_vals = []
+        conn_reverse_vals = []
+
         for conn_idx in range(n_connections):
             i, j = connections[conn_idx]
             # Use label if available, otherwise use polygon number
@@ -912,6 +1027,20 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
             conn_from_labels.append(from_label)
             conn_to_labels.append(to_label)
 
+            # Add bidirectional information
+            if conn_idx in bidirectional_info:
+                info = bidirectional_info[conn_idx]
+                conn_is_bidirectional.append(info['is_bidirectional'])
+                conn_forward_vals.append(info['forward_value'][0])  # First column for initial display
+                if info['is_bidirectional']:
+                    conn_reverse_vals.append(info['reverse_value'][0])
+                else:
+                    conn_reverse_vals.append(None)
+            else:
+                conn_is_bidirectional.append(False)
+                conn_forward_vals.append(conn_vals[conn_idx])
+                conn_reverse_vals.append(None)
+
         # Create data source for connections
         conn_data = {
             'x0': conn_x0,
@@ -922,11 +1051,33 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
             'conn_id': list(range(n_connections)),
             'from_label': conn_from_labels,
             'to_label': conn_to_labels,
+            'is_bidirectional': conn_is_bidirectional,
+            'forward_value': conn_forward_vals,
+            'reverse_value': conn_reverse_vals,
         }
 
         # Store all connection data for column switching
         for col_idx in range(n_columns):
             conn_data[f'value_{col_idx}'] = connection_values[:, col_idx].tolist()
+
+            # Store bidirectional values for each column
+            forward_vals_col = []
+            reverse_vals_col = []
+            for conn_idx in range(n_connections):
+                if conn_idx in bidirectional_info:
+                    info = bidirectional_info[conn_idx]
+                    forward_vals_col.append(info['forward_value'][col_idx])
+                    if info['is_bidirectional']:
+                        reverse_vals_col.append(info['reverse_value'][col_idx])
+                    else:
+                        reverse_vals_col.append(None)
+                else:
+                    forward_vals_col.append(connection_values[conn_idx, col_idx])
+                    reverse_vals_col.append(None)
+
+            conn_data[f'forward_value_{col_idx}'] = forward_vals_col
+            conn_data[f'reverse_value_{col_idx}'] = reverse_vals_col
+
             # Store centers for this column
             centers = all_centers[col_idx]
             x0_col = [centers[connections[i, 0], 0] for i in range(n_connections)]
@@ -1024,7 +1175,8 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
         connection_tooltips = [
             ('From', '@from_label'),
             ('To', '@to_label'),
-            ('Value', '@value{0.0000}')
+            ('Value', '@value{0.0000}'),
+            ('Bidirectional', '@is_bidirectional')
         ]
         connection_hover = HoverTool(
             renderers=[conn_lines],  # Only hover on the colored lines, not the border
@@ -1262,6 +1414,8 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
                 if (has_connections && source_conn !== null) {
                     const conn_data = source_conn.data;
                     conn_data['value'] = conn_data['value_' + col_idx];
+                    conn_data['forward_value'] = conn_data['forward_value_' + col_idx];
+                    conn_data['reverse_value'] = conn_data['reverse_value_' + col_idx];
                     conn_data['x0'] = conn_data['x0_' + col_idx];
                     conn_data['y0'] = conn_data['y0_' + col_idx];
                     conn_data['x1'] = conn_data['x1_' + col_idx];
