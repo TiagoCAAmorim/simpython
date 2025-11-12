@@ -22,7 +22,9 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
                        color_limits=None, out_of_range_colors=None,
                        nan_inf_color=None, value_names=None,
                        connections=None, connection_values=None,
-                       connection_width=3.0, connection_border_color='white'):
+                       connection_width=3.0, connection_border_color='white',
+                       connection_palette=None, connection_log_scale=None,
+                       connection_color_limits=None, connection_colorbar_label=None):
     """
     Plot a grid of n-sided polygons in 2D with color-coded values using Bokeh.
     Interactive plot with hover functionality showing face number and value.
@@ -105,6 +107,24 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
     connection_border_color : str, default='white'
         Color of the border around connection lines. This helps distinguish lines
         from colored polygons. Set to None for no border.
+    connection_palette : str, optional
+        Color palette name for connections. If None (default), uses the same palette
+        as polygons. Options: 'Viridis256', 'Turbo256', 'Plasma256', etc.
+    connection_log_scale : bool, optional
+        Whether to use logarithmic color scale for connections. If None (default),
+        uses the same log_scale setting as polygons.
+    connection_color_limits : tuple of (min, max), optional
+        Tuple specifying the color scale limits for connections. Either element can
+        be None to use the connection data's min/max. If not provided, uses
+        (conn_data_min, conn_data_max). Values outside these limits will be clamped
+        to the min/max colors of the palette. For example:
+        - (10, 100): connection color scale 10-100
+        - (10, None): connection color scale 10 to conn_data_max
+        - (None, 100): connection color scale conn_data_min to 100
+        - None: connection color scale from conn_data_min to conn_data_max
+    connection_colorbar_label : str, optional
+        Label for the connection colorbar. Only used when connections have an
+        independent color scale. If None, uses 'Connection Value'.
 
     Returns
     -------
@@ -219,6 +239,23 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
     ...     title='Grid with Flow Connections'
     ... )
     >>> show(panel)  # Lines drawn between connected polygons
+
+    >>> # With independent color scale for connections
+    >>> polygon_values = np.array([10, 20, 30, 40])  # Low range
+    >>> conn_values = np.array([1000, 5000, 10000, 50000])  # High range
+    >>> panel = plot_polygon_grid(
+    ...     vertices, polygon_values,
+    ...     connections=connections,
+    ...     connection_values=conn_values,
+    ...     palette='Viridis',  # Polygons use Viridis
+    ...     colorbar_label='Temperature (°C)',
+    ...     connection_palette='Plasma',  # Connections use Plasma
+    ...     connection_log_scale=True,  # Log scale for connections
+    ...     connection_color_limits=(1000, 10000),  # Clamp to 1k-10k range
+    ...     connection_colorbar_label='Flow Rate (m³/day)',  # Custom label
+    ...     title='Independent Connection Color Scale'
+    ... )
+    >>> show(panel)  # Two colorbars shown when connection scale is independent
     """
     # Handle values=None case by inferring polygon count from vertices
     if values is None:
@@ -903,6 +940,64 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
 
         source_connections = ColumnDataSource(data=conn_data)
 
+        # Create separate color mapper for connections if parameters are provided
+        if connection_palette is not None or connection_log_scale is not None or connection_color_limits is not None:
+            # Determine connection palette
+            if connection_palette is not None:
+                if isinstance(connection_palette, str) and connection_palette in palette_map:
+                    conn_color_palette = palette_map[connection_palette]
+                elif isinstance(connection_palette, str):
+                    conn_color_palette = connection_palette
+                else:
+                    conn_color_palette = connection_palette
+            else:
+                # Use same palette as polygons
+                conn_color_palette = color_palette
+
+            # Determine connection log scale
+            conn_log_scale = connection_log_scale if connection_log_scale is not None else log_scale
+
+            # Calculate connection color scale limits
+            finite_conn_values = connection_values[np.isfinite(connection_values)]
+            if len(finite_conn_values) == 0:
+                conn_vmin = 0
+                conn_vmax = 1
+            else:
+                conn_limit_min = None
+                conn_limit_max = None
+                if connection_color_limits is not None:
+                    if not isinstance(connection_color_limits, (tuple, list)) or len(connection_color_limits) != 2:
+                        raise ValueError("connection_color_limits must be a tuple of (min, max)")
+                    conn_limit_min, conn_limit_max = connection_color_limits
+
+                if conn_limit_min is None:
+                    conn_vmin = np.min(finite_conn_values)
+                else:
+                    conn_vmin = conn_limit_min
+
+                if conn_limit_max is None:
+                    conn_vmax = np.max(finite_conn_values)
+                else:
+                    conn_vmax = conn_limit_max
+
+            # Handle log scale requirements for connections
+            if conn_log_scale:
+                if conn_vmin <= 0:
+                    positive_conn_values = finite_conn_values[finite_conn_values > 0]
+                    if len(positive_conn_values) == 0:
+                        raise ValueError("Cannot use connection log scale with all non-positive values")
+                    conn_vmin = np.min(positive_conn_values)
+                    print(f"Warning: Adjusting connection vmin to {conn_vmin} for log scale (was <= 0)")
+
+            # Create connection color mapper
+            if conn_log_scale:
+                connection_mapper = LogColorMapper(palette=conn_color_palette, low=conn_vmin, high=conn_vmax)
+            else:
+                connection_mapper = LinearColorMapper(palette=conn_color_palette, low=conn_vmin, high=conn_vmax)
+        else:
+            # Use the same mapper as polygons
+            connection_mapper = mapper
+
         # Draw border lines (white/light) first for visibility
         if connection_border_color is not None:
             border_width = connection_width + 2  # Border slightly wider
@@ -919,7 +1014,7 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
         conn_lines = p.segment(
             x0='x0', y0='y0', x1='x1', y1='y1',
             source=source_connections,
-            line_color={'field': 'value', 'transform': mapper},
+            line_color={'field': 'value', 'transform': connection_mapper},
             line_width=connection_width,
             line_cap='round'
         )
@@ -938,8 +1033,16 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
             attachment="vertical"
         )
         p.add_tools(connection_hover)
+
+        # Store connection color scale info for colorbar
+        has_independent_connection_scale = (connection_palette is not None or
+                                           connection_log_scale is not None or
+                                           connection_color_limits is not None)
     else:
         source_connections = None
+        has_independent_connection_scale = False
+        connection_mapper = None
+        conn_log_scale = False
 
     # Add hover tool
     tooltips = [
@@ -967,6 +1070,24 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
             title=colorbar_label if colorbar_label else 'Value'
         )
         p.add_layout(color_bar, 'right')
+
+        # Add second colorbar for connections if they have independent color scale
+        if has_connections and has_independent_connection_scale:
+            # Create ticker for connection colorbar
+            if conn_log_scale:
+                conn_ticker = LogTicker()
+            else:
+                conn_ticker = BasicTicker()
+
+            conn_color_bar = ColorBar(
+                color_mapper=connection_mapper,
+                ticker=conn_ticker,
+                label_standoff=12,
+                border_line_color=None,
+                location=(0, 0),
+                title=connection_colorbar_label if connection_colorbar_label else 'Connection Value'
+            )
+            p.add_layout(conn_color_bar, 'right')
 
     # Style the plot
     p.grid.grid_line_alpha = 0.3
@@ -1258,8 +1379,8 @@ if __name__ == "__main__":
     labels_ = np.array(['V=5', 'V=15', 'V=25', 'NaN', 'V=45', 'V=55'])
     connections_ = np.array([[0, 1], [1, 2], [2, 3], [3, 4],
                              [4, 5], [1, 0], [1, 4], [4, 1]])
-    connection_values_ = np.array([[10, 20], [25, 15], [50, 60], [70, 80],
-                                   [90, 100], [10, 25], [40, 55], [55, 55]])
+    connection_values_ = np.array([[1000, 20], [25, 15], [50, 60], [70, 80],
+                                   [90, 100], [1000, 25], [40, 0.55], [0.55, 0.55]])
 
     panel_limits = plot_polygon_grid(
         vertices=[vertices1, vertices2],
@@ -1268,12 +1389,14 @@ if __name__ == "__main__":
         connections=connections_,
         connection_values=connection_values_,
         connection_width=6.0,
-        connection_border_color='black',
+        # connection_border_color='black',
         palette='Turbo',
+        connection_log_scale=True,
         color_limits=(None, 100),
         out_of_range_colors=('blue', 'red'),
         nan_inf_color=None,
-        colorbar_label='Value',
+        colorbar_label='Cells',
+        connection_colorbar_label='Connection',
         title='Map Example'
     )
     show(panel_limits)
