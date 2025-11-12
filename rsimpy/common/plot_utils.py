@@ -27,13 +27,19 @@ def plot_polygon_grid(vertices, values, width=800, height=600,
 
     Parameters
     ----------
-    vertices : array-like, shape (n_polygons, n_vertices, 2)
+    vertices : array-like, shape (n_polygons, n_vertices, 2) or list of such arrays
         Coordinates of polygon vertices. Each polygon can have any number of vertices
         (minimum 3), and each vertex has (x, y) coordinates.
-        vertices[i] contains all vertices of polygon i.
-        vertices[i, j] contains the (x, y) coordinates of vertex j.
-        Note: All polygons must have the same number of vertices, or you can provide
-        a list of arrays with varying sizes.
+
+        Single set (fixed polygons):
+            vertices[i] contains all vertices of polygon i.
+            vertices[i, j] contains the (x, y) coordinates of vertex j.
+            Can be a list of arrays with varying sizes for mixed polygons.
+
+        Multiple sets (dynamic polygons):
+            List of lists where vertices[col_idx] contains the polygon set for column col_idx.
+            When values is 2D with m columns, vertices must be a list of m polygon sets.
+            Each inner list must have the same number of polygons as rows in values.
     values : array-like, shape (n_polygons,) or (n_polygons, m)
         Values associated with each polygon. These determine the fill color.
         Can be a 1D array or 2D matrix. If 2D, a dropdown control will be
@@ -175,74 +181,173 @@ def plot_polygon_grid(vertices, values, width=800, height=600,
     ... )
     >>> show(panel)  # Dropdown selector will appear to choose columns
     """
-    # Convert to numpy arrays (or handle list of arrays with different sizes)
-    if isinstance(vertices, (list, tuple)) and len(vertices) > 0:
-        # Check if it's a list of arrays with potentially different sizes
-        if isinstance(vertices[0], np.ndarray) or isinstance(vertices[0], (list, tuple)):
-            # Each element is a polygon with potentially different number of vertices
-            vertices_list = [np.asarray(v) for v in vertices]
-            n_polygons = len(vertices_list)
-            # Validate each polygon
-            for i, v in enumerate(vertices_list):
-                if v.ndim != 2 or v.shape[1] != 2:
-                    raise ValueError(
-                        f"vertices[{i}] must have shape (n_vertices, 2), got {v.shape}"
-                    )
-                if v.shape[0] < 3:
-                    raise ValueError(
-                        f"vertices[{i}] must have at least 3 vertices, got {v.shape[0]}"
-                    )
-            vertices_are_ragged = True
-        else:
-            # It's a regular array
-            vertices = np.asarray(vertices)
-            vertices_are_ragged = False
-    else:
-        vertices = np.asarray(vertices)
-        vertices_are_ragged = False
-
-    if not vertices_are_ragged:
-        # Validate uniform array
-        if vertices.ndim != 3 or vertices.shape[2] != 2:
-            raise ValueError(
-                f"vertices must have shape (n_polygons, n_vertices, 2), got {vertices.shape}"
-            )
-        if vertices.shape[1] < 3:
-            raise ValueError(
-                f"Each polygon must have at least 3 vertices, got {vertices.shape[1]}"
-            )
-        n_polygons = vertices.shape[0]
-        # Convert to list for uniform processing
-        vertices_list = [vertices[i] for i in range(n_polygons)]
-
     values = np.asarray(values)
-    n_polygons = len(vertices_list)
 
     # Check if values is a matrix
     is_matrix = values.ndim == 2
     if is_matrix:
-        n_values, n_columns = values.shape
-        if n_values != n_polygons:
-            raise ValueError(
-                f"values must have shape ({n_polygons}, m), got {values.shape}"
-            )
-        # Validate or create value_names
-        if value_names is not None:
-            value_names = np.asarray(value_names, dtype=str)
-            if len(value_names) != n_columns:
-                raise ValueError(
-                    f"value_names must have length {n_columns}, got {len(value_names)}"
-                )
-        else:
-            value_names = [f'Column {i}' for i in range(n_columns)]
+        n_polygons, n_columns = values.shape
     else:
-        # Make it a column vector for consistency
         if values.ndim == 1:
             values = values.reshape(-1, 1)
             n_columns = 1
-        if values.shape[0] != n_polygons:
+            n_polygons = values.shape[0]
+        else:
+            raise ValueError("values must be 1D or 2D array")
+
+    # Parse vertices structure to determine if we have multiple polygon sets
+    # Three cases:
+    # 1. Single uniform array: (n_polygons, n_vertices, 2)
+    # 2. Single list of polygons: [(n_vertices_0, 2), (n_vertices_1, 2), ...]
+    # 3. Multiple lists (one per column): [[(n_vertices, 2), ...], [(n_vertices, 2), ...], ...]
+
+    vertices_are_multi_set = False
+
+    if isinstance(vertices, (list, tuple)) and len(vertices) > 0:
+        first_elem = vertices[0]
+        # Check if first element is itself a list/array of polygons or a single polygon
+        if isinstance(first_elem, (list, tuple)):
+            # Could be case 2 or 3
+            # Check if first_elem[0] is a polygon or a vertex
+            if len(first_elem) > 0:
+                second_elem = first_elem[0]
+                if isinstance(second_elem, (list, tuple, np.ndarray)):
+                    second_elem_arr = np.asarray(second_elem)
+                    if second_elem_arr.ndim == 2 and second_elem_arr.shape[1] == 2:
+                        # first_elem[0] is a polygon -> case 3 (multi-set)
+                        vertices_are_multi_set = True
+                    elif second_elem_arr.ndim == 1 and len(second_elem_arr) == 2:
+                        # first_elem[0] is a vertex -> case 2 (single list)
+                        vertices_are_multi_set = False
+                    else:
+                        # Ambiguous, check shape
+                        vertices_are_multi_set = False
+        elif isinstance(first_elem, np.ndarray):
+            # first_elem is an array
+            if first_elem.ndim == 2 and first_elem.shape[1] == 2:
+                # first_elem is a single polygon -> case 2
+                vertices_are_multi_set = False
+            elif first_elem.ndim == 3:
+                # Unusual case: might be trying case 3 with arrays
+                vertices_are_multi_set = True
+            elif first_elem.ndim == 1:
+                # first_elem might be a list of polygons as arrays
+                vertices_are_multi_set = False
+
+    # Now parse vertices based on the determined structure
+    if vertices_are_multi_set:
+        # Case 3: Multiple polygon sets (one per column)
+        if len(vertices) != n_columns:
             raise ValueError(
-                f"values must have length {n_polygons}, got {values.shape[0]}"
+                f"When providing multiple polygon sets, must have {n_columns} sets "
+                f"(one per data column), got {len(vertices)}"
+            )
+
+        # Parse each set
+        all_vertices_lists = []
+        for col_idx, vert_set in enumerate(vertices):
+            vert_list = []
+            if isinstance(vert_set, np.ndarray):
+                if vert_set.ndim == 3:
+                    # Uniform array for this column
+                    if vert_set.shape[0] != n_polygons:
+                        raise ValueError(
+                            f"vertices[{col_idx}] must have {n_polygons} polygons, "
+                            f"got {vert_set.shape[0]}"
+                        )
+                    for i in range(n_polygons):
+                        vert_list.append(vert_set[i])
+                else:
+                    raise ValueError(
+                        f"vertices[{col_idx}] array must have 3 dimensions, got {vert_set.ndim}"
+                    )
+            elif isinstance(vert_set, (list, tuple)):
+                # List of polygons
+                if len(vert_set) != n_polygons:
+                    raise ValueError(
+                        f"vertices[{col_idx}] must have {n_polygons} polygons, "
+                        f"got {len(vert_set)}"
+                    )
+                for i, poly in enumerate(vert_set):
+                    poly_arr = np.asarray(poly)
+                    if poly_arr.ndim != 2 or poly_arr.shape[1] != 2:
+                        raise ValueError(
+                            f"vertices[{col_idx}][{i}] must have shape (n_vertices, 2), "
+                            f"got {poly_arr.shape}"
+                        )
+                    if poly_arr.shape[0] < 3:
+                        raise ValueError(
+                            f"vertices[{col_idx}][{i}] must have at least 3 vertices"
+                        )
+                    vert_list.append(poly_arr)
+            else:
+                raise ValueError(f"vertices[{col_idx}] must be array or list")
+
+            all_vertices_lists.append(vert_list)
+
+        # Start with first column's polygons
+        vertices_list = all_vertices_lists[0]
+
+    else:
+        # Cases 1 & 2: Single polygon set (used for all columns)
+        if isinstance(vertices, (list, tuple)) and len(vertices) > 0:
+            # Check if it's a list of arrays with potentially different sizes
+            if isinstance(vertices[0], np.ndarray) or isinstance(vertices[0], (list, tuple)):
+                # Each element is a polygon with potentially different number of vertices
+                vertices_list = [np.asarray(v) for v in vertices]
+                n_poly = len(vertices_list)
+                # Validate each polygon
+                for i, v in enumerate(vertices_list):
+                    if v.ndim != 2 or v.shape[1] != 2:
+                        raise ValueError(
+                            f"vertices[{i}] must have shape (n_vertices, 2), got {v.shape}"
+                        )
+                    if v.shape[0] < 3:
+                        raise ValueError(
+                            f"vertices[{i}] must have at least 3 vertices, got {v.shape[0]}"
+                        )
+            else:
+                # It's a regular array
+                vertices = np.asarray(vertices)
+                if vertices.ndim != 3 or vertices.shape[2] != 2:
+                    raise ValueError(
+                        f"vertices must have shape (n_polygons, n_vertices, 2), got {vertices.shape}"
+                    )
+                if vertices.shape[1] < 3:
+                    raise ValueError(
+                        f"Each polygon must have at least 3 vertices, got {vertices.shape[1]}"
+                    )
+                n_poly = vertices.shape[0]
+                # Convert to list for uniform processing
+                vertices_list = [vertices[i] for i in range(n_poly)]
+        else:
+            vertices = np.asarray(vertices)
+            if vertices.ndim != 3 or vertices.shape[2] != 2:
+                raise ValueError(
+                    f"vertices must have shape (n_polygons, n_vertices, 2), got {vertices.shape}"
+                )
+            if vertices.shape[1] < 3:
+                raise ValueError(
+                    f"Each polygon must have at least 3 vertices, got {vertices.shape[1]}"
+                )
+            n_poly = vertices.shape[0]
+            # Convert to list for uniform processing
+            vertices_list = [vertices[i] for i in range(n_poly)]
+
+        if n_poly != n_polygons:
+            raise ValueError(
+                f"Number of polygons ({n_poly}) must match number of values ({n_polygons})"
+            )
+
+        # Replicate for all columns
+        all_vertices_lists = [vertices_list for _ in range(n_columns)]
+
+    if value_names is None:
+        value_names = [f'Column {i}' for i in range(n_columns)]
+    else:
+        if len(value_names) != n_columns:
+            raise ValueError(
+                f"value_names must have length {n_columns}, got {len(value_names)}"
             )
 
     # Validate labels if provided
@@ -387,9 +492,31 @@ def plot_polygon_grid(vertices, values, width=800, height=600,
         else:
             in_range_mask[idx] = True
 
-    # Calculate plot range with margins
-    all_x = np.concatenate([v[:, 0] for v in vertices_list])
-    all_y = np.concatenate([v[:, 1] for v in vertices_list])
+    # Calculate plot range with margins to encompass all possible polygon sets
+    # Exclude NaN/Inf polygons from range calculation if they won't be rendered
+    all_x_coords = []
+    all_y_coords = []
+
+    for col_idx in range(n_columns):
+        col_vertices = all_vertices_lists[col_idx]
+        col_values = values[:, col_idx]
+
+        for poly_idx, poly_verts in enumerate(col_vertices):
+            # Include polygon in range calculation if:
+            # - It has finite value, OR
+            # - It has NaN/Inf but will be rendered (nan_inf_color is not None)
+            if np.isfinite(col_values[poly_idx]) or nan_inf_color is not None:
+                all_x_coords.append(poly_verts[:, 0])
+                all_y_coords.append(poly_verts[:, 1])
+
+    if len(all_x_coords) == 0:
+        # Fallback if no polygons to display
+        all_x = np.array([0, 1])
+        all_y = np.array([0, 1])
+    else:
+        all_x = np.concatenate(all_x_coords)
+        all_y = np.concatenate(all_y_coords)
+
     x_range = all_x.max() - all_x.min()
     y_range = all_y.max() - all_y.min()
     x_margin = x_range * 0.02 if x_range > 0 else 1
@@ -420,6 +547,14 @@ def plot_polygon_grid(vertices, values, width=800, height=600,
     # Add all value columns to the data
     for col_idx in range(n_columns):
         base_data[f'value_{col_idx}'] = values[:, col_idx].tolist()
+
+    # Add all vertices columns to the data (for dynamic polygon updates)
+    for col_idx in range(n_columns):
+        col_vertices = all_vertices_lists[col_idx]
+        xs_col = [v[:, 0].tolist() for v in col_vertices]
+        ys_col = [v[:, 1].tolist() for v in col_vertices]
+        base_data[f'xs_{col_idx}'] = xs_col
+        base_data[f'ys_{col_idx}'] = ys_col
 
     # Set the active value column
     base_data['value'] = current_values.tolist()
@@ -657,11 +792,16 @@ def plot_polygon_grid(vertices, values, width=800, height=600,
 
                 // Get the data from the source
                 const data = source.data;
-                const n_polygons = data['xs'].length;
+                const n_polygons = data['xs_0'].length;  // Use stored vertices count
 
-                // Update the active value column
+                // Update the active value and vertices columns
                 const new_values = data['value_' + col_idx];
+                const new_xs = data['xs_' + col_idx];
+                const new_ys = data['ys_' + col_idx];
+
                 data['value'] = new_values;
+                data['xs'] = new_xs;
+                data['ys'] = new_ys;
 
                 // Categorize polygons
                 const in_range = new Array(n_polygons);
@@ -706,8 +846,8 @@ def plot_polygon_grid(vertices, values, width=800, height=600,
 
                     for (let i = 0; i < n_polygons; i++) {
                         if (mask[i]) {
-                            src_xs.push(data['xs'][i]);
-                            src_ys.push(data['ys'][i]);
+                            src_xs.push(new_xs[i]);
+                            src_ys.push(new_ys[i]);
                             src_face.push(data['face'][i]);
                             src_value.push(new_values[i]);
                             src_label.push(data['label'][i]);
@@ -780,7 +920,7 @@ if __name__ == "__main__":
     # show(panel_log)
 
     # Example with color limits
-    vertices_limits = [
+    vertices1 = [
         [[0.5, 0.5], [1, 0], [1, 1]],
         [[1, 0], [2, 0], [2, 1], [1, 1]],
         [[0, 1], [1, 1], [1, 2], [0, 2]],
@@ -788,16 +928,26 @@ if __name__ == "__main__":
         [[2, 0], [3, 0], [3, 1], [2, 1]],
         [[2, 1], [3.2, 1], [3, 2], [2, 2.2]],
     ]
-    values_limits = np.array([[5, 15, 25, np.nan, 45, 55],[15, 115, 125, 135, 145, 155]]).T
-    labels_limits = np.array(['V=5', 'V=15', 'V=25', 'V=35', 'V=45', 'V=55'])
+    vertices2 = [
+        [[0, 0], [1, 0], [1, 1], [0, 1]],
+        [[1, 0], [2, 0], [2, 1], [1, 1]],
+        [[0, 1], [1, 1], [1, 2], [0, 2]],
+        [[1, 1], [2, 1], [2, 2], [1, 2]],
+        [[2, 0], [3, 0], [3, 1], [2, 1]],
+        [[2, 1], [3.2, 1], [3, 2], [2, 2.2]],
+    ]
+    values = np.array([[5, 15, 25, np.nan, 45, 55],[15, 115, 125, 135, 145, 155]]).T
+    labels = np.array(['V=5', 'V=15', 'V=25', 'V=35', 'V=45', 'V=55'])
 
     panel_limits = plot_polygon_grid(
-        vertices_limits, values_limits,
-        labels=labels_limits,
+        vertices=[vertices1, vertices2],
+        values=values,
+        labels=labels,
+        palette='Turbo',
         color_limits=(20, 50),
         out_of_range_colors=('blue', 'red'),
         nan_inf_color=None,
         colorbar_label='Value',
-        title='Color Limits Example (20-50, others gray)'
+        title='Map Example'
     )
     show(panel_limits)
