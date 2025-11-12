@@ -7,8 +7,12 @@ from bokeh.models import (
     HoverTool, LinearColorMapper, LogColorMapper,
     ColorBar, BasicTicker, LogTicker, Select, ColumnDataSource, CustomJS
 )
-from bokeh.palettes import Viridis256, Turbo256, Plasma256, Inferno256, Magma256
-from bokeh.layouts import column
+from bokeh.palettes import (
+    Viridis256, Turbo256, Plasma256, Inferno256, Magma256,
+    Cividis256, Greys256, Blues256, Greens256, Reds256,
+    Oranges256, Purples256
+)
+from bokeh.layouts import column, row
 
 
 def plot_polygon_grid(vertices, values, width=800, height=600,
@@ -296,14 +300,25 @@ def plot_polygon_grid(vertices, values, width=800, height=600,
             vmin = np.min(positive_values)
             print(f"Warning: Adjusting vmin to {vmin} for log scale (was <= 0)")
 
-    # Get palette
+    # Define available palettes
     palette_map = {
-        'Viridis256': Viridis256,
-        'Turbo256': Turbo256,
-        'Plasma256': Plasma256,
-        'Inferno256': Inferno256,
-        'Magma256': Magma256,
+        'Viridis': Viridis256,
+        'Turbo': Turbo256,
+        'Plasma': Plasma256,
+        'Inferno': Inferno256,
+        'Magma': Magma256,
+        'Cividis': Cividis256,
+        'Greys': Greys256,
+        'Blues': Blues256,
+        'Greens': Greens256,
+        'Reds': Reds256,
+        'Oranges': Oranges256,
+        'Purples': Purples256,
     }
+
+    # For backward compatibility, also accept names with '256' suffix
+    palette_map_with_suffix = {k + '256': v for k, v in palette_map.items()}
+    palette_map.update(palette_map_with_suffix)
 
     if isinstance(palette, str) and palette in palette_map:
         color_palette = palette_map[palette]
@@ -312,6 +327,15 @@ def plot_polygon_grid(vertices, values, width=800, height=600,
         color_palette = palette
     else:
         color_palette = palette
+
+    # Store initial palette name for selector
+    if isinstance(palette, str):
+        if palette.endswith('256'):
+            initial_palette = palette[:-3]  # Remove '256' suffix
+        else:
+            initial_palette = palette if palette in palette_map else 'Viridis'
+    else:
+        initial_palette = 'Viridis'
 
     # Create color mapper
     if log_scale:
@@ -548,6 +572,59 @@ def plot_polygon_grid(vertices, values, width=800, height=600,
     p.grid.grid_line_alpha = 0.3
     p.toolbar.logo = None
 
+    # Create palette selector
+    palette_options = [
+        'Viridis', 'Turbo', 'Plasma', 'Inferno', 'Magma', 'Cividis',
+        'Greys', 'Blues', 'Greens', 'Reds', 'Oranges', 'Purples'
+    ]
+    # Add reversed versions
+    palette_options_with_reversed = []
+    for pal in palette_options:
+        palette_options_with_reversed.append(pal)
+        palette_options_with_reversed.append(pal + ' (reversed)')
+
+    palette_select = Select(
+        title="Color Palette:",
+        value=initial_palette,
+        options=palette_options_with_reversed,
+        width=200
+    )
+
+    # Create JavaScript callback to update palette
+    palette_callback = CustomJS(
+        args=dict(
+            mapper=mapper,
+            palette_select=palette_select,
+            palette_map={k: list(v) for k, v in palette_map.items() if not k.endswith('256')},
+        ),
+        code="""
+            const palette_name = palette_select.value;
+            let reversed = false;
+            let base_name = palette_name;
+
+            // Check if reversed
+            if (palette_name.endsWith(' (reversed)')) {
+                reversed = true;
+                base_name = palette_name.replace(' (reversed)', '');
+            }
+
+            // Get the palette
+            let palette = palette_map[base_name];
+
+            if (palette) {
+                // Reverse if needed
+                if (reversed) {
+                    palette = palette.slice().reverse();
+                }
+
+                // Update the mapper
+                mapper.palette = palette;
+            }
+        """
+    )
+
+    palette_select.js_on_change('value', palette_callback)
+
     # If matrix values, add selector control
     if is_matrix and n_columns > 1:
         # Create dropdown selector
@@ -659,11 +736,12 @@ def plot_polygon_grid(vertices, values, width=800, height=600,
 
         select.js_on_change('value', callback)
 
-        # Create layout with selector and plot
-        panel = column(select, p)
+        # Create layout with selectors and plot
+        controls = row(select, palette_select)
+        panel = column(controls, p)
     else:
-        # Return as a panel (layout) without selector
-        panel = column(p)
+        # Return as a panel with palette selector
+        panel = column(palette_select, p)
 
     return panel
 
@@ -710,16 +788,16 @@ if __name__ == "__main__":
         [[2, 0], [3, 0], [3, 1], [2, 1]],
         [[2, 1], [3.2, 1], [3, 2], [2, 2.2]],
     ]
-    values_limits = np.array([[5, 15, 25, 35, 45, 55],[15, 115, 125, 135, 145, 155]]).T
+    values_limits = np.array([[5, 15, 25, np.nan, 45, 55],[15, 115, 125, 135, 145, 155]]).T
     labels_limits = np.array(['V=5', 'V=15', 'V=25', 'V=35', 'V=45', 'V=55'])
 
     panel_limits = plot_polygon_grid(
         vertices_limits, values_limits,
         labels=labels_limits,
-        color_limits=(20, 40),
+        color_limits=(20, 50),
         out_of_range_colors=('blue', 'red'),
-        nan_inf_color='gray',
+        nan_inf_color=None,
         colorbar_label='Value',
-        title='Color Limits Example (20-40, others gray)'
+        title='Color Limits Example (20-50, others gray)'
     )
     show(panel_limits)
