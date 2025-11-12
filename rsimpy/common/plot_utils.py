@@ -15,7 +15,7 @@ from bokeh.palettes import (
 from bokeh.layouts import column, row
 
 
-def plot_polygon_grid(vertices, values, width=800, height=600,
+def plot_polygon_grid(vertices, values=None, width=800, height=600,
                        palette='Viridis256', line_color='black', line_width=1,
                        colorbar=True, colorbar_label=None, log_scale=False,
                        title='Polygon Grid', labels=None,
@@ -40,10 +40,11 @@ def plot_polygon_grid(vertices, values, width=800, height=600,
             List of lists where vertices[col_idx] contains the polygon set for column col_idx.
             When values is 2D with m columns, vertices must be a list of m polygon sets.
             Each inner list must have the same number of polygons as rows in values.
-    values : array-like, shape (n_polygons,) or (n_polygons, m)
+    values : array-like, shape (n_polygons,) or (n_polygons, m), or None
         Values associated with each polygon. These determine the fill color.
         Can be a 1D array or 2D matrix. If 2D, a dropdown control will be
         added to select which column to display.
+        If None, all values are set to 0 (useful for visualizing geometry only).
     width : int, default=800
         Width of the plot in pixels.
     height : int, default=600
@@ -180,7 +181,63 @@ def plot_polygon_grid(vertices, values, width=800, height=600,
     ...     colorbar_label='Value'
     ... )
     >>> show(panel)  # Dropdown selector will appear to choose columns
+
+    >>> # Geometry-only visualization with values=None
+    >>> hex_grid = [make_hexagon(i, j, 0.5) for i in range(3) for j in range(3)]
+    >>> panel = plot_polygon_grid(
+    ...     hex_grid,
+    ...     values=None,  # All values set to 0
+    ...     title='Hexagonal Grid Geometry'
+    ... )
+    >>> show(panel)  # Useful for mesh visualization without data
     """
+    # Handle values=None case by inferring polygon count from vertices
+    if values is None:
+        # Need to parse vertices first to determine n_polygons
+        # We'll do a preliminary parse to get the count
+        if isinstance(vertices, np.ndarray):
+            if vertices.ndim == 3:
+                n_polygons = vertices.shape[0]
+            else:
+                raise ValueError(
+                    "When values=None, vertices must be array with shape (n_polygons, n_vertices, 2) "
+                    "or a list of polygon arrays"
+                )
+        elif isinstance(vertices, (list, tuple)) and len(vertices) > 0:
+            # Check if it's a list of lists (multi-set) or list of polygons (single set)
+            first_elem = vertices[0]
+            if isinstance(first_elem, (list, tuple)):
+                if len(first_elem) > 0:
+                    second_elem = first_elem[0]
+                    if isinstance(second_elem, (list, tuple, np.ndarray)):
+                        second_elem_arr = np.asarray(second_elem)
+                        if second_elem_arr.ndim == 2 and second_elem_arr.shape[1] == 2:
+                            # Multi-set: first_elem[0] is a polygon
+                            n_polygons = len(first_elem)
+                        else:
+                            # Single set: first_elem is a polygon
+                            n_polygons = len(vertices)
+                    else:
+                        n_polygons = len(vertices)
+                else:
+                    n_polygons = len(vertices)
+            elif isinstance(first_elem, np.ndarray):
+                if first_elem.ndim == 2 and first_elem.shape[1] == 2:
+                    # Single set: each element is a polygon
+                    n_polygons = len(vertices)
+                elif first_elem.ndim == 3:
+                    # Multi-set: each element is an array of polygons
+                    n_polygons = first_elem.shape[0]
+                else:
+                    n_polygons = len(vertices)
+            else:
+                n_polygons = len(vertices)
+        else:
+            raise ValueError("vertices must be an array or list")
+
+        # Create values array of zeros
+        values = np.zeros(n_polygons)
+
     values = np.asarray(values)
 
     # Check if values is a matrix
@@ -936,13 +993,13 @@ if __name__ == "__main__":
         [[2, 0], [3, 0], [3, 1], [2, 1]],
         [[2, 1], [3.2, 1], [3, 2], [2, 2.2]],
     ]
-    values = np.array([[5, 15, 25, np.nan, 45, 55],[15, 115, 125, 135, 145, 155]]).T
-    labels = np.array(['V=5', 'V=15', 'V=25', 'V=35', 'V=45', 'V=55'])
+    values_ = np.array([[5, 15, 25, np.nan, 45, 55],[15, 115, 125, 135, 145, 155]]).T
+    labels_ = np.array(['V=5', 'V=15', 'V=25', 'V=35', 'V=45', 'V=55'])
 
     panel_limits = plot_polygon_grid(
         vertices=[vertices1, vertices2],
-        values=values,
-        labels=labels,
+        values=values_,
+        labels=labels_,
         palette='Turbo',
         color_limits=(20, 50),
         out_of_range_colors=('blue', 'red'),
