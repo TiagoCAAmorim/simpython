@@ -581,49 +581,38 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
                 conn_idx_0, i0, j0 = conn_list[0]
                 conn_idx_1, i1, j1 = conn_list[1]
 
-                # Determine which is forward and which is reverse
                 # Use the first one as the primary (keep it), discard the second
-                forward_idx = conn_idx_0
-                reverse_idx = conn_idx_1
+                kept_idx = conn_idx_0
+                removed_idx = conn_idx_1
 
                 # Get values for both directions
-                forward_values = connection_values[forward_idx, :]
-                reverse_values = connection_values[reverse_idx, :]
+                val_0 = connection_values[conn_idx_0, :].copy()
+                val_1 = connection_values[conn_idx_1, :].copy()
 
-                # Calculate combined value (geometric mean for log, arithmetic mean for linear)
-                if conn_use_log_scale:
-                    # Geometric mean: sqrt(a * b)
-                    # Handle negative and zero values
-                    combined_values = np.zeros(n_columns)
-                    for col_idx in range(n_columns):
-                        fv = forward_values[col_idx]
-                        rv = reverse_values[col_idx]
-                        if fv > 0 and rv > 0:
-                            combined_values[col_idx] = np.sqrt(fv * rv)
-                        elif fv > 0:
-                            combined_values[col_idx] = fv
-                        elif rv > 0:
-                            combined_values[col_idx] = rv
-                        else:
-                            combined_values[col_idx] = 0
+                # Now determine which value corresponds to which direction of the KEPT connection
+                # The kept connection goes from i0 to j0
+                # We need to find which value corresponds to (i0→j0) and which to (j0→i0)
+                if i0 == conn_list[0][1] and j0 == conn_list[0][2]:
+                    # conn_list[0] is (i0→j0), so val_0 is the i0→j0 value
+                    value_i_to_j = val_0
+                    value_j_to_i = val_1
                 else:
-                    # Arithmetic mean: (a + b) / 2
-                    combined_values = (forward_values + reverse_values) / 2.0
-
-                # Update the forward connection with combined value
-                connection_values[forward_idx, :] = combined_values.copy()
+                    # conn_list[0] is (j0→i0), so val_0 is the j0→i0 value
+                    value_i_to_j = val_1
+                    value_j_to_i = val_0
 
                 # Mark reverse connection for removal
-                keep_connection[reverse_idx] = False
+                keep_connection[removed_idx] = False
 
-                # Store bidirectional info
-                bidirectional_info[forward_idx] = {
+                # Store bidirectional info with correctly mapped values
+                # forward_value: value for the kept connection direction (i0→j0)
+                # reverse_value: value for the opposite direction (j0→i0)
+                bidirectional_info[kept_idx] = {
                     'is_bidirectional': True,
                     'from': i0,
                     'to': j0,
-                    'forward_value': forward_values,
-                    'reverse_value': reverse_values,
-                    'combined_value': combined_values,
+                    'forward_value': value_i_to_j,
+                    'reverse_value': value_j_to_i,
                 }
             else:
                 # More than 2 connections between same pair - shouldn't happen normally
@@ -796,7 +785,11 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
             conn_y0.append(current_centers[i, 1])
             conn_x1.append(current_centers[j, 0])
             conn_y1.append(current_centers[j, 1])
-            conn_vals.append(connection_values[conn_idx, 0])
+            # Use forward value (not the mean) for display
+            if conn_idx in bidirectional_info:
+                conn_vals.append(bidirectional_info[conn_idx]['forward_value'][0])
+            else:
+                conn_vals.append(connection_values[conn_idx, 0])
 
     # Start with the first column (or only column)
     current_values = values[:, 0]
@@ -865,11 +858,20 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
     )
 
     # Create base data dictionary with all columns stored
+    # Create unified "name" field for polygons
+    polygon_names = []
+    for i in range(n_polygons):
+        if labels is not None and labels[i]:
+            polygon_names.append(labels[i])
+        else:
+            polygon_names.append(str(i))
+
     base_data = {
         'xs': xs,
         'ys': ys,
         'face': face_ids,
         'label': label_list,
+        'name': polygon_names,
     }
 
     # Add all value columns to the data
@@ -903,6 +905,7 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
             'face': [face_ids[i] for i in in_range_indices],
             'value': [current_values[i] for i in in_range_indices],
             'label': [label_list[i] for i in in_range_indices],
+            'name': [polygon_names[i] for i in in_range_indices],
         }
         source_in_range = ColumnDataSource(data=in_range_data)
         patches_in_range = p.patches(
@@ -925,6 +928,7 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
             'face': [face_ids[i] for i in below_min_indices],
             'value': [current_values[i] for i in below_min_indices],
             'label': [label_list[i] for i in below_min_indices],
+            'name': [polygon_names[i] for i in below_min_indices],
         }
         source_below_min = ColumnDataSource(data=below_min_data)
         if color_below_min is None:
@@ -957,6 +961,7 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
             'face': [face_ids[i] for i in above_max_indices],
             'value': [current_values[i] for i in above_max_indices],
             'label': [label_list[i] for i in above_max_indices],
+            'name': [polygon_names[i] for i in above_max_indices],
         }
         source_above_max = ColumnDataSource(data=above_max_data)
         if color_above_max is None:
@@ -990,6 +995,7 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
                 'face': [face_ids[i] for i in nan_inf_indices],
                 'value': [current_values[i] for i in nan_inf_indices],
                 'label': [label_list[i] for i in nan_inf_indices],
+                'name': [polygon_names[i] for i in nan_inf_indices],
             }
             source_nan_inf = ColumnDataSource(data=nan_inf_data)
             patches_nan_inf = p.patches(
@@ -1011,6 +1017,7 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
         # Prepare labels for connection hover (From/To)
         conn_from_labels = []
         conn_to_labels = []
+        conn_names = []  # Unified name field
         conn_is_bidirectional = []
         conn_forward_vals = []
         conn_reverse_vals = []
@@ -1018,14 +1025,17 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
         for conn_idx in range(n_connections):
             i, j = connections[conn_idx]
             # Use label if available, otherwise use polygon number
-            if labels is not None:
+            if labels is not None and labels[i] and labels[j]:
                 from_label = labels[i]
                 to_label = labels[j]
+                conn_name = f"{from_label} → {to_label}"
             else:
                 from_label = str(i)
                 to_label = str(j)
+                conn_name = f"{i} → {j}"
             conn_from_labels.append(from_label)
             conn_to_labels.append(to_label)
+            conn_names.append(conn_name)
 
             # Add bidirectional information
             if conn_idx in bidirectional_info:
@@ -1048,6 +1058,7 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
             'x1': conn_x1,
             'y1': conn_y1,
             'value': conn_vals,
+            'name': conn_names,  # Unified name field
             'conn_id': list(range(n_connections)),
             'from_label': conn_from_labels,
             'to_label': conn_to_labels,
@@ -1057,24 +1068,29 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
         }
 
         # Store all connection data for column switching
+        # Use forward values (not mean) for display
         for col_idx in range(n_columns):
-            conn_data[f'value_{col_idx}'] = connection_values[:, col_idx].tolist()
-
-            # Store bidirectional values for each column
+            # Use forward value for display (not the combined mean)
+            val_col = []
             forward_vals_col = []
             reverse_vals_col = []
             for conn_idx in range(n_connections):
                 if conn_idx in bidirectional_info:
                     info = bidirectional_info[conn_idx]
-                    forward_vals_col.append(info['forward_value'][col_idx])
+                    forward_val = info['forward_value'][col_idx]
+                    val_col.append(forward_val)  # Use forward value for display
+                    forward_vals_col.append(forward_val)
                     if info['is_bidirectional']:
                         reverse_vals_col.append(info['reverse_value'][col_idx])
                     else:
                         reverse_vals_col.append(None)
                 else:
-                    forward_vals_col.append(connection_values[conn_idx, col_idx])
+                    val = connection_values[conn_idx, col_idx]
+                    val_col.append(val)
+                    forward_vals_col.append(val)
                     reverse_vals_col.append(None)
 
+            conn_data[f'value_{col_idx}'] = val_col
             conn_data[f'forward_value_{col_idx}'] = forward_vals_col
             conn_data[f'reverse_value_{col_idx}'] = reverse_vals_col
 
@@ -1109,7 +1125,20 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
             conn_log_scale = connection_log_scale if connection_log_scale is not None else log_scale
 
             # Calculate connection color scale limits
-            finite_conn_values = connection_values[np.isfinite(connection_values)]
+            # Collect all values including both forward and reverse for bidirectional connections
+            all_conn_values = []
+            for conn_idx in range(n_connections):
+                if conn_idx in bidirectional_info:
+                    info = bidirectional_info[conn_idx]
+                    all_conn_values.extend(info['forward_value'])
+                    if info['is_bidirectional']:
+                        all_conn_values.extend(info['reverse_value'])
+                else:
+                    all_conn_values.extend(connection_values[conn_idx, :])
+
+            all_conn_values = np.array(all_conn_values)
+            finite_conn_values = all_conn_values[np.isfinite(all_conn_values)]
+
             if len(finite_conn_values) == 0:
                 conn_vmin = 0
                 conn_vmax = 1
@@ -1149,6 +1178,139 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
             # Use the same mapper as polygons
             connection_mapper = mapper
 
+        # Determine if we're using log scale for connections
+        conn_use_log_for_gradient = conn_log_scale if (connection_palette is not None or
+                                                        connection_log_scale is not None or
+                                                        connection_color_limits is not None) else log_scale
+
+        # Create gradient lines for bidirectional connections
+        # For bidirectional connections, create multiple segments with varying colors
+        n_gradient_segments = 20  # Number of segments for smooth gradient
+
+        # Determine which connections need gradients (must be consistent across all columns)
+        # A connection needs gradient segments if it's bidirectional AND has different values
+        # in ANY column
+        connections_need_gradient = np.zeros(n_connections, dtype=bool)
+        for conn_idx in range(n_connections):
+            if conn_idx in bidirectional_info:
+                info = bidirectional_info[conn_idx]
+                if info['is_bidirectional']:
+                    # Check if values differ significantly in any column
+                    for col_idx in range(n_columns):
+                        forward_val = info['forward_value'][col_idx]
+                        reverse_val = info['reverse_value'][col_idx]
+                        rel_diff = abs(forward_val - reverse_val) / max(abs(forward_val), abs(reverse_val), 1e-10)
+                        if rel_diff > 0.01:  # More than 1% difference
+                            connections_need_gradient[conn_idx] = True
+                            break
+
+        # Function to create gradient data for a given column
+        # IMPORTANT: All columns must produce the same structure (same number of segments)
+        def create_gradient_for_column(col_idx):
+            grad_x0 = []
+            grad_y0 = []
+            grad_x1 = []
+            grad_y1 = []
+            grad_values = []
+            grad_conn_id = []
+            grad_from_label = []
+            grad_to_label = []
+            grad_names = []
+            grad_is_bidirectional = []
+
+            # Get centers for this column
+            centers = all_centers[col_idx]
+
+            for conn_idx in range(n_connections):
+                i, j = connections[conn_idx]
+                x0, y0 = centers[i, 0], centers[i, 1]
+                x1, y1 = centers[j, 0], centers[j, 1]
+
+                is_bidir = conn_is_bidirectional[conn_idx]
+                conn_name = conn_names[conn_idx]
+
+                # Use pre-computed mask to ensure all columns have same structure
+                if connections_need_gradient[conn_idx]:
+                    # Create gradient segments
+                    info = bidirectional_info[conn_idx]
+                    forward_val = info['forward_value'][col_idx]
+                    reverse_val = info['reverse_value'][col_idx]
+
+                    for seg_idx in range(n_gradient_segments):
+                        t0 = seg_idx / n_gradient_segments
+                        t1 = (seg_idx + 1) / n_gradient_segments
+
+                        # Interpolate position
+                        seg_x0 = x0 + t0 * (x1 - x0)
+                        seg_y0 = y0 + t0 * (y1 - y0)
+                        seg_x1 = x0 + t1 * (x1 - x0)
+                        seg_y1 = y0 + t1 * (y1 - y0)
+
+                        # Interpolate value using appropriate scale
+                        if conn_use_log_for_gradient:
+                            # Log-space interpolation (geometric)
+                            if forward_val > 0 and reverse_val > 0:
+                                log_forward = np.log(forward_val)
+                                log_reverse = np.log(reverse_val)
+                                log_val = log_forward + t0 * (log_reverse - log_forward)
+                                seg_val = np.exp(log_val)
+                            elif forward_val > 0:
+                                seg_val = forward_val
+                            elif reverse_val > 0:
+                                seg_val = reverse_val
+                            else:
+                                seg_val = 0
+                        else:
+                            # Linear interpolation
+                            seg_val = forward_val + t0 * (reverse_val - forward_val)
+
+                        grad_x0.append(seg_x0)
+                        grad_y0.append(seg_y0)
+                        grad_x1.append(seg_x1)
+                        grad_y1.append(seg_y1)
+                        grad_values.append(seg_val)
+                        grad_conn_id.append(conn_idx)
+                        grad_from_label.append(conn_from_labels[conn_idx])
+                        grad_to_label.append(conn_to_labels[conn_idx])
+                        grad_names.append(conn_name)
+                        grad_is_bidirectional.append(True)
+                else:
+                    # Single segment for unidirectional or similar bidirectional values
+                    grad_x0.append(x0)
+                    grad_y0.append(y0)
+                    grad_x1.append(x1)
+                    grad_y1.append(y1)
+                    grad_values.append(connection_values[conn_idx, col_idx])
+                    grad_conn_id.append(conn_idx)
+                    grad_from_label.append(conn_from_labels[conn_idx])
+                    grad_to_label.append(conn_to_labels[conn_idx])
+                    grad_names.append(conn_name)
+                    grad_is_bidirectional.append(is_bidir)
+
+            return {
+                'x0': grad_x0,
+                'y0': grad_y0,
+                'x1': grad_x1,
+                'y1': grad_y1,
+                'value': grad_values,
+                'name': grad_names,
+                'conn_id': grad_conn_id,
+                'from_label': grad_from_label,
+                'to_label': grad_to_label,
+                'is_bidirectional': grad_is_bidirectional,
+            }
+
+        # Create gradient data for first column
+        gradient_data = create_gradient_for_column(0)
+
+        # Store gradient data for all columns (for column switching)
+        for col_idx in range(n_columns):
+            col_grad_data = create_gradient_for_column(col_idx)
+            for key in col_grad_data:
+                gradient_data[f'{key}_{col_idx}'] = col_grad_data[key]
+
+        source_gradient = ColumnDataSource(data=gradient_data)
+
         # Draw border lines (white/light) first for visibility
         if connection_border_color is not None:
             border_width = connection_width + 2  # Border slightly wider
@@ -1161,30 +1323,15 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
             )
             connection_renderers.append(conn_border)
 
-        # Draw colored connection lines
+        # Draw colored gradient connection lines
         conn_lines = p.segment(
             x0='x0', y0='y0', x1='x1', y1='y1',
-            source=source_connections,
+            source=source_gradient,
             line_color={'field': 'value', 'transform': connection_mapper},
             line_width=connection_width,
             line_cap='round'
         )
         connection_renderers.append(conn_lines)
-
-        # Add hover tool for connections
-        connection_tooltips = [
-            ('From', '@from_label'),
-            ('To', '@to_label'),
-            ('Value', '@value{0.0000}'),
-            ('Bidirectional', '@is_bidirectional')
-        ]
-        connection_hover = HoverTool(
-            renderers=[conn_lines],  # Only hover on the colored lines, not the border
-            tooltips=connection_tooltips,
-            point_policy="follow_mouse",
-            attachment="vertical"
-        )
-        p.add_tools(connection_hover)
 
         # Store connection color scale info for colorbar
         has_independent_connection_scale = (connection_palette is not None or
@@ -1195,19 +1342,27 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
         has_independent_connection_scale = False
         connection_mapper = None
         conn_log_scale = False
+        conn_lines = None
 
-    # Add hover tool
-    tooltips = [
-        ('Face', '@face'),
-        ('Value', '@value{0.0000}')
-    ]
-    if labels is not None:
-        tooltips.append(('Label', '@label'))
+    # Add unified hover tool for both polygons and connections
+    # Using HTML formatting to hide field labels and center align
+    unified_tooltips = """
+        <div style="text-align: center;">
+            <div><b>@name</b></div>
+            <div>@value{0.0000}</div>
+        </div>
+    """
+
+    # Collect all renderers for hover
+    hover_renderers = all_patches.copy()
+    if has_connections and conn_lines is not None:
+        hover_renderers.append(conn_lines)
 
     hover = HoverTool(
-        renderers=all_patches,
-        tooltips=tooltips,
-        attachment="vertical"
+        renderers=hover_renderers,
+        tooltips=unified_tooltips,
+        attachment="vertical",
+        point_policy="follow_mouse",
     )
     p.add_tools(hover)
 
@@ -1317,6 +1472,7 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
                 source_above=source_above_max,
                 source_nan=source_nan_inf,
                 source_conn=source_connections if has_connections else None,
+                source_grad=source_gradient if has_connections else None,
                 select=select,
                 value_names=value_names,
                 n_columns=n_columns,
@@ -1383,6 +1539,7 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
                     const src_face = [];
                     const src_value = [];
                     const src_label = [];
+                    const src_name = [];
 
                     for (let i = 0; i < n_polygons; i++) {
                         if (mask[i]) {
@@ -1391,6 +1548,7 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
                             src_face.push(data['face'][i]);
                             src_value.push(new_values[i]);
                             src_label.push(data['label'][i]);
+                            src_name.push(data['name'][i]);
                         }
                     }
 
@@ -1399,6 +1557,7 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
                     src_data['face'] = src_face;
                     src_data['value'] = src_value;
                     src_data['label'] = src_label;
+                    src_data['name'] = src_name;
                     src.change.emit();
                 }
 
@@ -1421,6 +1580,21 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
                     conn_data['x1'] = conn_data['x1_' + col_idx];
                     conn_data['y1'] = conn_data['y1_' + col_idx];
                     source_conn.change.emit();
+                }
+
+                // Update gradient segments if present
+                if (has_connections && source_grad !== null) {
+                    const grad_data = source_grad.data;
+                    grad_data['x0'] = grad_data['x0_' + col_idx];
+                    grad_data['y0'] = grad_data['y0_' + col_idx];
+                    grad_data['x1'] = grad_data['x1_' + col_idx];
+                    grad_data['y1'] = grad_data['y1_' + col_idx];
+                    grad_data['value'] = grad_data['value_' + col_idx];
+                    grad_data['name'] = grad_data['name_' + col_idx];
+                    grad_data['from_label'] = grad_data['from_label_' + col_idx];
+                    grad_data['to_label'] = grad_data['to_label_' + col_idx];
+                    grad_data['is_bidirectional'] = grad_data['is_bidirectional_' + col_idx];
+                    source_grad.change.emit();
                 }
 
                 source.change.emit();
