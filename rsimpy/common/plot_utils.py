@@ -1797,21 +1797,23 @@ if __name__ == "__main__":
     from bokeh.plotting import show
 
     vertices1 = [
-        [[0.5, 0.5], [1, 0], [1, 1]],
-        [[1, 0], [2, 0], [2, 1], [1, 1]],
-        [[0, 1], [1, 1], [1, 2], [0, 2]],
-        [[1, 1], [2, 1], [2, 2], [1, 2]],
-        [[2, 0], [3, 0], [3, 1], [2, 1]],
-        [[2, 1], [3.2, 1], [3, 2], [2, 2.2]],
+        np.array([[0.5, 0.5], [1, 0], [1, 1]]),
+        np.array([[1, 0], [2, 0], [2, 1], [1, 1]]),
+        np.array([[0, 1], [1, 1], [1, 2], [0, 2]]),
+        np.array([[1, 1], [2, 1], [2, 2], [1, 2]]),
+        np.array([[2, 0], [3, 0], [3, 1], [2, 1]]),
+        np.array([[2, 1], [3.2, 1], [3, 2], [2, 2.2]]),
     ]
     vertices2 = [
-        [[0, 0], [1, 0], [1, 1], [0, 1]],
-        [[1, 0], [2, 0], [2, 1], [1, 1]],
-        [[0, 1], [1, 1], [1, 2], [0, 2]],
-        [[1, 1], [2, 1], [2, 2], [1, 2]],
-        [[2, 0], [3, 0], [3, 1], [2, 1]],
-        [[2, 1], [3.2, 1], [3, 2], [2, 2.2]],
+        np.array([[0, 0], [1, 0], [1, 1], [0, 1]]),
+        np.array([[1, 0], [2, 0], [2, 1], [1, 1]]),
+        np.array([[0, 1], [1, 1], [1, 2], [0, 2]]),
+        np.array([[1, 1], [2, 1], [2, 2], [1, 2]]),
+        np.array([[2, 0], [3, 0], [3, 1], [2, 1]]),
+        np.array([[2, 1], [3.2, 1], [3, 2], [2, 2.2]]),
     ]
+    vertices = [vertices1, vertices2]
+
     values_ = np.array([[5, 15, 25, np.nan, 45, 55],[15, 16, 27, 38, 49, 500]]).T
     labels_ = np.array(['V=5', 'V=15', 'V=25', 'NaN', 'V=45', 'V=55'])
     connections_ = np.array([[0, 1], [1, 2], [2, 3], [3, 4],
@@ -1819,8 +1821,12 @@ if __name__ == "__main__":
     connection_values_ = np.array([[1000, 20], [25, 15], [50, 60], [70, 80],
                                    [90, 100], [1000, 20], [40, 0.55], [0.55, 0.55]])
 
+    print(f'Vertices: {len(vertices)} polygon sets.')
+    for i, v in enumerate(vertices):
+        print(f' Polygon set {i}: {len(v)} polygons.')
+
     panel_limits = plot_polygon_grid(
-        vertices=[vertices1, vertices2],
+        vertices=vertices,
         values=values_,
         labels=labels_,
         connections=connections_,
