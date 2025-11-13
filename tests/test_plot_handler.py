@@ -1,6 +1,7 @@
 """
 Test script for the PlotHandler class.
 """
+from calendar import c
 import unittest
 from pathlib import Path
 from bokeh.plotting import show
@@ -65,7 +66,8 @@ class TestPlotHandler(unittest.TestCase):
             layers=[89],
             title="Test Plot: PRES over time",
             width=800,
-            height=600
+            height=600,
+            contour_step=50.0,
         )
 
         self.assertIsNotNone(panel, "Panel should not be None")
@@ -121,17 +123,39 @@ class TestPlotHandler(unittest.TestCase):
             layers=range(50, 90),
             width=800,
             height=600,
+            add_top=True,
             palette='Viridis',
             log_scale=False,
             out_of_range_colors=('gray', 'red'),
             nan_inf_color='gray',
-            contour_step=50.0,
         )
 
         self.assertIsNotNone(panel, "Panel should not be None")
         if self.show:
             show(panel)
 
+    def test_plot_map_with_connections(self):
+        """Test that plot_map works with connections."""
+        days = self.sr3.dates.get_days('grid')
+
+        panel = self.sr3.plot.plot_map(
+            element="matrix",
+            property_name="PERMI",
+            days=days[0],
+            layers=87,
+            width=800,
+            height=600,
+            add_top=False,
+            add_connections=True,
+            palette='Turbo',
+            log_scale=True,
+            out_of_range_colors=None,
+            nan_inf_color=None,
+        )
+
+        self.assertIsNotNone(panel, "Panel should not be None")
+        if self.show:
+            show(panel)
 
 if __name__ == '__main__':
     unittest.main()

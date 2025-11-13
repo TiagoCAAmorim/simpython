@@ -1474,7 +1474,8 @@ def _determine_contour_levels(all_vertices_lists, contour_step):
     return contour_levels
 
 
-def _compute_all_contours(all_vertices_lists, contour_levels, n_polygons, n_columns):
+def _compute_all_contours(all_vertices_lists, contour_levels, n_polygons, n_columns,
+                          values, nan_inf_color):
     """
     Compute contour line segments for all polygons and columns.
 
@@ -1488,6 +1489,10 @@ def _compute_all_contours(all_vertices_lists, contour_levels, n_polygons, n_colu
         Number of polygons
     n_columns : int
         Number of columns (data sets)
+    values : np.ndarray
+        Values array with shape (n_polygons, n_columns)
+    nan_inf_color : str or None
+        Color for NaN/Inf polygons. If None, these polygons are not visible.
 
     Returns
     -------
@@ -1506,6 +1511,14 @@ def _compute_all_contours(all_vertices_lists, contour_levels, n_polygons, n_colu
         vertices_list = all_vertices_lists[col_idx]
 
         for poly_idx in range(n_polygons):
+            # Check if this polygon is visible in this column
+            poly_value = values[poly_idx, col_idx]
+            is_visible = np.isfinite(poly_value) or (nan_inf_color is not None)
+
+            # Skip contours for invisible polygons
+            if not is_visible:
+                continue
+
             polygon = vertices_list[poly_idx]
 
             if polygon.shape[1] < 3:
@@ -1594,7 +1607,7 @@ def _create_contour_color_mapper(contour_levels):
 
     return mapper
 
-
+# MARK: Polygon Grid
 def plot_polygon_grid(vertices, values=None, width=800, height=600,
                        palette='Viridis256', line_color='black', line_width=1,
                        colorbar=True, colorbar_label=None, log_scale=False,
@@ -2096,7 +2109,7 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
                 source=source_connections,
                 line_color=connection_border_color,
                 line_width=border_width,
-                line_cap='round'
+                line_cap='butt'
             )
             connection_renderers.append(conn_border)
 
@@ -2106,7 +2119,7 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
             source=source_gradient,
             line_color={'field': 'value', 'transform': connection_mapper},
             line_width=connection_width,
-            line_cap='round'
+            line_cap='butt'
         )
         connection_renderers.append(conn_lines)
 
@@ -2129,9 +2142,10 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
         contour_levels = _determine_contour_levels(all_vertices_lists, contour_step)
 
         if contour_levels is not None and len(contour_levels) > 0:
-            # Compute contour line segments
+            # Compute contour line segments (only for visible polygons)
             contour_data = _compute_all_contours(
-                all_vertices_lists, contour_levels, n_polygons, n_columns
+                all_vertices_lists, contour_levels, n_polygons, n_columns,
+                values, nan_inf_color
             )
 
             if len(contour_data['x0']) > 0:
