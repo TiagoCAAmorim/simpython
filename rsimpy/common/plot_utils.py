@@ -1522,6 +1522,29 @@ def _compute_all_contours(all_vertices_lists, contour_levels, n_polygons, n_colu
                     contour_values_all[col_idx].append(contour_value)
                     contour_poly_idx_all[col_idx].append(poly_idx)
 
+    # Find the maximum number of segments across all columns
+    max_segments = max(len(contour_x0_all[col_idx]) for col_idx in range(n_columns))
+
+    # If no contours were generated, return empty data
+    if max_segments == 0:
+        return {
+            'x0': [], 'y0': [], 'x1': [], 'y1': [],
+            'value': [], 'poly_idx': [], 'name': []
+        }
+
+    # Pad all columns to have the same length
+    for col_idx in range(n_columns):
+        current_length = len(contour_x0_all[col_idx])
+        if current_length < max_segments:
+            # Pad with NaN values to reach max_segments
+            padding_length = max_segments - current_length
+            contour_x0_all[col_idx].extend([np.nan] * padding_length)
+            contour_y0_all[col_idx].extend([np.nan] * padding_length)
+            contour_x1_all[col_idx].extend([np.nan] * padding_length)
+            contour_y1_all[col_idx].extend([np.nan] * padding_length)
+            contour_values_all[col_idx].extend([np.nan] * padding_length)
+            contour_poly_idx_all[col_idx].extend([-1] * padding_length)
+
     # Prepare ColumnDataSource data
     contour_data = {}
 
@@ -1532,16 +1555,16 @@ def _compute_all_contours(all_vertices_lists, contour_levels, n_polygons, n_colu
     contour_data['y1'] = contour_y1_all[0]
     contour_data['value'] = contour_values_all[0]
     contour_data['poly_idx'] = contour_poly_idx_all[0]
-    contour_data['name'] = ['contour'] * len(contour_values_all[0])
+    contour_data['name'] = ['contour'] * max_segments
 
-    # Store all columns
+    # Store all columns (all now have the same length)
     for col_idx in range(n_columns):
         contour_data[f'x0_{col_idx}'] = contour_x0_all[col_idx]
         contour_data[f'y0_{col_idx}'] = contour_y0_all[col_idx]
         contour_data[f'x1_{col_idx}'] = contour_x1_all[col_idx]
         contour_data[f'y1_{col_idx}'] = contour_y1_all[col_idx]
         contour_data[f'value_{col_idx}'] = contour_values_all[col_idx]
-        contour_data[f'name_{col_idx}'] = ['contour'] * len(contour_values_all[col_idx])
+        contour_data[f'name_{col_idx}'] = ['contour'] * max_segments
 
     return contour_data
 
