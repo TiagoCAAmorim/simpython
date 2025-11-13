@@ -155,12 +155,15 @@ class PlotHandler:
         if coords_2d.shape[0] == 1:
             coords_2d = coords_2d[0]
 
+        ijk = self._sr3.grid.n2ijk(np.arange(1, ni*nj+1))
+        labels = [f"({ijk[i,0]}, {ijk[i,1]})" for i in range(ijk.shape[0])]
+
         # print(f"Coords shape: {coords_2d.shape}")
         # print(f"Values shape: {values.shape}")
         # print(f"Value names: {value_names}")
 
         if 'nan_inf_color' not in kwargs:
-            kwargs['nan_inf_color'] = 'lightgray'
+            kwargs['nan_inf_color'] = None
 
         if 'title' not in kwargs:
             if len(layers) > 1:
@@ -179,6 +182,7 @@ class PlotHandler:
             vertices=coords_2d,
             values=values,
             value_names=value_names,
+            labels=labels,
             **kwargs
         )
 
