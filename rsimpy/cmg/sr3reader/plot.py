@@ -38,7 +38,11 @@ class PlotHandler:
         self._sr3 = sr3_reader
 
 
-    def plot_map(self, element, property_name, days=None, layers=None, **kwargs):
+    def plot_map(self, element, property_name,
+                 days=None, layers=None,
+                 add_top=False,
+                 add_connections=False,
+                 **kwargs):
         """
         Creates a map plot for the selected property, dates, and layers.
 
@@ -57,6 +61,12 @@ class PlotHandler:
         layers : int or list of int, optional
             Layer(s) to read (1-indexed). If None, uses the first layer.
             If a list is provided, multiple layers will be plotted.
+        add_top : bool, optional
+            Whether to add contour lines to the plot. Default is False.
+        add_connections : bool, optional
+            Whether to add connections between grid cells.
+            Only connections within the same layer are plotted.
+            Default is False.
         **kwargs : dict
             Additional keyword arguments to pass to plot_polygon_grid.
             These can include: width, height, palette, line_color, line_width,
@@ -138,8 +148,9 @@ class PlotHandler:
         )[property_name.upper()].values
 
         # Future: remove inactive columns from values and coords
-        active_cells = self._sr3.grid.complete2active() > 0
-        values[~active_cells] = np.nan
+        if not self._sr3.grid.is_complete(property_name):
+            active_cells = self._sr3.grid.complete2active() > 0
+            values[~active_cells] = np.nan
 
         values = values.reshape(nk, -1, len(days))
         layers_ = [layer - 1 for layer in layers]
