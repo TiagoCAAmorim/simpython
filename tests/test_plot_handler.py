@@ -1,6 +1,7 @@
 """
 Test script for the PlotHandler class.
 """
+from calendar import c
 import unittest
 from pathlib import Path
 from bokeh.plotting import show
@@ -65,7 +66,8 @@ class TestPlotHandler(unittest.TestCase):
             layers=[89],
             title="Test Plot: PRES over time",
             width=800,
-            height=600
+            height=600,
+            contour_step=50.0,
         )
 
         self.assertIsNotNone(panel, "Panel should not be None")
