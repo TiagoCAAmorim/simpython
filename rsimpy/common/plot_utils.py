@@ -168,8 +168,8 @@ def _validate_polygon(poly_arr, index, set_index=None):
     """Validate a single polygon array."""
     prefix = f"vertices[{set_index}][{index}]" if set_index is not None else f"vertices[{index}]"
 
-    if poly_arr.ndim != 2 or poly_arr.shape[1] != 2:
-        raise ValueError(f"{prefix} must have shape (n_vertices, 2), got {poly_arr.shape}")
+    if poly_arr.ndim != 2 or poly_arr.shape[1] not in (2, 3):
+        raise ValueError(f"{prefix} must have shape (n_vertices, 2) or (n_vertices, 3), got {poly_arr.shape}")
     if poly_arr.shape[0] < 3:
         raise ValueError(f"{prefix} must have at least 3 vertices, got {poly_arr.shape[0]}")
 
@@ -1054,7 +1054,7 @@ def _create_palette_selector(initial_palette, mapper):
 def _create_column_selector(
         value_names, source, source_in_range, source_below_min, source_above_max,
         source_nan_inf, source_connections, source_gradient, vmin, vmax,
-        nan_inf_color, has_connections
+        nan_inf_color, has_connections, source_contours=None
     ):
     """Create column selector widget with callback for matrix data."""
     select = Select(
@@ -1073,6 +1073,7 @@ def _create_column_selector(
             source_nan=source_nan_inf,
             source_conn=source_connections,
             source_grad=source_gradient,
+            source_contour=source_contours,
             select=select,
             value_names=value_names,
             n_columns=len(value_names),
@@ -1197,6 +1198,18 @@ def _create_column_selector(
                 source_grad.change.emit();
             }
 
+            // Update contour lines if present
+            if (source_contour !== null) {
+                const contour_data = source_contour.data;
+                contour_data['x0'] = contour_data['x0_' + col_idx];
+                contour_data['y0'] = contour_data['y0_' + col_idx];
+                contour_data['x1'] = contour_data['x1_' + col_idx];
+                contour_data['y1'] = contour_data['y1_' + col_idx];
+                contour_data['value'] = contour_data['value_' + col_idx];
+                contour_data['name'] = contour_data['name_' + col_idx];
+                source_contour.change.emit();
+            }
+
             source.change.emit();
         """
     )
@@ -1240,6 +1253,325 @@ def _create_connection_width_slider(
     return conn_width_slider
 
 
+def _interpolate_edge_contour(p1, p2, z1, z2, contour_value):
+    """
+    Find the point where a contour line crosses an edge.
+
+    Parameters
+    ----------
+    p1, p2 : array-like
+        Edge endpoints (x, y) or (x, y, z)
+    z1, z2 : float
+        Z-values at the endpoints
+    contour_value : float
+        The contour value to find
+
+    Returns
+    -------
+    point : np.ndarray or None
+        The (x, y) coordinates where the contour crosses, or None if no crossing
+    """
+    if z1 == z2:
+        return None
+
+    if (z1 <= contour_value <= z2) or (z2 <= contour_value <= z1):
+        t = (contour_value - z1) / (z2 - z1)
+        x = p1[0] + t * (p2[0] - p1[0])
+        y = p1[1] + t * (p2[1] - p1[1])
+        return np.array([x, y])
+
+    return None
+
+
+def _get_contour_segments_triangle(triangle, z_vals, contour_value):
+    """
+    Get contour line segments within a triangle.
+
+    Parameters
+    ----------
+    triangle : np.ndarray
+        Triangle vertices, shape (3, 2) with (x, y) coordinates
+    z_vals : np.ndarray
+        Z-values at each vertex, shape (3,)
+    contour_value : float
+        The contour value to find
+
+    Returns
+    -------
+    segments : list of tuple
+        List of ((x0, y0), (x1, y1)) line segments
+    """
+    segments = []
+    crossings = []
+
+    # Check each edge
+    for i in range(3):
+        j = (i + 1) % 3
+        point = _interpolate_edge_contour(
+            triangle[i], triangle[j], z_vals[i], z_vals[j], contour_value
+        )
+        if point is not None:
+            crossings.append(point)
+
+    # A contour line crosses a triangle at 0 or 2 points
+    if len(crossings) == 2:
+        segments.append((crossings[0], crossings[1]))
+
+    return segments
+
+
+def _triangulate_polygon(polygon):
+    """
+    Triangulate a polygon using fan triangulation from the center.
+
+    Parameters
+    ----------
+    polygon : np.ndarray
+        Polygon vertices, shape (n_vertices, 2 or 3)
+
+    Returns
+    -------
+    triangles : list of np.ndarray
+        List of triangles, each with shape (3, 2) or (3, 3)
+    """
+    n_vertices = polygon.shape[0]
+
+    if n_vertices == 3:
+        return [polygon[:, :2]]  # Already a triangle, keep only x,y
+
+    # Calculate center point (only for x, y coordinates)
+    center_xy = np.mean(polygon[:, :2], axis=0)
+
+    triangles = []
+    for i in range(n_vertices):
+        j = (i + 1) % n_vertices
+        triangle = np.array([
+            polygon[i, :2],
+            polygon[j, :2],
+            center_xy
+        ])
+        triangles.append(triangle)
+
+    return triangles
+
+
+def _get_z_values_for_triangle(polygon_z, triangle_idx, n_vertices):
+    """
+    Get z-values for a triangle created from a polygon.
+
+    Parameters
+    ----------
+    polygon_z : np.ndarray
+        Z-values at polygon vertices
+    triangle_idx : int
+        Index of the triangle in the fan triangulation
+    n_vertices : int
+        Number of vertices in the original polygon
+
+    Returns
+    -------
+    z_vals : np.ndarray
+        Z-values for the triangle vertices (3,)
+    """
+    if n_vertices == 3:
+        return polygon_z
+
+    # For fan triangulation: vertex i, vertex i+1, center
+    i = triangle_idx
+    j = (i + 1) % n_vertices
+    center_z = np.mean(polygon_z)
+
+    return np.array([polygon_z[i], polygon_z[j], center_z])
+
+
+def _compute_contour_lines_for_polygon(polygon, contour_values):
+    """
+    Compute contour lines within a single polygon.
+
+    Parameters
+    ----------
+    polygon : np.ndarray
+        Polygon vertices, shape (n_vertices, 3) with (x, y, z) coordinates
+    contour_values : np.ndarray
+        Array of contour values to compute
+
+    Returns
+    -------
+    contour_segments : dict
+        Dictionary mapping contour_value to list of line segments
+        Each segment is ((x0, y0), (x1, y1))
+    """
+    n_vertices = polygon.shape[0]
+
+    if polygon.shape[1] != 3:
+        # No z-values, can't compute contours
+        return {}
+
+    z_vals = polygon[:, 2]
+
+    # Triangulate the polygon
+    triangles = _triangulate_polygon(polygon)
+
+    # Compute contours for each triangle
+    contour_segments = {cv: [] for cv in contour_values}
+
+    for tri_idx, triangle in enumerate(triangles):
+        tri_z_vals = _get_z_values_for_triangle(z_vals, tri_idx, n_vertices)
+
+        for contour_value in contour_values:
+            segments = _get_contour_segments_triangle(triangle, tri_z_vals, contour_value)
+            contour_segments[contour_value].extend(segments)
+
+    return contour_segments
+
+
+def _determine_contour_levels(all_vertices_lists, contour_step):
+    """
+    Determine contour levels from all z-values in vertices.
+
+    Parameters
+    ----------
+    all_vertices_lists : list of lists
+        List of polygon sets, each containing polygon arrays
+    contour_step : float
+        Step size for contour levels
+
+    Returns
+    -------
+    contour_levels : np.ndarray or None
+        Array of contour levels, or None if range is too small
+    """
+    all_z = []
+
+    for vertex_set in all_vertices_lists:
+        for polygon in vertex_set:
+            if polygon.shape[1] >= 3:
+                all_z.extend(polygon[:, 2])
+
+    if len(all_z) == 0:
+        return None
+
+    all_z = np.array(all_z)
+    all_z = all_z[np.isfinite(all_z)]
+
+    if len(all_z) == 0:
+        return None
+
+    z_min = np.min(all_z)
+    z_max = np.max(all_z)
+    z_range = z_max - z_min
+
+    if z_range < contour_step:
+        return None
+
+    # Create contour levels
+    first_level = np.ceil(z_min / contour_step) * contour_step
+    last_level = np.floor(z_max / contour_step) * contour_step
+    n_levels = int(np.round((last_level - first_level) / contour_step)) + 1
+
+    contour_levels = np.linspace(first_level, last_level, n_levels)
+
+    return contour_levels
+
+
+def _compute_all_contours(all_vertices_lists, contour_levels, n_polygons, n_columns):
+    """
+    Compute contour line segments for all polygons and columns.
+
+    Parameters
+    ----------
+    all_vertices_lists : list of lists
+        List of n_columns polygon sets, each containing n_polygons polygon arrays
+    contour_levels : np.ndarray
+        Array of contour levels
+    n_polygons : int
+        Number of polygons
+    n_columns : int
+        Number of columns (data sets)
+
+    Returns
+    -------
+    contour_data : dict
+        Dictionary with contour data for Bokeh rendering
+    """
+    # Prepare data structures for contour lines
+    contour_x0_all = {col_idx: [] for col_idx in range(n_columns)}
+    contour_y0_all = {col_idx: [] for col_idx in range(n_columns)}
+    contour_x1_all = {col_idx: [] for col_idx in range(n_columns)}
+    contour_y1_all = {col_idx: [] for col_idx in range(n_columns)}
+    contour_values_all = {col_idx: [] for col_idx in range(n_columns)}
+    contour_poly_idx_all = {col_idx: [] for col_idx in range(n_columns)}
+
+    for col_idx in range(n_columns):
+        vertices_list = all_vertices_lists[col_idx]
+
+        for poly_idx in range(n_polygons):
+            polygon = vertices_list[poly_idx]
+
+            if polygon.shape[1] < 3:
+                continue
+
+            contour_segments = _compute_contour_lines_for_polygon(polygon, contour_levels)
+
+            for contour_value, segments in contour_segments.items():
+                for (p0, p1) in segments:
+                    contour_x0_all[col_idx].append(p0[0])
+                    contour_y0_all[col_idx].append(p0[1])
+                    contour_x1_all[col_idx].append(p1[0])
+                    contour_y1_all[col_idx].append(p1[1])
+                    contour_values_all[col_idx].append(contour_value)
+                    contour_poly_idx_all[col_idx].append(poly_idx)
+
+    # Prepare ColumnDataSource data
+    contour_data = {}
+
+    # Use first column for initial display
+    contour_data['x0'] = contour_x0_all[0]
+    contour_data['y0'] = contour_y0_all[0]
+    contour_data['x1'] = contour_x1_all[0]
+    contour_data['y1'] = contour_y1_all[0]
+    contour_data['value'] = contour_values_all[0]
+    contour_data['poly_idx'] = contour_poly_idx_all[0]
+    contour_data['name'] = ['contour'] * len(contour_values_all[0])
+
+    # Store all columns
+    for col_idx in range(n_columns):
+        contour_data[f'x0_{col_idx}'] = contour_x0_all[col_idx]
+        contour_data[f'y0_{col_idx}'] = contour_y0_all[col_idx]
+        contour_data[f'x1_{col_idx}'] = contour_x1_all[col_idx]
+        contour_data[f'y1_{col_idx}'] = contour_y1_all[col_idx]
+        contour_data[f'value_{col_idx}'] = contour_values_all[col_idx]
+        contour_data[f'name_{col_idx}'] = ['contour'] * len(contour_values_all[col_idx])
+
+    return contour_data
+
+
+def _create_contour_color_mapper(contour_levels):
+    """
+    Create a grayscale color mapper for contour lines.
+
+    Parameters
+    ----------
+    contour_levels : np.ndarray
+        Array of contour levels
+
+    Returns
+    -------
+    mapper : LinearColorMapper
+        Bokeh color mapper with grayscale palette (black for max)
+    """
+    # Use reversed Greys palette (black for high values)
+    greys_reversed = list(reversed(Greys256))
+
+    mapper = LinearColorMapper(
+        palette=greys_reversed,
+        low=np.min(contour_levels),
+        high=np.max(contour_levels)
+    )
+
+    return mapper
+
+
 def plot_polygon_grid(vertices, values=None, width=800, height=600,
                        palette='Viridis256', line_color='black', line_width=1,
                        colorbar=True, colorbar_label=None, log_scale=False,
@@ -1249,7 +1581,8 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
                        connections=None, connection_values=None,
                        connection_width=3.0, connection_border_color='white',
                        connection_palette=None, connection_log_scale=None,
-                       connection_color_limits=None, connection_colorbar_label=None):
+                       connection_color_limits=None, connection_colorbar_label=None,
+                       contour_step=None):
     """
     Plot a grid of n-sided polygons in 2D with color-coded values using Bokeh.
     Interactive plot with hover functionality showing face number and value.
@@ -1355,6 +1688,12 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
     connection_colorbar_label : str, optional
         Label for the connection colorbar. Only used when connections have an
         independent color scale. If None, uses 'Connection Value'.
+    contour_step : float, optional
+        If specified and positive, adds contour lines to the plot using z-values
+        from vertices (when vertices have 3 coordinates: x,y,z). Contour lines are
+        drawn inside each polygon independently, spaced by contour_step intervals.
+        Uses grayscale colors (black for highest values). If the range of z-values
+        is smaller than contour_step, no contours are shown. Default is None (no contours).
 
     Returns
     -------
@@ -1759,6 +2098,34 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
         conn_log_scale = False
         conn_lines = None
 
+    # Add contour lines if requested
+    contour_renderer = None
+    source_contours = None
+    if contour_step is not None and contour_step > 0:
+        # Determine contour levels from all z-values
+        contour_levels = _determine_contour_levels(all_vertices_lists, contour_step)
+
+        if contour_levels is not None and len(contour_levels) > 0:
+            # Compute contour line segments
+            contour_data = _compute_all_contours(
+                all_vertices_lists, contour_levels, n_polygons, n_columns
+            )
+
+            if len(contour_data['x0']) > 0:
+                source_contours = ColumnDataSource(data=contour_data)
+
+                # Create grayscale color mapper for contours
+                contour_mapper = _create_contour_color_mapper(contour_levels)
+
+                # Draw contour lines
+                contour_renderer = p.segment(
+                    x0='x0', y0='y0', x1='x1', y1='y1',
+                    source=source_contours,
+                    line_color={'field': 'value', 'transform': contour_mapper},
+                    line_width=1.5,
+                    line_alpha=0.7
+                )
+
     # Add unified hover tool for both polygons and connections
     # Using HTML formatting to hide field labels and center align
     unified_tooltips = """
@@ -1772,6 +2139,8 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
     hover_renderers = all_patches.copy()
     if has_connections and conn_lines is not None:
         hover_renderers.append(conn_lines)
+    if contour_renderer is not None:
+        hover_renderers.append(contour_renderer)
 
     hover = HoverTool(
         renderers=hover_renderers,
@@ -1825,7 +2194,8 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
             value_names, source, source_in_range, source_below_min, source_above_max,
             source_nan_inf, source_connections if has_connections else None,
             source_gradient if has_connections else None,
-            vmin, vmax, nan_inf_color, has_connections
+            vmin, vmax, nan_inf_color, has_connections,
+            source_contours=source_contours
         )
 
         # Add connection width slider if connections are present

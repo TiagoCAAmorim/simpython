@@ -4,6 +4,7 @@ Test script for the PlotHandler class.
 import unittest
 from pathlib import Path
 from bokeh.plotting import show
+from matplotlib import contour
 
 import context  # noqa # pylint: disable=unused-import
 from rsimpy.cmg.sr3reader import Sr3Reader
@@ -109,21 +110,22 @@ class TestPlotHandler(unittest.TestCase):
         if self.show:
             show(panel)
 
-    def test_plot_map_with_complete_property(self):
-        """Test that plot_map works with complete grid property."""
+    def test_plot_map_with_complete_property_and_contour(self):
+        """Test that plot_map works with complete grid property and contour lines."""
         days = self.sr3.dates.get_days('grid')
 
         panel = self.sr3.plot.plot_map(
             element="matrix",
             property_name="BLOCKDEPTH",
             days=days[0],
-            layers=[80],
+            layers=range(50, 90),
             width=800,
             height=600,
             palette='Viridis',
             log_scale=False,
             out_of_range_colors=('gray', 'red'),
             nan_inf_color='gray',
+            contour_step=50.0,
         )
 
         self.assertIsNotNone(panel, "Panel should not be None")
