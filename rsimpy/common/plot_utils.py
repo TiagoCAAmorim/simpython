@@ -1607,7 +1607,7 @@ def _create_contour_color_mapper(contour_levels):
 
     return mapper
 
-
+# MARK: Polygon Grid
 def plot_polygon_grid(vertices, values=None, width=800, height=600,
                        palette='Viridis256', line_color='black', line_width=1,
                        colorbar=True, colorbar_label=None, log_scale=False,
@@ -2109,7 +2109,7 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
                 source=source_connections,
                 line_color=connection_border_color,
                 line_width=border_width,
-                line_cap='round'
+                line_cap='butt'
             )
             connection_renderers.append(conn_border)
 
@@ -2119,7 +2119,7 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
             source=source_gradient,
             line_color={'field': 'value', 'transform': connection_mapper},
             line_width=connection_width,
-            line_cap='round'
+            line_cap='butt'
         )
         connection_renderers.append(conn_lines)
 

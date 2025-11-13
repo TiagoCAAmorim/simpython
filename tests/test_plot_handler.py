@@ -134,6 +134,28 @@ class TestPlotHandler(unittest.TestCase):
         if self.show:
             show(panel)
 
+    def test_plot_map_with_connections(self):
+        """Test that plot_map works with connections."""
+        days = self.sr3.dates.get_days('grid')
+
+        panel = self.sr3.plot.plot_map(
+            element="matrix",
+            property_name="PERMI",
+            days=days[0],
+            layers=87,
+            width=800,
+            height=600,
+            add_top=False,
+            add_connections=True,
+            palette='Turbo',
+            log_scale=True,
+            out_of_range_colors=None,
+            nan_inf_color=None,
+        )
+
+        self.assertIsNotNone(panel, "Panel should not be None")
+        if self.show:
+            show(panel)
 
 if __name__ == '__main__':
     unittest.main()

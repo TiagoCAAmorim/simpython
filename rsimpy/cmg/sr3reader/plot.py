@@ -77,9 +77,10 @@ class PlotHandler:
         add_connections : bool, optional
             Whether to add connections between grid cells.
             Only connections within the same layer are plotted.
+            Only works for single layer plots.
             Default is False.
         **kwargs : dict
-            Additional keyword arguments to pass to plot_polygon_grid.
+            Additional keyword arguments to pass to common.plot_utils.plot_polygon_grid.
             These can include: width, height, palette, line_color, line_width,
             colorbar, colorbar_label, log_scale, title, color_limits, etc.
 
@@ -143,6 +144,8 @@ class PlotHandler:
                 "or one layer with multiple dates."
             )
 
+        add_connections = add_connections and (len(layers) == 1)
+
         value_names = None
         if len(days) > 1:
             value_names = [f"{day} days" for day in days]
@@ -187,6 +190,9 @@ class PlotHandler:
         if all_coords.shape[0] == 1:
             all_coords = all_coords[0] # [ni*nj, 4, 3]
 
+        if add_connections:
+            self._get_connections(layers[0], kwargs)
+
         ijk = self._sr3.grid.n2ijk(np.arange(1, ni*nj+1))
         labels = [f"({ijk[i,0]}, {ijk[i,1]})" for i in range(ijk.shape[0])]
 
@@ -215,6 +221,23 @@ class PlotHandler:
 
         return panel
 
+    def _get_connections(self, layer, kwargs):
+        """Get connections for the specified layer and add to kwargs."""
+        ni, nj, _ = self._sr3.grid.get_size("nijk")
+        connections = self._sr3.connections.get_connections(as_active=False)
+        ijk1 = self._sr3.grid.n2ijk(connections[:, 0])
+        ijk2 = self._sr3.grid.n2ijk(connections[:, 1])
+        filter_ = ijk1[:, 2] == ijk2[:, 2]
+        filter_ = filter_ & (ijk1[:, 2] == layer)
+        connections = connections[filter_]
+        if len(connections) > 0:
+            conns = connections[:,:2].T - ni*nj*(layer-1)
+            kwargs['connections'] = conns - 1
+            conn_values = self._sr3.connections.get_transmissibilities(connections)
+            kwargs['connection_values'] = conn_values
+            kwargs['connection_log_scale'] = True
+            kwargs['connection_colorbar_label'] = 'Transmissibility (mD.m)'
+
     def _estimate_contour_step(self, all_coords, values, add_top, contour_step):
         """Estimate contour step if not provided."""
         if not add_top:
@@ -234,6 +257,5 @@ class PlotHandler:
                         nice_step = factor * (10.0 ** exp)
                         break
                 return float(nice_step)
-            else:
-                return None
+            return None
         return contour_step
