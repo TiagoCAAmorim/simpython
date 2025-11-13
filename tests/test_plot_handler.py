@@ -123,11 +123,11 @@ class TestPlotHandler(unittest.TestCase):
             layers=range(50, 90),
             width=800,
             height=600,
+            add_top=True,
             palette='Viridis',
             log_scale=False,
             out_of_range_colors=('gray', 'red'),
             nan_inf_color='gray',
-            contour_step=50.0,
         )
 
         self.assertIsNotNone(panel, "Panel should not be None")

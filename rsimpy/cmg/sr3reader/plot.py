@@ -18,6 +18,7 @@ panel = plot_handler.plot_map("matrix", "PRESSURE", days=100, layers=1)
 import numpy as np
 from rsimpy.common import plot_utils, utils
 
+INTERVALS = 20
 
 class PlotHandler:
     """
@@ -69,7 +70,10 @@ class PlotHandler:
             If None, data will be read from the SR3 file.
             Default is None.
         add_top : bool, optional
-            Whether to add contour lines to the plot. Default is False.
+            Whether to add contour lines to the plot.
+            If True, uses the given contour_step. If contour_step is None,
+            it will be estimated automatically.
+            Default is False.
         add_connections : bool, optional
             Whether to add connections between grid cells.
             Only connections within the same layer are plotted.
@@ -172,6 +176,14 @@ class PlotHandler:
         all_coords = self._sr3.grid.coordinates.get(face=4)
         all_coords = all_coords.reshape(nk, -1, 4, all_coords.shape[2]) # [nk, ni*nj, 4, 3]
         all_coords = all_coords[layers_, :, :, :]  # [n_layers, ni*nj, 4, 3]
+
+        kwargs['contour_step'] = self._estimate_contour_step(
+            all_coords,
+            values,
+            add_top,
+            kwargs.get('contour_step', None),
+        )
+
         if all_coords.shape[0] == 1:
             all_coords = all_coords[0] # [ni*nj, 4, 3]
 
@@ -202,3 +214,26 @@ class PlotHandler:
         )
 
         return panel
+
+    def _estimate_contour_step(self, all_coords, values, add_top, contour_step):
+        """Estimate contour step if not provided."""
+        if not add_top:
+            return None
+        if add_top and contour_step is None:
+            filter_ = np.any(~np.isnan(values), axis=1)
+            all_z = all_coords[:, filter_, :, 2]
+            min_z, max_z = np.nanmin(all_z), np.nanmax(all_z)
+            z_range = max_z - min_z
+            if z_range > 0:
+                target_intervals = INTERVALS
+                raw_step = z_range / target_intervals
+                exp = np.floor(np.log10(raw_step))
+                mant = raw_step / (10.0 ** exp)
+                for factor in (1.0, 2.0, 5.0, 10.0):
+                    if mant <= factor:
+                        nice_step = factor * (10.0 ** exp)
+                        break
+                return float(nice_step)
+            else:
+                return None
+        return contour_step
