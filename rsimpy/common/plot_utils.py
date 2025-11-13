@@ -2,7 +2,6 @@
 """
 Plotting utilities for rsimpy.
 """
-from matplotlib.pylab import f
 import numpy as np
 from bokeh.plotting import figure
 from bokeh.models import (
@@ -384,7 +383,7 @@ def _categorize_polygons(values, vmin, vmax):
 
 def _calculate_plot_range(all_vertices_lists, values, nan_inf_color):
     """
-    Calculate plot range with margins.
+    Calculate plot range with margins and enforce equal scales in both directions.
 
     Returns
     -------
@@ -411,13 +410,27 @@ def _calculate_plot_range(all_vertices_lists, values, nan_inf_color):
     all_x = np.concatenate(all_x_coords)
     all_y = np.concatenate(all_y_coords)
 
-    x_range_val = all_x.max() - all_x.min()
-    y_range_val = all_y.max() - all_y.min()
-    x_margin = x_range_val * 0.02 if x_range_val > 0 else 1
-    y_margin = y_range_val * 0.02 if y_range_val > 0 else 1
+    x_min, x_max = all_x.min(), all_x.max()
+    y_min, y_max = all_y.min(), all_y.max()
 
-    return (all_x.min() - x_margin, all_x.max() + x_margin), \
-           (all_y.min() - y_margin, all_y.max() + y_margin)
+    x_range_val = x_max - x_min
+    y_range_val = y_max - y_min
+
+    # Use the maximum range to enforce equal scales
+    max_range = max(x_range_val, y_range_val)
+
+    # Add 2% margin
+    margin = max_range * 0.02 if max_range > 0 else 1
+
+    # Calculate centers
+    x_center = (x_min + x_max) / 2
+    y_center = (y_min + y_max) / 2
+
+    # Apply equal range from center with margin
+    half_range_with_margin = (max_range / 2) + margin
+
+    return (x_center - half_range_with_margin, x_center + half_range_with_margin), \
+           (y_center - half_range_with_margin, y_center + half_range_with_margin)
 
 
 def _create_polygon_names(n_polygons, labels):
@@ -1858,8 +1871,8 @@ def main():
         np.array([[2, 0], [3, 0], [3, 1], [2, 1]]),
         np.array([[2, 1], [3.2, 1], [3, 2], [2, 2.2]]),
     ]
-    vertices = vertices1
-    # vertices = [vertices1, vertices2]
+    # vertices = vertices1
+    vertices = [vertices1, vertices2]
 
     values_ = np.array([[5, 15, 25, np.nan, 450, 55],[15, 16, 27, 38, 49, 500]]).T
     labels_ = np.array(['V=5', 'V=15', 'V=25', 'NaN', 'V=45', 'V=55'])
