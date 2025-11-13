@@ -1,3 +1,4 @@
+# pylint: disable=too-many-lines
 """
 Plotting utilities for rsimpy.
 """
@@ -13,6 +14,1158 @@ from bokeh.palettes import (
     Oranges256, Purples256
 )
 from bokeh.layouts import column, row
+
+
+def _get_palette_map():
+    """Get the mapping of palette names to Bokeh palettes."""
+    palette_map = {
+        'Viridis': Viridis256,
+        'Turbo': Turbo256,
+        'Plasma': Plasma256,
+        'Inferno': Inferno256,
+        'Magma': Magma256,
+        'Cividis': Cividis256,
+        'Greys': Greys256,
+        'Blues': Blues256,
+        'Greens': Greens256,
+        'Reds': Reds256,
+        'Oranges': Oranges256,
+        'Purples': Purples256,
+    }
+
+    # For backward compatibility, also accept names with '256' suffix
+    palette_map_with_suffix = {k + '256': v for k, v in palette_map.items()}
+    palette_map.update(palette_map_with_suffix)
+
+    return palette_map
+
+
+def _infer_polygon_count(vertices):
+    """Infer the number of polygons from vertices structure."""
+    if isinstance(vertices, np.ndarray):
+        if vertices.ndim == 3:
+            return vertices.shape[0]
+        else:
+            raise ValueError(
+                "When values=None, vertices must be array with shape (n_polygons, n_vertices, 2) "
+                "or a list of polygon arrays"
+            )
+    elif isinstance(vertices, (list, tuple)) and len(vertices) > 0:
+        first_elem = vertices[0]
+        if isinstance(first_elem, (list, tuple)):
+            if len(first_elem) > 0:
+                second_elem = first_elem[0]
+                if isinstance(second_elem, (list, tuple, np.ndarray)):
+                    second_elem_arr = np.asarray(second_elem)
+                    if second_elem_arr.ndim == 2 and second_elem_arr.shape[1] == 2:
+                        return len(first_elem)
+                    else:
+                        return len(vertices)
+                else:
+                    return len(vertices)
+            else:
+                return len(vertices)
+        elif isinstance(first_elem, np.ndarray):
+            if first_elem.ndim == 2 and first_elem.shape[1] == 2:
+                return len(vertices)
+            elif first_elem.ndim == 3:
+                return first_elem.shape[0]
+            else:
+                return len(vertices)
+        else:
+            return len(vertices)
+    else:
+        raise ValueError("vertices must be an array or list")
+
+
+def _normalize_values(values, n_polygons_inferred=None):
+    """
+    Normalize values to 2D array format.
+
+    Returns
+    -------
+    values : np.ndarray
+        2D array of shape (n_polygons, n_columns)
+    n_polygons : int
+        Number of polygons
+    n_columns : int
+        Number of value columns
+    """
+    if values is None:
+        if n_polygons_inferred is None:
+            raise ValueError("n_polygons_inferred required when values is None")
+        values = np.zeros(n_polygons_inferred)
+
+    values = np.asarray(values)
+
+    if values.ndim == 2:
+        n_polygons, n_columns = values.shape
+    elif values.ndim == 1:
+        values = values.reshape(-1, 1)
+        n_columns = 1
+        n_polygons = values.shape[0]
+    else:
+        raise ValueError("values must be 1D or 2D array")
+
+    return values, n_polygons, n_columns
+
+
+def _is_multi_set_vertices(vertices):
+    """Determine if vertices contains multiple polygon sets."""
+    if not isinstance(vertices, (list, tuple)) or len(vertices) == 0:
+        return False
+
+    first_elem = vertices[0]
+    if isinstance(first_elem, (list, tuple)):
+        if len(first_elem) > 0:
+            second_elem = first_elem[0]
+            if isinstance(second_elem, (list, tuple, np.ndarray)):
+                second_elem_arr = np.asarray(second_elem)
+                if second_elem_arr.ndim == 2 and second_elem_arr.shape[1] == 2:
+                    return True
+    elif isinstance(first_elem, np.ndarray):
+        if first_elem.ndim == 3:
+            return True
+
+    return False
+
+
+def _validate_polygon(poly_arr, index, set_index=None):
+    """Validate a single polygon array."""
+    prefix = f"vertices[{set_index}][{index}]" if set_index is not None else f"vertices[{index}]"
+
+    if poly_arr.ndim != 2 or poly_arr.shape[1] != 2:
+        raise ValueError(f"{prefix} must have shape (n_vertices, 2), got {poly_arr.shape}")
+    if poly_arr.shape[0] < 3:
+        raise ValueError(f"{prefix} must have at least 3 vertices, got {poly_arr.shape[0]}")
+
+
+def _parse_single_polygon_set(vert_set, n_polygons, set_index=None):
+    """Parse a single set of polygons into a list of arrays."""
+    vert_list = []
+
+    if isinstance(vert_set, np.ndarray):
+        if vert_set.ndim == 3:
+            if vert_set.shape[0] != n_polygons:
+                prefix = f"vertices[{set_index}]" if set_index is not None else "vertices"
+                raise ValueError(
+                    f"{prefix} must have {n_polygons} polygons, got {vert_set.shape[0]}"
+                )
+            for i in range(n_polygons):
+                vert_list.append(vert_set[i])
+        else:
+            prefix = f"vertices[{set_index}]" if set_index is not None else "vertices"
+            raise ValueError(f"{prefix} array must have 3 dimensions, got {vert_set.ndim}")
+    elif isinstance(vert_set, (list, tuple)):
+        if len(vert_set) != n_polygons:
+            prefix = f"vertices[{set_index}]" if set_index is not None else "vertices"
+            raise ValueError(f"{prefix} must have {n_polygons} polygons, got {len(vert_set)}")
+        for i, poly in enumerate(vert_set):
+            poly_arr = np.asarray(poly)
+            _validate_polygon(poly_arr, i, set_index)
+            vert_list.append(poly_arr)
+    else:
+        prefix = f"vertices[{set_index}]" if set_index is not None else "vertices"
+        raise ValueError(f"{prefix} must be array or list")
+
+    return vert_list
+
+
+def _parse_vertices(vertices, n_polygons, n_columns):
+    """
+    Parse vertices structure into list of polygon sets.
+
+    Returns
+    -------
+    all_vertices_lists : list of lists
+        List of n_columns polygon sets, each containing n_polygons polygon arrays
+    """
+    vertices_are_multi_set = _is_multi_set_vertices(vertices)
+
+    if vertices_are_multi_set:
+        # Multiple polygon sets (one per column)
+        if len(vertices) != n_columns:
+            raise ValueError(
+                f"When providing multiple polygon sets, must have {n_columns} sets "
+                f"(one per data column), got {len(vertices)}"
+            )
+
+        all_vertices_lists = []
+        for col_idx, vert_set in enumerate(vertices):
+            vert_list = _parse_single_polygon_set(vert_set, n_polygons, col_idx)
+            all_vertices_lists.append(vert_list)
+    else:
+        # Single polygon set (used for all columns)
+        vertices_list = _parse_single_polygon_set(vertices, n_polygons)
+        all_vertices_lists = [vertices_list for _ in range(n_columns)]
+
+    return all_vertices_lists
+
+
+def _normalize_color_limits(color_limits, values, log_scale):
+    """
+    Calculate and validate color scale limits.
+
+    Returns
+    -------
+    vmin : float
+        Minimum value for color scale
+    vmax : float
+        Maximum value for color scale
+    """
+    # Handle color_limits parameter
+    limit_min = None
+    limit_max = None
+    if color_limits is not None:
+        if not isinstance(color_limits, (tuple, list)) or len(color_limits) != 2:
+            raise ValueError("color_limits must be a tuple of (min, max)")
+        limit_min, limit_max = color_limits
+
+    # Filter out NaN and Inf values for color scale calculation
+    finite_mask = np.isfinite(values)
+    finite_values = values[finite_mask]
+
+    if len(finite_values) == 0:
+        raise ValueError("All values are NaN or Inf - cannot determine color scale")
+
+    # Set color scale limits using finite values only
+    if limit_min is None:
+        limit_min = np.min(finite_values)
+    if limit_max is None:
+        limit_max = np.max(finite_values)
+
+    vmin = limit_min
+    vmax = limit_max
+
+    # Handle log scale requirements
+    if log_scale:
+        if vmin <= 0:
+            positive_values = finite_values[finite_values > 0]
+            if len(positive_values) == 0:
+                raise ValueError("Cannot use log scale with all non-positive values")
+            vmin = np.min(positive_values)
+            print(f"Warning: Adjusting vmin to {vmin} for log scale (was <= 0)")
+
+    return vmin, vmax
+
+
+def _normalize_out_of_range_colors(out_of_range_colors):
+    """
+    Normalize out_of_range_colors parameter to tuple format.
+
+    Returns
+    -------
+    color_below_min : str or None
+    color_above_max : str or None
+    """
+    if out_of_range_colors is None:
+        return None, None
+    elif isinstance(out_of_range_colors, (tuple, list)):
+        if len(out_of_range_colors) != 2:
+            raise ValueError("out_of_range_colors tuple must have exactly 2 elements")
+        return out_of_range_colors[0], out_of_range_colors[1]
+    else:
+        # Single value - use for both
+        return out_of_range_colors, out_of_range_colors
+
+
+def _create_color_mapper(palette, log_scale, vmin, vmax):
+    """
+    Create a color mapper for the given palette and scale.
+
+    Returns
+    -------
+    mapper : ColorMapper
+    ticker : Ticker
+    color_palette : palette object
+    """
+    palette_map = _get_palette_map()
+
+    if isinstance(palette, str) and palette in palette_map:
+        color_palette = palette_map[palette]
+    elif isinstance(palette, str):
+        color_palette = palette
+    else:
+        color_palette = palette
+
+    if log_scale:
+        mapper = LogColorMapper(palette=color_palette, low=vmin, high=vmax)
+        ticker = LogTicker()
+    else:
+        mapper = LinearColorMapper(palette=color_palette, low=vmin, high=vmax)
+        ticker = BasicTicker()
+
+    return mapper, ticker, color_palette
+
+
+def _categorize_polygons(values, vmin, vmax):
+    """
+    Categorize polygons based on their values.
+
+    Returns
+    -------
+    finite_mask : np.ndarray (bool)
+    nan_inf_mask : np.ndarray (bool)
+    below_min_mask : np.ndarray (bool)
+    above_max_mask : np.ndarray (bool)
+    in_range_mask : np.ndarray (bool)
+    """
+    n_polygons = len(values)
+    finite_mask = np.isfinite(values)
+    nan_inf_mask = ~finite_mask
+
+    below_min_mask = np.zeros(n_polygons, dtype=bool)
+    above_max_mask = np.zeros(n_polygons, dtype=bool)
+    in_range_mask = np.zeros(n_polygons, dtype=bool)
+
+    finite_indices = np.where(finite_mask)[0]
+    for idx in finite_indices:
+        val = values[idx]
+        if val < vmin:
+            below_min_mask[idx] = True
+        elif val > vmax:
+            above_max_mask[idx] = True
+        else:
+            in_range_mask[idx] = True
+
+    return finite_mask, nan_inf_mask, below_min_mask, above_max_mask, in_range_mask
+
+
+def _calculate_plot_range(all_vertices_lists, values, nan_inf_color):
+    """
+    Calculate plot range with margins.
+
+    Returns
+    -------
+    x_range : tuple of (min, max)
+    y_range : tuple of (min, max)
+    """
+    n_columns = len(all_vertices_lists)
+    all_x_coords = []
+    all_y_coords = []
+
+    for col_idx in range(n_columns):
+        col_vertices = all_vertices_lists[col_idx]
+        col_values = values[:, col_idx]
+
+        for poly_idx, poly_verts in enumerate(col_vertices):
+            # Include polygon if finite or will be rendered
+            if np.isfinite(col_values[poly_idx]) or nan_inf_color is not None:
+                all_x_coords.append(poly_verts[:, 0])
+                all_y_coords.append(poly_verts[:, 1])
+
+    if len(all_x_coords) == 0:
+        return (0, 1), (0, 1)
+
+    all_x = np.concatenate(all_x_coords)
+    all_y = np.concatenate(all_y_coords)
+
+    x_range_val = all_x.max() - all_x.min()
+    y_range_val = all_y.max() - all_y.min()
+    x_margin = x_range_val * 0.02 if x_range_val > 0 else 1
+    y_margin = y_range_val * 0.02 if y_range_val > 0 else 1
+
+    return (all_x.min() - x_margin, all_x.max() + x_margin), \
+           (all_y.min() - y_margin, all_y.max() + y_margin)
+
+
+def _create_polygon_names(n_polygons, labels):
+    """Create unified name field for polygons."""
+    polygon_names = []
+    for i in range(n_polygons):
+        if labels is not None and labels[i]:
+            polygon_names.append(labels[i])
+        else:
+            polygon_names.append(str(i))
+    return polygon_names
+
+
+def _prepare_base_data(
+        xs, ys, face_ids, label_list, polygon_names,
+        values, all_vertices_lists, current_values, in_range_mask
+    ):
+    """Prepare base data dictionary for ColumnDataSource."""
+    n_columns = values.shape[1]
+
+    base_data = {
+        'xs': xs,
+        'ys': ys,
+        'face': face_ids,
+        'label': label_list,
+        'name': polygon_names,
+    }
+
+    # Add all value columns
+    for col_idx in range(n_columns):
+        base_data[f'value_{col_idx}'] = values[:, col_idx].tolist()
+
+    # Add all vertices columns
+    for col_idx in range(n_columns):
+        col_vertices = all_vertices_lists[col_idx]
+        xs_col = [v[:, 0].tolist() for v in col_vertices]
+        ys_col = [v[:, 1].tolist() for v in col_vertices]
+        base_data[f'xs_{col_idx}'] = xs_col
+        base_data[f'ys_{col_idx}'] = ys_col
+
+    # Set active value column
+    base_data['value'] = current_values.tolist()
+    base_data['in_range'] = in_range_mask.tolist()
+
+    return base_data
+
+
+def _create_patch_source(xs, ys, face_ids, values, label_list, polygon_names, indices):
+    """Create a ColumnDataSource for a specific category of patches."""
+    if len(indices) == 0:
+        return None
+
+    data = {
+        'xs': [xs[i] for i in indices],
+        'ys': [ys[i] for i in indices],
+        'face': [face_ids[i] for i in indices],
+        'value': [values[i] for i in indices],
+        'label': [label_list[i] for i in indices],
+        'name': [polygon_names[i] for i in indices],
+    }
+    return ColumnDataSource(data=data)
+
+
+def _add_patches_to_plot(p, source, mapper, line_color, line_width, fill_color=None):
+    """Add patches to plot with specified styling."""
+    if fill_color is None:
+        # Use mapper
+        return p.patches(
+            'xs', 'ys',
+            source=source,
+            fill_color={'field': 'value', 'transform': mapper},
+            line_color=line_color,
+            line_width=line_width,
+        )
+    else:
+        # Use fixed color
+        return p.patches(
+            'xs', 'ys',
+            source=source,
+            fill_color=fill_color,
+            line_color=line_color,
+            line_width=line_width,
+        )
+
+
+def _calculate_polygon_centers(vertices_list):
+    """Calculate centroids for a list of polygons."""
+    centers = []
+    for poly_verts in vertices_list:
+        center_x = np.mean(poly_verts[:, 0])
+        center_y = np.mean(poly_verts[:, 1])
+        centers.append([center_x, center_y])
+    return np.array(centers)
+
+
+def _process_connections(connections, n_polygons):
+    """
+    Validate and normalize connection array format.
+
+    Returns
+    -------
+    connections : np.ndarray
+        Array of shape (n_connections, 2)
+    """
+    connections = np.asarray(connections)
+
+    if connections.ndim != 2:
+        raise ValueError(f"connections must be 2D array, got shape {connections.shape}")
+
+    if connections.shape[0] == 2:
+        connections = connections.T
+    elif connections.shape[1] != 2:
+        raise ValueError(
+            f"connections must have shape (2, n_connections) or (n_connections, 2), "
+            f"got {connections.shape}"
+        )
+
+    if np.any(connections < 0) or np.any(connections >= n_polygons):
+        raise ValueError(
+            f"connection indices must be in range [0, {n_polygons}), "
+            f"got min={connections.min()}, max={connections.max()}"
+        )
+
+    return connections
+
+
+def _normalize_connection_values(connection_values, n_connections, n_columns):
+    """Normalize connection values to 2D array format."""
+    if connection_values is None:
+        return np.zeros((n_connections, n_columns))
+
+    connection_values = np.asarray(connection_values)
+
+    if connection_values.ndim == 2:
+        if connection_values.shape[0] != n_connections:
+            raise ValueError(
+                f"connection_values must have {n_connections} rows, "
+                f"got {connection_values.shape[0]}"
+            )
+        if connection_values.shape[1] != n_columns:
+            raise ValueError(
+                f"connection_values must have {n_columns} columns to match values, "
+                f"got {connection_values.shape[1]}"
+            )
+    elif connection_values.ndim == 1:
+        if len(connection_values) != n_connections:
+            raise ValueError(
+                f"connection_values must have length {n_connections}, "
+                f"got {len(connection_values)}"
+            )
+        connection_values = connection_values.reshape(-1, 1)
+        if n_columns > 1:
+            connection_values = np.tile(connection_values, (1, n_columns))
+    else:
+        raise ValueError("connection_values must be 1D or 2D array")
+
+    return connection_values
+
+
+def _detect_bidirectional_connections(connections, connection_values, n_connections):
+    """
+    Detect and process bidirectional connections.
+
+    Returns
+    -------
+    connections : np.ndarray
+        Filtered connections array
+    connection_values : np.ndarray
+        Filtered connection values array
+    bidirectional_info : dict
+        Information about bidirectional connections
+    """
+    connection_map = {}
+    bidirectional_info = {}
+
+    for conn_idx in range(n_connections):
+        i, j = connections[conn_idx]
+        key = (min(i, j), max(i, j))
+        if key not in connection_map:
+            connection_map[key] = []
+        connection_map[key].append((conn_idx, i, j))
+
+    keep_connection = np.ones(n_connections, dtype=bool)
+
+    for key, conn_list in connection_map.items():
+        if len(conn_list) == 1:
+            # Unidirectional connection
+            conn_idx, i, j = conn_list[0]
+            bidirectional_info[conn_idx] = {
+                'is_bidirectional': False,
+                'from': i,
+                'to': j,
+                'forward_value': connection_values[conn_idx, :],
+                'reverse_value': None,
+                'combined_value': connection_values[conn_idx, :],
+            }
+        elif len(conn_list) == 2:
+            # Bidirectional connection - merge into one
+            conn_idx_0, i0, j0 = conn_list[0]
+            conn_idx_1, _, _ = conn_list[1]
+
+            kept_idx = conn_idx_0
+            removed_idx = conn_idx_1
+
+            val_0 = connection_values[conn_idx_0, :].copy()
+            val_1 = connection_values[conn_idx_1, :].copy()
+
+            if i0 == conn_list[0][1] and j0 == conn_list[0][2]:
+                value_i_to_j = val_0
+                value_j_to_i = val_1
+            else:
+                value_i_to_j = val_1
+                value_j_to_i = val_0
+
+            keep_connection[removed_idx] = False
+
+            bidirectional_info[kept_idx] = {
+                'is_bidirectional': True,
+                'from': i0,
+                'to': j0,
+                'forward_value': value_i_to_j,
+                'reverse_value': value_j_to_i,
+            }
+        else:
+            # More than 2 connections - keep first only
+            for idx, (conn_idx, i, j) in enumerate(conn_list):
+                if idx > 0:
+                    keep_connection[conn_idx] = False
+
+    # Filter connections and rebuild bidirectional_info
+    connections = connections[keep_connection]
+    connection_values = connection_values[keep_connection]
+
+    old_to_new_idx = {}
+    new_idx = 0
+    for old_idx in range(n_connections):
+        if keep_connection[old_idx]:
+            old_to_new_idx[old_idx] = new_idx
+            new_idx += 1
+
+    new_bidirectional_info = {}
+    for old_idx, info in bidirectional_info.items():
+        if old_idx in old_to_new_idx:
+            new_bidirectional_info[old_to_new_idx[old_idx]] = info
+
+    return connections, connection_values, new_bidirectional_info
+
+
+def _determine_gradient_needs(bidirectional_info, n_connections, n_columns):
+    """Determine which connections need gradient segments."""
+    connections_need_gradient = np.zeros(n_connections, dtype=bool)
+
+    for conn_idx in range(n_connections):
+        if conn_idx in bidirectional_info:
+            info = bidirectional_info[conn_idx]
+            if info['is_bidirectional']:
+                for col_idx in range(n_columns):
+                    forward_val = info['forward_value'][col_idx]
+                    reverse_val = info['reverse_value'][col_idx]
+                    num = abs(forward_val - reverse_val)
+                    denom = max(abs(forward_val), abs(reverse_val), 1e-10)
+                    rel_diff = num / denom
+                    if rel_diff > 0.01:
+                        connections_need_gradient[conn_idx] = True
+                        break
+
+    return connections_need_gradient
+
+
+def _create_gradient_segments(
+        conn_idx, connections, all_centers, col_idx, bidirectional_info,
+        connection_values, connections_need_gradient, conn_use_log_for_gradient,
+        n_gradient_segments=10
+    ):
+    """Create gradient segments for a single connection."""
+    i, j = connections[conn_idx]
+    x0, y0 = all_centers[col_idx][i, 0], all_centers[col_idx][i, 1]
+    x1, y1 = all_centers[col_idx][j, 0], all_centers[col_idx][j, 1]
+
+    if connections_need_gradient[conn_idx]:
+        info = bidirectional_info[conn_idx]
+        forward_val = info['forward_value'][col_idx]
+        reverse_val = info['reverse_value'][col_idx]
+
+        segments = []
+        for seg_idx in range(n_gradient_segments):
+            t0 = seg_idx / n_gradient_segments
+            t1 = (seg_idx + 1) / n_gradient_segments
+            t_val = seg_idx / (n_gradient_segments - 1)
+
+            seg_x0 = x0 + t0 * (x1 - x0)
+            seg_y0 = y0 + t0 * (y1 - y0)
+            seg_x1 = x0 + t1 * (x1 - x0)
+            seg_y1 = y0 + t1 * (y1 - y0)
+
+            # Interpolate value
+            if conn_use_log_for_gradient:
+                if forward_val > 0 and reverse_val > 0:
+                    log_forward = np.log(forward_val)
+                    log_reverse = np.log(reverse_val)
+                    log_val = log_forward + t_val * (log_reverse - log_forward)
+                    seg_val = np.exp(log_val)
+                elif forward_val > 0:
+                    seg_val = forward_val
+                elif reverse_val > 0:
+                    seg_val = reverse_val
+                else:
+                    seg_val = 0
+            else:
+                seg_val = forward_val + t_val * (reverse_val - forward_val)
+
+            segments.append((seg_x0, seg_y0, seg_x1, seg_y1, seg_val))
+
+        return segments
+    else:
+        # Single segment
+        seg_val = connection_values[conn_idx, col_idx]
+        return [(x0, y0, x1, y1, seg_val)]
+
+
+def _prepare_connection_data(connections, connection_values, all_centers, labels,
+                              bidirectional_info, connections_need_gradient,
+                              conn_use_log_for_gradient, n_columns):
+    """Prepare connection line and gradient data."""
+    n_connections = connections.shape[0]
+
+    # Prepare main connection data
+    current_centers = all_centers[0]
+    conn_x0 = []
+    conn_y0 = []
+    conn_x1 = []
+    conn_y1 = []
+    conn_vals = []
+    conn_from_labels = []
+    conn_to_labels = []
+    conn_names = []
+    conn_is_bidirectional = []
+    conn_forward_vals = []
+    conn_reverse_vals = []
+
+    for conn_idx in range(n_connections):
+        i, j = connections[conn_idx]
+        conn_x0.append(current_centers[i, 0])
+        conn_y0.append(current_centers[i, 1])
+        conn_x1.append(current_centers[j, 0])
+        conn_y1.append(current_centers[j, 1])
+
+        # Prepare labels
+        if labels is not None and labels[i] and labels[j]:
+            from_label = labels[i]
+            to_label = labels[j]
+            conn_name = f"{from_label}→{to_label}"
+        else:
+            from_label = str(i)
+            to_label = str(j)
+            conn_name = f"{i}→{j}"
+
+        conn_from_labels.append(from_label)
+        conn_to_labels.append(to_label)
+        conn_names.append(conn_name)
+
+        # Add bidirectional information
+        if conn_idx in bidirectional_info:
+            info = bidirectional_info[conn_idx]
+            conn_is_bidirectional.append(info['is_bidirectional'])
+            conn_forward_vals.append(info['forward_value'][0])
+            if info['is_bidirectional']:
+                conn_vals.append(info['forward_value'][0])
+                conn_reverse_vals.append(info['reverse_value'][0])
+            else:
+                conn_vals.append(info['forward_value'][0])
+                conn_reverse_vals.append(None)
+        else:
+            conn_is_bidirectional.append(False)
+            conn_vals.append(connection_values[conn_idx, 0])
+            conn_forward_vals.append(connection_values[conn_idx, 0])
+            conn_reverse_vals.append(None)
+
+    # Create connection data dictionary
+    conn_data = {
+        'x0': conn_x0,
+        'y0': conn_y0,
+        'x1': conn_x1,
+        'y1': conn_y1,
+        'value': conn_vals,
+        'name': conn_names,
+        'conn_id': list(range(n_connections)),
+        'from_label': conn_from_labels,
+        'to_label': conn_to_labels,
+        'is_bidirectional': conn_is_bidirectional,
+        'forward_value': conn_forward_vals,
+        'reverse_value': conn_reverse_vals,
+    }
+
+    # Store all columns
+    for col_idx in range(n_columns):
+        val_col = []
+        forward_vals_col = []
+        reverse_vals_col = []
+
+        for conn_idx in range(n_connections):
+            if conn_idx in bidirectional_info:
+                info = bidirectional_info[conn_idx]
+                forward_val = info['forward_value'][col_idx]
+                val_col.append(forward_val)
+                forward_vals_col.append(forward_val)
+                if info['is_bidirectional']:
+                    reverse_vals_col.append(info['reverse_value'][col_idx])
+                else:
+                    reverse_vals_col.append(None)
+            else:
+                val = connection_values[conn_idx, col_idx]
+                val_col.append(val)
+                forward_vals_col.append(val)
+                reverse_vals_col.append(None)
+
+        conn_data[f'value_{col_idx}'] = val_col
+        conn_data[f'forward_value_{col_idx}'] = forward_vals_col
+        conn_data[f'reverse_value_{col_idx}'] = reverse_vals_col
+
+        centers = all_centers[col_idx]
+        x0_col = [centers[connections[i, 0], 0] for i in range(n_connections)]
+        y0_col = [centers[connections[i, 0], 1] for i in range(n_connections)]
+        x1_col = [centers[connections[i, 1], 0] for i in range(n_connections)]
+        y1_col = [centers[connections[i, 1], 1] for i in range(n_connections)]
+        conn_data[f'x0_{col_idx}'] = x0_col
+        conn_data[f'y0_{col_idx}'] = y0_col
+        conn_data[f'x1_{col_idx}'] = x1_col
+        conn_data[f'y1_{col_idx}'] = y1_col
+
+    # Create gradient data
+    gradient_data = {}
+    for col_idx in range(n_columns):
+        grad_x0, grad_y0, grad_x1, grad_y1 = [], [], [], []
+        grad_values, grad_conn_id = [], []
+        grad_from_label, grad_to_label, grad_names = [], [], []
+        grad_is_bidirectional = []
+
+        for conn_idx in range(n_connections):
+            segments = _create_gradient_segments(
+                conn_idx, connections, all_centers, col_idx, bidirectional_info,
+                connection_values, connections_need_gradient, conn_use_log_for_gradient
+            )
+
+            for seg_x0, seg_y0, seg_x1, seg_y1, seg_val in segments:
+                grad_x0.append(seg_x0)
+                grad_y0.append(seg_y0)
+                grad_x1.append(seg_x1)
+                grad_y1.append(seg_y1)
+                grad_values.append(seg_val)
+                grad_conn_id.append(conn_idx)
+                grad_from_label.append(conn_from_labels[conn_idx])
+                grad_to_label.append(conn_to_labels[conn_idx])
+                grad_names.append(conn_names[conn_idx])
+                grad_is_bidirectional.append(conn_is_bidirectional[conn_idx])
+
+        # Store gradient data
+        if col_idx == 0:
+            gradient_data['x0'] = grad_x0
+            gradient_data['y0'] = grad_y0
+            gradient_data['x1'] = grad_x1
+            gradient_data['y1'] = grad_y1
+            gradient_data['value'] = grad_values
+            gradient_data['name'] = grad_names
+            gradient_data['conn_id'] = grad_conn_id
+            gradient_data['from_label'] = grad_from_label
+            gradient_data['to_label'] = grad_to_label
+            gradient_data['is_bidirectional'] = grad_is_bidirectional
+
+        gradient_data[f'x0_{col_idx}'] = grad_x0
+        gradient_data[f'y0_{col_idx}'] = grad_y0
+        gradient_data[f'x1_{col_idx}'] = grad_x1
+        gradient_data[f'y1_{col_idx}'] = grad_y1
+        gradient_data[f'value_{col_idx}'] = grad_values
+        gradient_data[f'name_{col_idx}'] = grad_names
+        gradient_data[f'from_label_{col_idx}'] = grad_from_label
+        gradient_data[f'to_label_{col_idx}'] = grad_to_label
+        gradient_data[f'is_bidirectional_{col_idx}'] = grad_is_bidirectional
+
+    return conn_data, gradient_data
+
+
+def _create_connection_color_mapper(
+        connection_palette, connection_log_scale, connection_color_limits,
+        connection_values, bidirectional_info, n_connections,
+        color_palette, log_scale
+    ):
+    """Create color mapper for connections if independent scale requested."""
+    if connection_palette is None and \
+        connection_log_scale is None and \
+            connection_color_limits is None:
+        return None, None
+
+    palette_map = _get_palette_map()
+
+    # Determine connection palette
+    if connection_palette is not None:
+        if isinstance(connection_palette, str) and connection_palette in palette_map:
+            conn_color_palette = palette_map[connection_palette]
+        elif isinstance(connection_palette, str):
+            conn_color_palette = connection_palette
+        else:
+            conn_color_palette = connection_palette
+    else:
+        conn_color_palette = color_palette
+
+    # Determine connection log scale
+    conn_log_scale = connection_log_scale if connection_log_scale is not None else log_scale
+
+    # Calculate connection color scale limits
+    all_conn_values = []
+    for conn_idx in range(n_connections):
+        if conn_idx in bidirectional_info:
+            info = bidirectional_info[conn_idx]
+            all_conn_values.extend(info['forward_value'])
+            if info['is_bidirectional']:
+                all_conn_values.extend(info['reverse_value'])
+        else:
+            all_conn_values.extend(connection_values[conn_idx, :])
+
+    all_conn_values = np.array(all_conn_values)
+    finite_conn_values = all_conn_values[np.isfinite(all_conn_values)]
+
+    if len(finite_conn_values) == 0:
+        conn_vmin, conn_vmax = 0, 1
+    else:
+        conn_limit_min, conn_limit_max = None, None
+        if connection_color_limits is not None:
+            if not isinstance(connection_color_limits, (tuple, list)) or \
+                len(connection_color_limits) != 2:
+                raise ValueError("connection_color_limits must be a tuple of (min, max)")
+            conn_limit_min, conn_limit_max = connection_color_limits
+
+        conn_vmin = np.min(finite_conn_values) if conn_limit_min is None else conn_limit_min
+        conn_vmax = np.max(finite_conn_values) if conn_limit_max is None else conn_limit_max
+
+    # Handle log scale requirements
+    if conn_log_scale and conn_vmin <= 0:
+        positive_conn_values = finite_conn_values[finite_conn_values > 0]
+        if len(positive_conn_values) == 0:
+            raise ValueError("Cannot use connection log scale with all non-positive values")
+        conn_vmin = np.min(positive_conn_values)
+        print(f"Warning: Adjusting connection vmin to {conn_vmin} for log scale (was <= 0)")
+
+    # Create mapper
+    if conn_log_scale:
+        connection_mapper = LogColorMapper(
+            palette=conn_color_palette, low=conn_vmin, high=conn_vmax
+        )
+    else:
+        connection_mapper = LinearColorMapper(
+            palette=conn_color_palette, low=conn_vmin, high=conn_vmax
+        )
+
+    return connection_mapper, conn_log_scale
+
+
+def _create_palette_selector(initial_palette, mapper):
+    """Create palette selector widget with callback."""
+    palette_options = [
+        'Viridis', 'Turbo', 'Plasma', 'Inferno', 'Magma', 'Cividis',
+        'Greys', 'Blues', 'Greens', 'Reds', 'Oranges', 'Purples'
+    ]
+    palette_options_with_reversed = []
+    for pal in palette_options:
+        palette_options_with_reversed.append(pal)
+        palette_options_with_reversed.append(pal + ' (reversed)')
+
+    palette_select = Select(
+        title="Color Palette:",
+        value=initial_palette,
+        options=palette_options_with_reversed,
+        width=200
+    )
+
+    palette_map = _get_palette_map()
+    palette_callback = CustomJS(
+        args=dict(
+            mapper=mapper,
+            palette_select=palette_select,
+            palette_map={k: list(v) for k, v in palette_map.items() if not k.endswith('256')},
+        ),
+        code="""
+            const palette_name = palette_select.value;
+            let reversed = false;
+            let base_name = palette_name;
+
+            // Check if reversed
+            if (palette_name.endsWith(' (reversed)')) {
+                reversed = true;
+                base_name = palette_name.replace(' (reversed)', '');
+            }
+
+            // Get the palette
+            let palette = palette_map[base_name];
+
+            if (palette) {
+                // Reverse if needed
+                if (reversed) {
+                    palette = palette.slice().reverse();
+                }
+
+                // Update the mapper
+                mapper.palette = palette;
+            }
+        """
+    )
+
+    palette_select.js_on_change('value', palette_callback)
+    return palette_select
+
+
+def _create_column_selector(
+        value_names, source, source_in_range, source_below_min, source_above_max,
+        source_nan_inf, source_connections, source_gradient, vmin, vmax,
+        nan_inf_color, has_connections
+    ):
+    """Create column selector widget with callback for matrix data."""
+    select = Select(
+        title="Select Data Column:",
+        value=value_names[0],
+        options=list(value_names),
+        width=200
+    )
+
+    callback = CustomJS(
+        args=dict(
+            source=source,
+            source_in=source_in_range,
+            source_below=source_below_min,
+            source_above=source_above_max,
+            source_nan=source_nan_inf,
+            source_conn=source_connections,
+            source_grad=source_gradient,
+            select=select,
+            value_names=value_names,
+            n_columns=len(value_names),
+            vmin=vmin,
+            vmax=vmax,
+            nan_inf_color=nan_inf_color,
+            has_connections=has_connections,
+        ),
+        code="""
+            // Find which column was selected
+            const col_name = select.value;
+            const col_idx = value_names.indexOf(col_name);
+
+            // Get the data from the source
+            const data = source.data;
+            const n_polygons = data['xs_0'].length;  // Use stored vertices count
+
+            // Update the active value and vertices columns
+            const new_values = data['value_' + col_idx];
+            const new_xs = data['xs_' + col_idx];
+            const new_ys = data['ys_' + col_idx];
+
+            data['value'] = new_values;
+            data['xs'] = new_xs;
+            data['ys'] = new_ys;
+
+            // Categorize polygons
+            const in_range = new Array(n_polygons);
+            const below_min = new Array(n_polygons);
+            const above_max = new Array(n_polygons);
+            const nan_inf = new Array(n_polygons);
+
+            for (let i = 0; i < n_polygons; i++) {
+                const val = new_values[i];
+                if (!isFinite(val)) {
+                    nan_inf[i] = true;
+                    in_range[i] = false;
+                    below_min[i] = false;
+                    above_max[i] = false;
+                } else if (val < vmin) {
+                    below_min[i] = true;
+                    in_range[i] = false;
+                    above_max[i] = false;
+                    nan_inf[i] = false;
+                } else if (val > vmax) {
+                    above_max[i] = true;
+                    in_range[i] = false;
+                    below_min[i] = false;
+                    nan_inf[i] = false;
+                } else {
+                    in_range[i] = true;
+                    below_min[i] = false;
+                    above_max[i] = false;
+                    nan_inf[i] = false;
+                }
+            }
+
+            // Helper function to update a source
+            function updateSource(src, mask) {
+                if (src === null) return;
+                const src_data = src.data;
+                const src_xs = [];
+                const src_ys = [];
+                const src_face = [];
+                const src_value = [];
+                const src_label = [];
+                const src_name = [];
+
+                for (let i = 0; i < n_polygons; i++) {
+                    if (mask[i]) {
+                        src_xs.push(new_xs[i]);
+                        src_ys.push(new_ys[i]);
+                        src_face.push(data['face'][i]);
+                        src_value.push(new_values[i]);
+                        src_label.push(data['label'][i]);
+                        src_name.push(data['name'][i]);
+                    }
+                }
+
+                src_data['xs'] = src_xs;
+                src_data['ys'] = src_ys;
+                src_data['face'] = src_face;
+                src_data['value'] = src_value;
+                src_data['label'] = src_label;
+                src_data['name'] = src_name;
+                src.change.emit();
+            }
+
+            // Update all sources
+            updateSource(source_in, in_range);
+            updateSource(source_below, below_min);
+            updateSource(source_above, above_max);
+            if (nan_inf_color !== null) {
+                updateSource(source_nan, nan_inf);
+            }
+
+            // Update connections if present
+            if (has_connections && source_conn !== null) {
+                const conn_data = source_conn.data;
+                conn_data['value'] = conn_data['value_' + col_idx];
+                conn_data['forward_value'] = conn_data['forward_value_' + col_idx];
+                conn_data['reverse_value'] = conn_data['reverse_value_' + col_idx];
+                conn_data['x0'] = conn_data['x0_' + col_idx];
+                conn_data['y0'] = conn_data['y0_' + col_idx];
+                conn_data['x1'] = conn_data['x1_' + col_idx];
+                conn_data['y1'] = conn_data['y1_' + col_idx];
+                source_conn.change.emit();
+            }
+
+            // Update gradient segments if present
+            if (has_connections && source_grad !== null) {
+                const grad_data = source_grad.data;
+                grad_data['x0'] = grad_data['x0_' + col_idx];
+                grad_data['y0'] = grad_data['y0_' + col_idx];
+                grad_data['x1'] = grad_data['x1_' + col_idx];
+                grad_data['y1'] = grad_data['y1_' + col_idx];
+                grad_data['value'] = grad_data['value_' + col_idx];
+                grad_data['name'] = grad_data['name_' + col_idx];
+                grad_data['from_label'] = grad_data['from_label_' + col_idx];
+                grad_data['to_label'] = grad_data['to_label_' + col_idx];
+                grad_data['is_bidirectional'] = grad_data['is_bidirectional_' + col_idx];
+                source_grad.change.emit();
+            }
+
+            source.change.emit();
+        """
+    )
+
+    select.js_on_change('value', callback)
+    return select
+
+
+def _create_connection_width_slider(
+        connection_width, connection_renderers, connection_border_color
+    ):
+    """Create connection width slider widget with callback."""
+    conn_width_slider = Slider(
+        start=0.5,
+        end=10.0,
+        value=connection_width,
+        step=0.5,
+        title="Connection Line Width:",
+        width=200
+    )
+
+    conn_width_callback = CustomJS(
+        args=dict(
+            slider=conn_width_slider,
+            renderers=connection_renderers,
+            border_offset=2 if connection_border_color is not None else 0
+        ),
+        code="""
+            const width = slider.value;
+            for (let i = 0; i < renderers.length; i++) {
+                if (i === 0 && border_offset > 0) {
+                    renderers[i].glyph.line_width = width + border_offset;
+                } else {
+                    renderers[i].glyph.line_width = width;
+                }
+            }
+        """
+    )
+
+    conn_width_slider.js_on_change('value', conn_width_callback)
+    return conn_width_slider
 
 
 def plot_polygon_grid(vertices, values=None, width=800, height=600,
@@ -259,211 +1412,16 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
     """
     # Handle values=None case by inferring polygon count from vertices
     if values is None:
-        # Need to parse vertices first to determine n_polygons
-        # We'll do a preliminary parse to get the count
-        if isinstance(vertices, np.ndarray):
-            if vertices.ndim == 3:
-                n_polygons = vertices.shape[0]
-            else:
-                raise ValueError(
-                    "When values=None, vertices must be array with shape (n_polygons, n_vertices, 2) "
-                    "or a list of polygon arrays"
-                )
-        elif isinstance(vertices, (list, tuple)) and len(vertices) > 0:
-            # Check if it's a list of lists (multi-set) or list of polygons (single set)
-            first_elem = vertices[0]
-            if isinstance(first_elem, (list, tuple)):
-                if len(first_elem) > 0:
-                    second_elem = first_elem[0]
-                    if isinstance(second_elem, (list, tuple, np.ndarray)):
-                        second_elem_arr = np.asarray(second_elem)
-                        if second_elem_arr.ndim == 2 and second_elem_arr.shape[1] == 2:
-                            # Multi-set: first_elem[0] is a polygon
-                            n_polygons = len(first_elem)
-                        else:
-                            # Single set: first_elem is a polygon
-                            n_polygons = len(vertices)
-                    else:
-                        n_polygons = len(vertices)
-                else:
-                    n_polygons = len(vertices)
-            elif isinstance(first_elem, np.ndarray):
-                if first_elem.ndim == 2 and first_elem.shape[1] == 2:
-                    # Single set: each element is a polygon
-                    n_polygons = len(vertices)
-                elif first_elem.ndim == 3:
-                    # Multi-set: each element is an array of polygons
-                    n_polygons = first_elem.shape[0]
-                else:
-                    n_polygons = len(vertices)
-            else:
-                n_polygons = len(vertices)
-        else:
-            raise ValueError("vertices must be an array or list")
-
-        # Create values array of zeros
-        values = np.zeros(n_polygons)
-
-    values = np.asarray(values)
-
-    # Check if values is a matrix
-    is_matrix = values.ndim == 2
-    if is_matrix:
-        n_polygons, n_columns = values.shape
+        n_polygons_inferred = _infer_polygon_count(vertices)
     else:
-        if values.ndim == 1:
-            values = values.reshape(-1, 1)
-            n_columns = 1
-            n_polygons = values.shape[0]
-        else:
-            raise ValueError("values must be 1D or 2D array")
+        n_polygons_inferred = None
 
-    # Parse vertices structure to determine if we have multiple polygon sets
-    # Three cases:
-    # 1. Single uniform array: (n_polygons, n_vertices, 2)
-    # 2. Single list of polygons: [(n_vertices_0, 2), (n_vertices_1, 2), ...]
-    # 3. Multiple lists (one per column): [[(n_vertices, 2), ...], [(n_vertices, 2), ...], ...]
+    # Normalize values to 2D array
+    values, n_polygons, n_columns = _normalize_values(values, n_polygons_inferred)
+    is_matrix = n_columns > 1
 
-    vertices_are_multi_set = False
-
-    if isinstance(vertices, (list, tuple)) and len(vertices) > 0:
-        first_elem = vertices[0]
-        # Check if first element is itself a list/array of polygons or a single polygon
-        if isinstance(first_elem, (list, tuple)):
-            # Could be case 2 or 3
-            # Check if first_elem[0] is a polygon or a vertex
-            if len(first_elem) > 0:
-                second_elem = first_elem[0]
-                if isinstance(second_elem, (list, tuple, np.ndarray)):
-                    second_elem_arr = np.asarray(second_elem)
-                    if second_elem_arr.ndim == 2 and second_elem_arr.shape[1] == 2:
-                        # first_elem[0] is a polygon -> case 3 (multi-set)
-                        vertices_are_multi_set = True
-                    elif second_elem_arr.ndim == 1 and len(second_elem_arr) == 2:
-                        # first_elem[0] is a vertex -> case 2 (single list)
-                        vertices_are_multi_set = False
-                    else:
-                        # Ambiguous, check shape
-                        vertices_are_multi_set = False
-        elif isinstance(first_elem, np.ndarray):
-            # first_elem is an array
-            if first_elem.ndim == 2 and first_elem.shape[1] == 2:
-                # first_elem is a single polygon -> case 2
-                vertices_are_multi_set = False
-            elif first_elem.ndim == 3:
-                # Unusual case: might be trying case 3 with arrays
-                vertices_are_multi_set = True
-            elif first_elem.ndim == 1:
-                # first_elem might be a list of polygons as arrays
-                vertices_are_multi_set = False
-
-    # Now parse vertices based on the determined structure
-    if vertices_are_multi_set:
-        # Case 3: Multiple polygon sets (one per column)
-        if len(vertices) != n_columns:
-            raise ValueError(
-                f"When providing multiple polygon sets, must have {n_columns} sets "
-                f"(one per data column), got {len(vertices)}"
-            )
-
-        # Parse each set
-        all_vertices_lists = []
-        for col_idx, vert_set in enumerate(vertices):
-            vert_list = []
-            if isinstance(vert_set, np.ndarray):
-                if vert_set.ndim == 3:
-                    # Uniform array for this column
-                    if vert_set.shape[0] != n_polygons:
-                        raise ValueError(
-                            f"vertices[{col_idx}] must have {n_polygons} polygons, "
-                            f"got {vert_set.shape[0]}"
-                        )
-                    for i in range(n_polygons):
-                        vert_list.append(vert_set[i])
-                else:
-                    raise ValueError(
-                        f"vertices[{col_idx}] array must have 3 dimensions, got {vert_set.ndim}"
-                    )
-            elif isinstance(vert_set, (list, tuple)):
-                # List of polygons
-                if len(vert_set) != n_polygons:
-                    raise ValueError(
-                        f"vertices[{col_idx}] must have {n_polygons} polygons, "
-                        f"got {len(vert_set)}"
-                    )
-                for i, poly in enumerate(vert_set):
-                    poly_arr = np.asarray(poly)
-                    if poly_arr.ndim != 2 or poly_arr.shape[1] != 2:
-                        raise ValueError(
-                            f"vertices[{col_idx}][{i}] must have shape (n_vertices, 2), "
-                            f"got {poly_arr.shape}"
-                        )
-                    if poly_arr.shape[0] < 3:
-                        raise ValueError(
-                            f"vertices[{col_idx}][{i}] must have at least 3 vertices"
-                        )
-                    vert_list.append(poly_arr)
-            else:
-                raise ValueError(f"vertices[{col_idx}] must be array or list")
-
-            all_vertices_lists.append(vert_list)
-
-        # Start with first column's polygons
-        vertices_list = all_vertices_lists[0]
-
-    else:
-        # Cases 1 & 2: Single polygon set (used for all columns)
-        if isinstance(vertices, (list, tuple)) and len(vertices) > 0:
-            # Check if it's a list of arrays with potentially different sizes
-            if isinstance(vertices[0], np.ndarray) or isinstance(vertices[0], (list, tuple)):
-                # Each element is a polygon with potentially different number of vertices
-                vertices_list = [np.asarray(v) for v in vertices]
-                n_poly = len(vertices_list)
-                # Validate each polygon
-                for i, v in enumerate(vertices_list):
-                    if v.ndim != 2 or v.shape[1] != 2:
-                        raise ValueError(
-                            f"vertices[{i}] must have shape (n_vertices, 2), got {v.shape}"
-                        )
-                    if v.shape[0] < 3:
-                        raise ValueError(
-                            f"vertices[{i}] must have at least 3 vertices, got {v.shape[0]}"
-                        )
-            else:
-                # It's a regular array
-                vertices = np.asarray(vertices)
-                if vertices.ndim != 3 or vertices.shape[2] != 2:
-                    raise ValueError(
-                        f"vertices must have shape (n_polygons, n_vertices, 2), got {vertices.shape}"
-                    )
-                if vertices.shape[1] < 3:
-                    raise ValueError(
-                        f"Each polygon must have at least 3 vertices, got {vertices.shape[1]}"
-                    )
-                n_poly = vertices.shape[0]
-                # Convert to list for uniform processing
-                vertices_list = [vertices[i] for i in range(n_poly)]
-        else:
-            vertices = np.asarray(vertices)
-            if vertices.ndim != 3 or vertices.shape[2] != 2:
-                raise ValueError(
-                    f"vertices must have shape (n_polygons, n_vertices, 2), got {vertices.shape}"
-                )
-            if vertices.shape[1] < 3:
-                raise ValueError(
-                    f"Each polygon must have at least 3 vertices, got {vertices.shape[1]}"
-                )
-            n_poly = vertices.shape[0]
-            # Convert to list for uniform processing
-            vertices_list = [vertices[i] for i in range(n_poly)]
-
-        if n_poly != n_polygons:
-            raise ValueError(
-                f"Number of polygons ({n_poly}) must match number of values ({n_polygons})"
-            )
-
-        # Replicate for all columns
-        all_vertices_lists = [vertices_list for _ in range(n_columns)]
+    # Parse vertices into list of polygon sets
+    all_vertices_lists = _parse_vertices(vertices, n_polygons, n_columns)
 
     if value_names is None:
         value_names = [f'Column {i}' for i in range(n_columns)]
@@ -484,260 +1442,49 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
     # Process connections if provided
     has_connections = False
     if connections is not None:
-        connections = np.asarray(connections)
-
-        # Accept both (2, n) and (n, 2) formats
-        if connections.ndim != 2:
-            raise ValueError(f"connections must be 2D array, got shape {connections.shape}")
-
-        if connections.shape[0] == 2:
-            # Shape is (2, n_connections) - transpose to (n_connections, 2)
-            connections = connections.T
-        elif connections.shape[1] != 2:
-            raise ValueError(
-                f"connections must have shape (2, n_connections) or (n_connections, 2), "
-                f"got {connections.shape}"
-            )
-
+        connections = _process_connections(connections, n_polygons)
         n_connections = connections.shape[0]
         has_connections = True
 
-        # Validate connection indices
-        if np.any(connections < 0) or np.any(connections >= n_polygons):
-            raise ValueError(
-                f"connection indices must be in range [0, {n_polygons}), "
-                f"got min={connections.min()}, max={connections.max()}"
-            )
-
-        # Process connection values
-        if connection_values is None:
-            # Default to zeros, replicated for all columns
-            connection_values = np.zeros((n_connections, n_columns))
-        else:
-            connection_values = np.asarray(connection_values)
-
-            # Check if it's a matrix
-            if connection_values.ndim == 2:
-                if connection_values.shape[0] != n_connections:
-                    raise ValueError(
-                        f"connection_values must have {n_connections} rows, "
-                        f"got {connection_values.shape[0]}"
-                    )
-                if connection_values.shape[1] != n_columns:
-                    raise ValueError(
-                        f"connection_values must have {n_columns} columns to match values, "
-                        f"got {connection_values.shape[1]}"
-                    )
-            elif connection_values.ndim == 1:
-                if len(connection_values) != n_connections:
-                    raise ValueError(
-                        f"connection_values must have length {n_connections}, "
-                        f"got {len(connection_values)}"
-                    )
-                # Make it a column vector for consistency
-                connection_values = connection_values.reshape(-1, 1)
-                # Replicate for all columns if values is a matrix
-                if n_columns > 1:
-                    connection_values = np.tile(connection_values, (1, n_columns))
-            else:
-                raise ValueError("connection_values must be 1D or 2D array")
-
-        # Preprocess bidirectional connections
-        # Detect pairs where both (i,j) and (j,i) exist
-
-        # Create a dictionary to track bidirectional pairs
-        connection_map = {}  # (min_idx, max_idx) -> [list of connection indices]
-        bidirectional_info = {}  # connection_idx -> (is_bidirectional, forward_val, reverse_val, is_primary)
-
-        for conn_idx in range(n_connections):
-            i, j = connections[conn_idx]
-            # Always store with smaller index first for consistency
-            key = (min(i, j), max(i, j))
-            if key not in connection_map:
-                connection_map[key] = []
-            connection_map[key].append((conn_idx, i, j))
-
-        # Process each unique connection pair
-        keep_connection = np.ones(n_connections, dtype=bool)
-
-        for key, conn_list in connection_map.items():
-            if len(conn_list) == 1:
-                # Unidirectional connection
-                conn_idx, i, j = conn_list[0]
-                bidirectional_info[conn_idx] = {
-                    'is_bidirectional': False,
-                    'from': i,
-                    'to': j,
-                    'forward_value': connection_values[conn_idx, :],
-                    'reverse_value': None,
-                    'combined_value': connection_values[conn_idx, :],
-                }
-            elif len(conn_list) == 2:
-                # Bidirectional connection - merge into one
-                conn_idx_0, i0, j0 = conn_list[0]
-                conn_idx_1, _, _ = conn_list[1]
-
-                # Use the first one as the primary (keep it), discard the second
-                kept_idx = conn_idx_0
-                removed_idx = conn_idx_1
-
-                # Get values for both directions
-                val_0 = connection_values[conn_idx_0, :].copy()
-                val_1 = connection_values[conn_idx_1, :].copy()
-
-                # Now determine which value corresponds to which direction of the KEPT connection
-                # The kept connection goes from i0 to j0
-                # We need to find which value corresponds to (i0→j0) and which to (j0→i0)
-                if i0 == conn_list[0][1] and j0 == conn_list[0][2]:
-                    # conn_list[0] is (i0→j0), so val_0 is the i0→j0 value
-                    value_i_to_j = val_0
-                    value_j_to_i = val_1
-                else:
-                    # conn_list[0] is (j0→i0), so val_0 is the j0→i0 value
-                    value_i_to_j = val_1
-                    value_j_to_i = val_0
-
-                # Mark reverse connection for removal
-                keep_connection[removed_idx] = False
-
-                # Store bidirectional info with correctly mapped values
-                # forward_value: value for the kept connection direction (i0→j0)
-                # reverse_value: value for the opposite direction (j0→i0)
-                bidirectional_info[kept_idx] = {
-                    'is_bidirectional': True,
-                    'from': i0,
-                    'to': j0,
-                    'forward_value': value_i_to_j,
-                    'reverse_value': value_j_to_i,
-                }
-            else:
-                # More than 2 connections between same pair - shouldn't happen normally
-                # Just keep the first one
-                for idx, (conn_idx, i, j) in enumerate(conn_list):
-                    if idx > 0:
-                        keep_connection[conn_idx] = False
-
-        # Filter out removed connections
-        connections = connections[keep_connection]
-        connection_values = connection_values[keep_connection]
-
-        # Rebuild bidirectional_info with new indices
-        old_to_new_idx = {}
-        new_idx = 0
-        for old_idx in range(n_connections):
-            if keep_connection[old_idx]:
-                old_to_new_idx[old_idx] = new_idx
-                new_idx += 1
-
-        new_bidirectional_info = {}
-        for old_idx, info in bidirectional_info.items():
-            if old_idx in old_to_new_idx:
-                new_bidirectional_info[old_to_new_idx[old_idx]] = info
-
-        bidirectional_info = new_bidirectional_info
+        connection_values = _normalize_connection_values(
+            connection_values, n_connections, n_columns
+        )
+        connections, connection_values, bidirectional_info = _detect_bidirectional_connections(
+            connections, connection_values, n_connections
+        )
         n_connections = connections.shape[0]
     else:
         n_connections = 0
-        connection_values = np.zeros((0, n_columns))  # Empty array with correct shape
+        connection_values = np.zeros((0, n_columns))
         bidirectional_info = {}
 
     # Normalize out_of_range_colors to tuple format
-    if out_of_range_colors is None:
-        color_below_min = None
-        color_above_max = None
-    elif isinstance(out_of_range_colors, (tuple, list)):
-        if len(out_of_range_colors) != 2:
-            raise ValueError("out_of_range_colors tuple must have exactly 2 elements")
-        color_below_min, color_above_max = out_of_range_colors
-    else:
-        # Single value - use for both
-        color_below_min = out_of_range_colors
-        color_above_max = out_of_range_colors
+    color_below_min, color_above_max = _normalize_out_of_range_colors(out_of_range_colors)
 
-    # Handle color_limits parameter
-    limit_min = None
-    limit_max = None
-    if color_limits is not None:
-        if not isinstance(color_limits, (tuple, list)) or len(color_limits) != 2:
-            raise ValueError("color_limits must be a tuple of (min, max)")
-        limit_min, limit_max = color_limits
+    # Calculate color scale limits
+    vmin, vmax = _normalize_color_limits(color_limits, values, log_scale)
 
-    # Filter out NaN and Inf values for color scale calculation
-    finite_mask = np.isfinite(values)
-    finite_values = values[finite_mask]
-
-    if len(finite_values) == 0:
-        raise ValueError("All values are NaN or Inf - cannot determine color scale")
-
-    # Set color scale limits using finite values only
-    if limit_min is None:
-        limit_min = np.min(finite_values)
-    if limit_max is None:
-        limit_max = np.max(finite_values)
-
-    vmin = limit_min
-    vmax = limit_max
-
-    # Handle log scale requirements
-    if log_scale:
-        if vmin <= 0:
-            # Filter out non-positive values for log scale
-            positive_values = finite_values[finite_values > 0]
-            if len(positive_values) == 0:
-                raise ValueError("Cannot use log scale with all non-positive values")
-            vmin = np.min(positive_values)
-            print(f"Warning: Adjusting vmin to {vmin} for log scale (was <= 0)")
-
-    # Define available palettes
-    palette_map = {
-        'Viridis': Viridis256,
-        'Turbo': Turbo256,
-        'Plasma': Plasma256,
-        'Inferno': Inferno256,
-        'Magma': Magma256,
-        'Cividis': Cividis256,
-        'Greys': Greys256,
-        'Blues': Blues256,
-        'Greens': Greens256,
-        'Reds': Reds256,
-        'Oranges': Oranges256,
-        'Purples': Purples256,
-    }
-
-    # For backward compatibility, also accept names with '256' suffix
-    palette_map_with_suffix = {k + '256': v for k, v in palette_map.items()}
-    palette_map.update(palette_map_with_suffix)
-
-    if isinstance(palette, str) and palette in palette_map:
-        color_palette = palette_map[palette]
-    elif isinstance(palette, str):
-        # Try to use it as is (user provided palette name)
-        color_palette = palette
-    else:
-        color_palette = palette
+    # Create color mapper
+    mapper, ticker, color_palette = _create_color_mapper(palette, log_scale, vmin, vmax)
 
     # Store initial palette name for selector
     if isinstance(palette, str):
         if palette.endswith('256'):
-            initial_palette = palette[:-3]  # Remove '256' suffix
+            initial_palette = palette[:-3]
         else:
+            palette_map = _get_palette_map()
             initial_palette = palette if palette in palette_map else 'Viridis'
     else:
         initial_palette = 'Viridis'
-
-    # Create color mapper
-    if log_scale:
-        mapper = LogColorMapper(palette=color_palette, low=vmin, high=vmax)
-        ticker = LogTicker()
-    else:
-        mapper = LinearColorMapper(palette=color_palette, low=vmin, high=vmax)
-        ticker = BasicTicker()
 
     # Prepare data for patches glyph - handle matrix case
     xs = []  # List of lists of x coordinates for each polygon
     ys = []  # List of lists of y coordinates for each polygon
     face_ids = []  # Face numbers
     label_list = []  # Labels for each polygon
+
+    # Use first column's vertices for initial display
+    vertices_list = all_vertices_lists[0]
 
     for i in range(n_polygons):
         # Extract x and y coordinates for this polygon
@@ -755,89 +1502,20 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
 
     # Calculate polygon centers for connections (for all polygon sets)
     if has_connections:
-        # Store centers for each column's polygon set
         all_centers = []
         for col_idx in range(n_columns):
             col_vertices = all_vertices_lists[col_idx]
-            centers = []
-            for poly_verts in col_vertices:
-                # Calculate centroid
-                center_x = np.mean(poly_verts[:, 0])
-                center_y = np.mean(poly_verts[:, 1])
-                centers.append([center_x, center_y])
-            all_centers.append(np.array(centers))
-
-        # Prepare connection line data for first column
-        current_centers = all_centers[0]
-        conn_x0 = []
-        conn_y0 = []
-        conn_x1 = []
-        conn_y1 = []
-        conn_vals = []
-
-        for conn_idx in range(n_connections):
-            i, j = connections[conn_idx]
-            conn_x0.append(current_centers[i, 0])
-            conn_y0.append(current_centers[i, 1])
-            conn_x1.append(current_centers[j, 0])
-            conn_y1.append(current_centers[j, 1])
-            # Use forward value (not the mean) for display
-            if conn_idx in bidirectional_info:
-                conn_vals.append(bidirectional_info[conn_idx]['forward_value'][0])
-            else:
-                conn_vals.append(connection_values[conn_idx, 0])
+            all_centers.append(_calculate_polygon_centers(col_vertices))
 
     # Start with the first column (or only column)
     current_values = values[:, 0]
 
-    # Separate NaN/Inf from out-of-range values
-    finite_mask = np.isfinite(current_values)
-    nan_inf_mask = ~finite_mask
+    # Categorize polygons based on their values
+    _, nan_inf_mask, below_min_mask, above_max_mask, in_range_mask = \
+        _categorize_polygons(current_values, vmin, vmax)
 
-    # For finite values, determine which are in range
-    below_min_mask = np.zeros(n_polygons, dtype=bool)
-    above_max_mask = np.zeros(n_polygons, dtype=bool)
-    in_range_mask = np.zeros(n_polygons, dtype=bool)
-
-    finite_indices = np.where(finite_mask)[0]
-    for idx in finite_indices:
-        val = current_values[idx]
-        if val < vmin:
-            below_min_mask[idx] = True
-        elif val > vmax:
-            above_max_mask[idx] = True
-        else:
-            in_range_mask[idx] = True
-
-    # Calculate plot range with margins to encompass all possible polygon sets
-    # Exclude NaN/Inf polygons from range calculation if they won't be rendered
-    all_x_coords = []
-    all_y_coords = []
-
-    for col_idx in range(n_columns):
-        col_vertices = all_vertices_lists[col_idx]
-        col_values = values[:, col_idx]
-
-        for poly_idx, poly_verts in enumerate(col_vertices):
-            # Include polygon in range calculation if:
-            # - It has finite value, OR
-            # - It has NaN/Inf but will be rendered (nan_inf_color is not None)
-            if np.isfinite(col_values[poly_idx]) or nan_inf_color is not None:
-                all_x_coords.append(poly_verts[:, 0])
-                all_y_coords.append(poly_verts[:, 1])
-
-    if len(all_x_coords) == 0:
-        # Fallback if no polygons to display
-        all_x = np.array([0, 1])
-        all_y = np.array([0, 1])
-    else:
-        all_x = np.concatenate(all_x_coords)
-        all_y = np.concatenate(all_y_coords)
-
-    x_range = all_x.max() - all_x.min()
-    y_range = all_y.max() - all_y.min()
-    x_margin = x_range * 0.02 if x_range > 0 else 1
-    y_margin = y_range * 0.02 if y_range > 0 else 1
+    # Calculate plot range
+    x_range_tuple, y_range_tuple = _calculate_plot_range(all_vertices_lists, values, nan_inf_color)
 
     # Create figure with equal axis scaling for map visualization
     p = figure(
@@ -848,43 +1526,19 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
         y_axis_label='Y',
         match_aspect=True,
         aspect_scale=1,
-        x_range=(all_x.min() - x_margin, all_x.max() + x_margin),
-        y_range=(all_y.min() - y_margin, all_y.max() + y_margin),
+        x_range=x_range_tuple,
+        y_range=y_range_tuple,
         tools='pan,wheel_zoom,box_zoom,reset,save'
     )
 
-    # Create base data dictionary with all columns stored
-    # Create unified "name" field for polygons
-    polygon_names = []
-    for i in range(n_polygons):
-        if labels is not None and labels[i]:
-            polygon_names.append(labels[i])
-        else:
-            polygon_names.append(str(i))
+    # Create polygon names
+    polygon_names = _create_polygon_names(n_polygons, labels)
 
-    base_data = {
-        'xs': xs,
-        'ys': ys,
-        'face': face_ids,
-        'label': label_list,
-        'name': polygon_names,
-    }
-
-    # Add all value columns to the data
-    for col_idx in range(n_columns):
-        base_data[f'value_{col_idx}'] = values[:, col_idx].tolist()
-
-    # Add all vertices columns to the data (for dynamic polygon updates)
-    for col_idx in range(n_columns):
-        col_vertices = all_vertices_lists[col_idx]
-        xs_col = [v[:, 0].tolist() for v in col_vertices]
-        ys_col = [v[:, 1].tolist() for v in col_vertices]
-        base_data[f'xs_{col_idx}'] = xs_col
-        base_data[f'ys_{col_idx}'] = ys_col
-
-    # Set the active value column
-    base_data['value'] = current_values.tolist()
-    base_data['in_range'] = in_range_mask.tolist()
+    # Prepare base data dictionary
+    base_data = _prepare_base_data(
+        xs, ys, face_ids, label_list, polygon_names, values,
+        all_vertices_lists, current_values, in_range_mask
+    )
 
     # Create ColumnDataSource for dynamic updates
     source = ColumnDataSource(data=base_data)
@@ -894,423 +1548,94 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
 
     # 1. In-range polygons (with color mapping)
     in_range_indices = np.where(in_range_mask)[0]
-    if len(in_range_indices) > 0:
-        in_range_data = {
-            'xs': [xs[i] for i in in_range_indices],
-            'ys': [ys[i] for i in in_range_indices],
-            'face': [face_ids[i] for i in in_range_indices],
-            'value': [current_values[i] for i in in_range_indices],
-            'label': [label_list[i] for i in in_range_indices],
-            'name': [polygon_names[i] for i in in_range_indices],
-        }
-        source_in_range = ColumnDataSource(data=in_range_data)
-        patches_in_range = p.patches(
-            'xs', 'ys',
-            source=source_in_range,
-            fill_color={'field': 'value', 'transform': mapper},
-            line_color=line_color,
-            line_width=line_width,
-        )
+    source_in_range = _create_patch_source(
+        xs, ys, face_ids, current_values, label_list, polygon_names, in_range_indices
+    )
+    if source_in_range is not None:
+        patches_in_range = _add_patches_to_plot(p, source_in_range, mapper, line_color, line_width)
         all_patches.append(patches_in_range)
-    else:
-        source_in_range = None
 
     # 2. Below minimum (use color_below_min or palette min color)
     below_min_indices = np.where(below_min_mask)[0]
-    if len(below_min_indices) > 0:
-        below_min_data = {
-            'xs': [xs[i] for i in below_min_indices],
-            'ys': [ys[i] for i in below_min_indices],
-            'face': [face_ids[i] for i in below_min_indices],
-            'value': [current_values[i] for i in below_min_indices],
-            'label': [label_list[i] for i in below_min_indices],
-            'name': [polygon_names[i] for i in below_min_indices],
-        }
-        source_below_min = ColumnDataSource(data=below_min_data)
+    source_below_min = _create_patch_source(
+        xs, ys, face_ids, current_values, label_list, polygon_names, below_min_indices
+    )
+    if source_below_min is not None:
         if color_below_min is None:
-            # Use palette color for vmin
-            patches_below_min = p.patches(
-                'xs', 'ys',
-                source=source_below_min,
-                fill_color={'field': 'value', 'transform': mapper},
-                line_color=line_color,
-                line_width=line_width,
+            patches_below_min = _add_patches_to_plot(
+                p, source_below_min, mapper, line_color, line_width
             )
         else:
-            patches_below_min = p.patches(
-                'xs', 'ys',
-                source=source_below_min,
-                fill_color=color_below_min,
-                line_color=line_color,
-                line_width=line_width,
+            patches_below_min = _add_patches_to_plot(
+                p, source_below_min, mapper, line_color, line_width, fill_color=color_below_min
             )
         all_patches.append(patches_below_min)
-    else:
-        source_below_min = None
 
     # 3. Above maximum (use color_above_max or palette max color)
     above_max_indices = np.where(above_max_mask)[0]
-    if len(above_max_indices) > 0:
-        above_max_data = {
-            'xs': [xs[i] for i in above_max_indices],
-            'ys': [ys[i] for i in above_max_indices],
-            'face': [face_ids[i] for i in above_max_indices],
-            'value': [current_values[i] for i in above_max_indices],
-            'label': [label_list[i] for i in above_max_indices],
-            'name': [polygon_names[i] for i in above_max_indices],
-        }
-        source_above_max = ColumnDataSource(data=above_max_data)
+    source_above_max = _create_patch_source(
+        xs, ys, face_ids, current_values, label_list, polygon_names, above_max_indices
+    )
+    if source_above_max is not None:
         if color_above_max is None:
-            # Use palette color for vmax
-            patches_above_max = p.patches(
-                'xs', 'ys',
-                source=source_above_max,
-                fill_color={'field': 'value', 'transform': mapper},
-                line_color=line_color,
-                line_width=line_width,
+            patches_above_max = _add_patches_to_plot(
+                p, source_above_max, mapper, line_color, line_width
             )
         else:
-            patches_above_max = p.patches(
-                'xs', 'ys',
-                source=source_above_max,
-                fill_color=color_above_max,
-                line_color=line_color,
-                line_width=line_width,
+            patches_above_max = _add_patches_to_plot(
+                p, source_above_max, mapper, line_color, line_width, fill_color=color_above_max
             )
         all_patches.append(patches_above_max)
-    else:
-        source_above_max = None
 
     # 4. NaN/Inf polygons (show with specified color or hide)
+    source_nan_inf = None
     if nan_inf_color is not None:
         nan_inf_indices = np.where(nan_inf_mask)[0]
-        if len(nan_inf_indices) > 0:
-            nan_inf_data = {
-                'xs': [xs[i] for i in nan_inf_indices],
-                'ys': [ys[i] for i in nan_inf_indices],
-                'face': [face_ids[i] for i in nan_inf_indices],
-                'value': [current_values[i] for i in nan_inf_indices],
-                'label': [label_list[i] for i in nan_inf_indices],
-                'name': [polygon_names[i] for i in nan_inf_indices],
-            }
-            source_nan_inf = ColumnDataSource(data=nan_inf_data)
-            patches_nan_inf = p.patches(
-                'xs', 'ys',
-                source=source_nan_inf,
-                fill_color=nan_inf_color,
-                line_color=line_color,
-                line_width=line_width,
+        source_nan_inf = _create_patch_source(
+            xs, ys, face_ids, current_values, label_list, polygon_names, nan_inf_indices
+        )
+        if source_nan_inf is not None:
+            patches_nan_inf = _add_patches_to_plot(
+                p, source_nan_inf, mapper, line_color, line_width, fill_color=nan_inf_color
             )
             all_patches.append(patches_nan_inf)
-        else:
-            source_nan_inf = None
-    else:
-        source_nan_inf = None
 
     # Add connection lines if provided
     connection_renderers = []
     if has_connections:
-        # Prepare labels for connection hover (From/To)
-        conn_from_labels = []
-        conn_to_labels = []
-        conn_names = []  # Unified name field
-        conn_is_bidirectional = []
-        conn_forward_vals = []
-        conn_reverse_vals = []
+        # Create connection color mapper if independent scale requested
+        connection_mapper, conn_log_scale = _create_connection_color_mapper(
+            connection_palette, connection_log_scale, connection_color_limits,
+            connection_values, bidirectional_info, n_connections,
+            color_palette, log_scale
+        )
 
-        for conn_idx in range(n_connections):
-            i, j = connections[conn_idx]
-            # Use label if available, otherwise use polygon number
-            if labels is not None and labels[i] and labels[j]:
-                from_label = labels[i]
-                to_label = labels[j]
-                conn_name = f"{from_label}→{to_label}"
-            else:
-                from_label = str(i)
-                to_label = str(j)
-                conn_name = f"{i}→{j}"
-            conn_from_labels.append(from_label)
-            conn_to_labels.append(to_label)
-            conn_names.append(conn_name)
+        if connection_mapper is None:
+            connection_mapper = mapper
+            conn_log_scale = log_scale
 
-            # Add bidirectional information
-            if conn_idx in bidirectional_info:
-                info = bidirectional_info[conn_idx]
-                conn_is_bidirectional.append(info['is_bidirectional'])
-                conn_forward_vals.append(info['forward_value'][0])  # First column for initial display
-                if info['is_bidirectional']:
-                    conn_reverse_vals.append(info['reverse_value'][0])
-                else:
-                    conn_reverse_vals.append(None)
-            else:
-                conn_is_bidirectional.append(False)
-                conn_forward_vals.append(conn_vals[conn_idx])
-                conn_reverse_vals.append(None)
+        conn_use_log_for_gradient = conn_log_scale
 
-        # Create data source for connections
-        conn_data = {
-            'x0': conn_x0,
-            'y0': conn_y0,
-            'x1': conn_x1,
-            'y1': conn_y1,
-            'value': conn_vals,
-            'name': conn_names,  # Unified name field
-            'conn_id': list(range(n_connections)),
-            'from_label': conn_from_labels,
-            'to_label': conn_to_labels,
-            'is_bidirectional': conn_is_bidirectional,
-            'forward_value': conn_forward_vals,
-            'reverse_value': conn_reverse_vals,
-        }
+        # Determine which connections need gradients
+        connections_need_gradient = _determine_gradient_needs(
+            bidirectional_info,
+            n_connections,
+            n_columns
+        )
 
-        # Store all connection data for column switching
-        # Use forward values (not mean) for display
-        for col_idx in range(n_columns):
-            # Use forward value for display (not the combined mean)
-            val_col = []
-            forward_vals_col = []
-            reverse_vals_col = []
-            for conn_idx in range(n_connections):
-                if conn_idx in bidirectional_info:
-                    info = bidirectional_info[conn_idx]
-                    forward_val = info['forward_value'][col_idx]
-                    val_col.append(forward_val)  # Use forward value for display
-                    forward_vals_col.append(forward_val)
-                    if info['is_bidirectional']:
-                        reverse_vals_col.append(info['reverse_value'][col_idx])
-                    else:
-                        reverse_vals_col.append(None)
-                else:
-                    val = connection_values[conn_idx, col_idx]
-                    val_col.append(val)
-                    forward_vals_col.append(val)
-                    reverse_vals_col.append(None)
-
-            conn_data[f'value_{col_idx}'] = val_col
-            conn_data[f'forward_value_{col_idx}'] = forward_vals_col
-            conn_data[f'reverse_value_{col_idx}'] = reverse_vals_col
-
-            # Store centers for this column
-            centers = all_centers[col_idx]
-            x0_col = [centers[connections[i, 0], 0] for i in range(n_connections)]
-            y0_col = [centers[connections[i, 0], 1] for i in range(n_connections)]
-            x1_col = [centers[connections[i, 1], 0] for i in range(n_connections)]
-            y1_col = [centers[connections[i, 1], 1] for i in range(n_connections)]
-            conn_data[f'x0_{col_idx}'] = x0_col
-            conn_data[f'y0_{col_idx}'] = y0_col
-            conn_data[f'x1_{col_idx}'] = x1_col
-            conn_data[f'y1_{col_idx}'] = y1_col
+        # Prepare connection and gradient data
+        conn_data, gradient_data = _prepare_connection_data(
+            connections, connection_values, all_centers, labels,
+            bidirectional_info, connections_need_gradient,
+            conn_use_log_for_gradient, n_columns
+        )
 
         source_connections = ColumnDataSource(data=conn_data)
-
-        # Create separate color mapper for connections if parameters are provided
-        if connection_palette is not None or connection_log_scale is not None or connection_color_limits is not None:
-            # Determine connection palette
-            if connection_palette is not None:
-                if isinstance(connection_palette, str) and connection_palette in palette_map:
-                    conn_color_palette = palette_map[connection_palette]
-                elif isinstance(connection_palette, str):
-                    conn_color_palette = connection_palette
-                else:
-                    conn_color_palette = connection_palette
-            else:
-                # Use same palette as polygons
-                conn_color_palette = color_palette
-
-            # Determine connection log scale
-            conn_log_scale = connection_log_scale if connection_log_scale is not None else log_scale
-
-            # Calculate connection color scale limits
-            # Collect all values including both forward and reverse for bidirectional connections
-            all_conn_values = []
-            for conn_idx in range(n_connections):
-                if conn_idx in bidirectional_info:
-                    info = bidirectional_info[conn_idx]
-                    all_conn_values.extend(info['forward_value'])
-                    if info['is_bidirectional']:
-                        all_conn_values.extend(info['reverse_value'])
-                else:
-                    all_conn_values.extend(connection_values[conn_idx, :])
-
-            all_conn_values = np.array(all_conn_values)
-            finite_conn_values = all_conn_values[np.isfinite(all_conn_values)]
-
-            if len(finite_conn_values) == 0:
-                conn_vmin = 0
-                conn_vmax = 1
-            else:
-                conn_limit_min = None
-                conn_limit_max = None
-                if connection_color_limits is not None:
-                    if not isinstance(connection_color_limits, (tuple, list)) or len(connection_color_limits) != 2:
-                        raise ValueError("connection_color_limits must be a tuple of (min, max)")
-                    conn_limit_min, conn_limit_max = connection_color_limits
-
-                if conn_limit_min is None:
-                    conn_vmin = np.min(finite_conn_values)
-                else:
-                    conn_vmin = conn_limit_min
-
-                if conn_limit_max is None:
-                    conn_vmax = np.max(finite_conn_values)
-                else:
-                    conn_vmax = conn_limit_max
-
-            # Handle log scale requirements for connections
-            if conn_log_scale:
-                if conn_vmin <= 0:
-                    positive_conn_values = finite_conn_values[finite_conn_values > 0]
-                    if len(positive_conn_values) == 0:
-                        raise ValueError("Cannot use connection log scale with all non-positive values")
-                    conn_vmin = np.min(positive_conn_values)
-                    print(f"Warning: Adjusting connection vmin to {conn_vmin} for log scale (was <= 0)")
-
-            # Create connection color mapper
-            if conn_log_scale:
-                connection_mapper = LogColorMapper(palette=conn_color_palette, low=conn_vmin, high=conn_vmax)
-            else:
-                connection_mapper = LinearColorMapper(palette=conn_color_palette, low=conn_vmin, high=conn_vmax)
-        else:
-            # Use the same mapper as polygons
-            connection_mapper = mapper
-
-        # Determine if we're using log scale for connections
-        conn_use_log_for_gradient = conn_log_scale if (connection_palette is not None or
-                                                        connection_log_scale is not None or
-                                                        connection_color_limits is not None) else log_scale
-
-        # Create gradient lines for bidirectional connections
-        # For bidirectional connections, create multiple segments with varying colors
-        n_gradient_segments = 10  # Number of segments for smooth gradient
-
-        # Determine which connections need gradients (must be consistent across all columns)
-        # A connection needs gradient segments if it's bidirectional AND has different values
-        # in ANY column
-        connections_need_gradient = np.zeros(n_connections, dtype=bool)
-        for conn_idx in range(n_connections):
-            if conn_idx in bidirectional_info:
-                info = bidirectional_info[conn_idx]
-                if info['is_bidirectional']:
-                    # Check if values differ significantly in any column
-                    for col_idx in range(n_columns):
-                        forward_val = info['forward_value'][col_idx]
-                        reverse_val = info['reverse_value'][col_idx]
-                        rel_diff = abs(forward_val - reverse_val) / max(abs(forward_val), abs(reverse_val), 1e-10)
-                        if rel_diff > 0.01:  # More than 1% difference
-                            connections_need_gradient[conn_idx] = True
-                            break
-
-        # Function to create gradient data for a given column
-        # IMPORTANT: All columns must produce the same structure (same number of segments)
-        def create_gradient_for_column(col_idx):
-            grad_x0 = []
-            grad_y0 = []
-            grad_x1 = []
-            grad_y1 = []
-            grad_values = []
-            grad_conn_id = []
-            grad_from_label = []
-            grad_to_label = []
-            grad_names = []
-            grad_is_bidirectional = []
-
-            # Get centers for this column
-            centers = all_centers[col_idx]
-
-            for conn_idx in range(n_connections):
-                i, j = connections[conn_idx]
-                x0, y0 = centers[i, 0], centers[i, 1]
-                x1, y1 = centers[j, 0], centers[j, 1]
-
-                is_bidir = conn_is_bidirectional[conn_idx]
-                conn_name = conn_names[conn_idx]
-
-                # Use pre-computed mask to ensure all columns have same structure
-                if connections_need_gradient[conn_idx]:
-                    # Create gradient segments
-                    info = bidirectional_info[conn_idx]
-                    forward_val = info['forward_value'][col_idx]
-                    reverse_val = info['reverse_value'][col_idx]
-
-                    for seg_idx in range(n_gradient_segments):
-                        t0 = seg_idx / n_gradient_segments
-                        t1 = (seg_idx + 1) / n_gradient_segments
-                        t_val = seg_idx / (n_gradient_segments - 1)
-
-                        # Interpolate position
-                        seg_x0 = x0 + t0 * (x1 - x0)
-                        seg_y0 = y0 + t0 * (y1 - y0)
-                        seg_x1 = x0 + t1 * (x1 - x0)
-                        seg_y1 = y0 + t1 * (y1 - y0)
-
-                        # Interpolate value using appropriate scale
-                        if conn_use_log_for_gradient:
-                            # Log-space interpolation (geometric)
-                            if forward_val > 0 and reverse_val > 0:
-                                log_forward = np.log(forward_val)
-                                log_reverse = np.log(reverse_val)
-                                log_val = log_forward + t_val * (log_reverse - log_forward)
-                                seg_val = np.exp(log_val)
-                            elif forward_val > 0:
-                                seg_val = forward_val
-                            elif reverse_val > 0:
-                                seg_val = reverse_val
-                            else:
-                                seg_val = 0
-                        else:
-                            # Linear interpolation
-                            seg_val = forward_val + t_val * (reverse_val - forward_val)
-
-                        grad_x0.append(seg_x0)
-                        grad_y0.append(seg_y0)
-                        grad_x1.append(seg_x1)
-                        grad_y1.append(seg_y1)
-                        grad_values.append(seg_val)
-                        grad_conn_id.append(conn_idx)
-                        grad_from_label.append(conn_from_labels[conn_idx])
-                        grad_to_label.append(conn_to_labels[conn_idx])
-                        grad_names.append(conn_name)
-                        grad_is_bidirectional.append(True)
-                else:
-                    # Single segment for unidirectional or similar bidirectional values
-                    grad_x0.append(x0)
-                    grad_y0.append(y0)
-                    grad_x1.append(x1)
-                    grad_y1.append(y1)
-                    grad_values.append(connection_values[conn_idx, col_idx])
-                    grad_conn_id.append(conn_idx)
-                    grad_from_label.append(conn_from_labels[conn_idx])
-                    grad_to_label.append(conn_to_labels[conn_idx])
-                    grad_names.append(conn_name)
-                    grad_is_bidirectional.append(is_bidir)
-
-            return {
-                'x0': grad_x0,
-                'y0': grad_y0,
-                'x1': grad_x1,
-                'y1': grad_y1,
-                'value': grad_values,
-                'name': grad_names,
-                'conn_id': grad_conn_id,
-                'from_label': grad_from_label,
-                'to_label': grad_to_label,
-                'is_bidirectional': grad_is_bidirectional,
-            }
-
-        # Create gradient data for first column
-        gradient_data = create_gradient_for_column(0)
-
-        # Store gradient data for all columns (for column switching)
-        for col_idx in range(n_columns):
-            col_grad_data = create_gradient_for_column(col_idx)
-            for key, val in col_grad_data.items():
-                gradient_data[f'{key}_{col_idx}'] = val
-
         source_gradient = ColumnDataSource(data=gradient_data)
 
         # Draw border lines (white/light) first for visibility
         if connection_border_color is not None:
-            border_width = connection_width + 2  # Border slightly wider
+            border_width = connection_width + 2
             conn_border = p.segment(
                 x0='x0', y0='y0', x1='x1', y1='y1',
                 source=source_connections,
@@ -1398,285 +1723,37 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
     p.toolbar.logo = None
 
     # Create palette selector
-    palette_options = [
-        'Viridis', 'Turbo', 'Plasma', 'Inferno', 'Magma', 'Cividis',
-        'Greys', 'Blues', 'Greens', 'Reds', 'Oranges', 'Purples'
-    ]
-    # Add reversed versions
-    palette_options_with_reversed = []
-    for pal in palette_options:
-        palette_options_with_reversed.append(pal)
-        palette_options_with_reversed.append(pal + ' (reversed)')
-
-    palette_select = Select(
-        title="Color Palette:",
-        value=initial_palette,
-        options=palette_options_with_reversed,
-        width=200
-    )
-
-    # Create JavaScript callback to update palette
-    palette_callback = CustomJS(
-        args=dict(
-            mapper=mapper,
-            palette_select=palette_select,
-            palette_map={k: list(v) for k, v in palette_map.items() if not k.endswith('256')},
-        ),
-        code="""
-            const palette_name = palette_select.value;
-            let reversed = false;
-            let base_name = palette_name;
-
-            // Check if reversed
-            if (palette_name.endsWith(' (reversed)')) {
-                reversed = true;
-                base_name = palette_name.replace(' (reversed)', '');
-            }
-
-            // Get the palette
-            let palette = palette_map[base_name];
-
-            if (palette) {
-                // Reverse if needed
-                if (reversed) {
-                    palette = palette.slice().reverse();
-                }
-
-                // Update the mapper
-                mapper.palette = palette;
-            }
-        """
-    )
-
-    palette_select.js_on_change('value', palette_callback)
+    palette_select = _create_palette_selector(initial_palette, mapper)
 
     # If matrix values, add selector control
     if is_matrix and n_columns > 1:
-        # Create dropdown selector
-        select = Select(
-            title="Select Data Column:",
-            value=value_names[0],
-            options=list(value_names),
-            width=200
+        # Create column selector
+        select = _create_column_selector(
+            value_names, source, source_in_range, source_below_min, source_above_max,
+            source_nan_inf, source_connections if has_connections else None,
+            source_gradient if has_connections else None,
+            vmin, vmax, nan_inf_color, has_connections
         )
-
-        # Create JavaScript callback to update data when selection changes
-        callback = CustomJS(
-            args=dict(
-                source=source,
-                source_in=source_in_range,
-                source_below=source_below_min,
-                source_above=source_above_max,
-                source_nan=source_nan_inf,
-                source_conn=source_connections if has_connections else None,
-                source_grad=source_gradient if has_connections else None,
-                select=select,
-                value_names=value_names,
-                n_columns=n_columns,
-                vmin=vmin,
-                vmax=vmax,
-                nan_inf_color=nan_inf_color,
-                has_connections=has_connections,
-            ),
-            code="""
-                // Find which column was selected
-                const col_name = select.value;
-                const col_idx = value_names.indexOf(col_name);
-
-                // Get the data from the source
-                const data = source.data;
-                const n_polygons = data['xs_0'].length;  // Use stored vertices count
-
-                // Update the active value and vertices columns
-                const new_values = data['value_' + col_idx];
-                const new_xs = data['xs_' + col_idx];
-                const new_ys = data['ys_' + col_idx];
-
-                data['value'] = new_values;
-                data['xs'] = new_xs;
-                data['ys'] = new_ys;
-
-                // Categorize polygons
-                const in_range = new Array(n_polygons);
-                const below_min = new Array(n_polygons);
-                const above_max = new Array(n_polygons);
-                const nan_inf = new Array(n_polygons);
-
-                for (let i = 0; i < n_polygons; i++) {
-                    const val = new_values[i];
-                    if (!isFinite(val)) {
-                        nan_inf[i] = true;
-                        in_range[i] = false;
-                        below_min[i] = false;
-                        above_max[i] = false;
-                    } else if (val < vmin) {
-                        below_min[i] = true;
-                        in_range[i] = false;
-                        above_max[i] = false;
-                        nan_inf[i] = false;
-                    } else if (val > vmax) {
-                        above_max[i] = true;
-                        in_range[i] = false;
-                        below_min[i] = false;
-                        nan_inf[i] = false;
-                    } else {
-                        in_range[i] = true;
-                        below_min[i] = false;
-                        above_max[i] = false;
-                        nan_inf[i] = false;
-                    }
-                }
-
-                // Helper function to update a source
-                function updateSource(src, mask) {
-                    if (src === null) return;
-                    const src_data = src.data;
-                    const src_xs = [];
-                    const src_ys = [];
-                    const src_face = [];
-                    const src_value = [];
-                    const src_label = [];
-                    const src_name = [];
-
-                    for (let i = 0; i < n_polygons; i++) {
-                        if (mask[i]) {
-                            src_xs.push(new_xs[i]);
-                            src_ys.push(new_ys[i]);
-                            src_face.push(data['face'][i]);
-                            src_value.push(new_values[i]);
-                            src_label.push(data['label'][i]);
-                            src_name.push(data['name'][i]);
-                        }
-                    }
-
-                    src_data['xs'] = src_xs;
-                    src_data['ys'] = src_ys;
-                    src_data['face'] = src_face;
-                    src_data['value'] = src_value;
-                    src_data['label'] = src_label;
-                    src_data['name'] = src_name;
-                    src.change.emit();
-                }
-
-                // Update all sources
-                updateSource(source_in, in_range);
-                updateSource(source_below, below_min);
-                updateSource(source_above, above_max);
-                if (nan_inf_color !== null) {
-                    updateSource(source_nan, nan_inf);
-                }
-
-                // Update connections if present
-                if (has_connections && source_conn !== null) {
-                    const conn_data = source_conn.data;
-                    conn_data['value'] = conn_data['value_' + col_idx];
-                    conn_data['forward_value'] = conn_data['forward_value_' + col_idx];
-                    conn_data['reverse_value'] = conn_data['reverse_value_' + col_idx];
-                    conn_data['x0'] = conn_data['x0_' + col_idx];
-                    conn_data['y0'] = conn_data['y0_' + col_idx];
-                    conn_data['x1'] = conn_data['x1_' + col_idx];
-                    conn_data['y1'] = conn_data['y1_' + col_idx];
-                    source_conn.change.emit();
-                }
-
-                // Update gradient segments if present
-                if (has_connections && source_grad !== null) {
-                    const grad_data = source_grad.data;
-                    grad_data['x0'] = grad_data['x0_' + col_idx];
-                    grad_data['y0'] = grad_data['y0_' + col_idx];
-                    grad_data['x1'] = grad_data['x1_' + col_idx];
-                    grad_data['y1'] = grad_data['y1_' + col_idx];
-                    grad_data['value'] = grad_data['value_' + col_idx];
-                    grad_data['name'] = grad_data['name_' + col_idx];
-                    grad_data['from_label'] = grad_data['from_label_' + col_idx];
-                    grad_data['to_label'] = grad_data['to_label_' + col_idx];
-                    grad_data['is_bidirectional'] = grad_data['is_bidirectional_' + col_idx];
-                    source_grad.change.emit();
-                }
-
-                source.change.emit();
-            """
-        )
-
-        select.js_on_change('value', callback)
 
         # Add connection width slider if connections are present
         if has_connections:
-            conn_width_slider = Slider(
-                start=0.5,
-                end=10.0,
-                value=connection_width,
-                step=0.5,
-                title="Connection Line Width:",
-                width=200
+            conn_width_slider = _create_connection_width_slider(
+                connection_width, connection_renderers, connection_border_color
             )
-
-            # JavaScript callback to update connection line widths
-            conn_width_callback = CustomJS(
-                args=dict(
-                    slider=conn_width_slider,
-                    renderers=connection_renderers,
-                    border_offset=2 if connection_border_color is not None else 0
-                ),
-                code="""
-                    const width = slider.value;
-                    // Update each renderer
-                    for (let i = 0; i < renderers.length; i++) {
-                        if (i === 0 && border_offset > 0) {
-                            // First renderer is border (if present)
-                            renderers[i].glyph.line_width = width + border_offset;
-                        } else {
-                            // Main line renderer
-                            renderers[i].glyph.line_width = width;
-                        }
-                    }
-                """
-            )
-            conn_width_slider.js_on_change('value', conn_width_callback)
-
-            # Create layout with all selectors and plot
             controls = row(select, palette_select, conn_width_slider)
             panel = column(controls, p)
         else:
-            # Create layout with selectors and plot
             controls = row(select, palette_select)
             panel = column(controls, p)
     else:
         # No matrix values
         if has_connections:
-            # Add connection width slider
-            conn_width_slider = Slider(
-                start=0.5,
-                end=10.0,
-                value=connection_width,
-                step=0.5,
-                title="Connection Line Width:",
-                width=200
+            conn_width_slider = _create_connection_width_slider(
+                connection_width, connection_renderers, connection_border_color
             )
-
-            conn_width_callback = CustomJS(
-                args=dict(
-                    slider=conn_width_slider,
-                    renderers=connection_renderers,
-                    border_offset=2 if connection_border_color is not None else 0
-                ),
-                code="""
-                    const width = slider.value;
-                    for (let i = 0; i < renderers.length; i++) {
-                        if (i === 0 && border_offset > 0) {
-                            renderers[i].glyph.line_width = width + border_offset;
-                        } else {
-                            renderers[i].glyph.line_width = width;
-                        }
-                    }
-                """
-            )
-            conn_width_slider.js_on_change('value', conn_width_callback)
-
             controls = row(palette_select, conn_width_slider)
             panel = column(controls, p)
         else:
-            # Return as a panel with palette selector only
             panel = column(palette_select, p)
 
     return panel

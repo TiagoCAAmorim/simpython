@@ -238,7 +238,7 @@ class GridCoordHandler:
                     label = f'{i}'
                 if len(face.shape) == 3:
                     face = face[0]
-                plot_face(ax, face, x, y, x_label, y_label, label, invert_yaxis=(y_label=='Z'))
+                plot_face(ax, face, x, y, x_label, y_label, label, invert_yaxis= y_label=='Z')
 
         for spine in axes[-1].spines.values():
             spine.set_visible(False)
