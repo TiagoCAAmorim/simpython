@@ -78,7 +78,27 @@ def _infer_polygon_count(vertices):
         raise ValueError("vertices must be an array or list")
 
 
-def _normalize_values(values, n_polygons_inferred=None):
+def _count_polygon_sets(vertices):
+    """Count the number of polygon sets in vertices structure."""
+    if isinstance(vertices, (list, tuple)) and len(vertices) > 0:
+        first_elem = vertices[0]
+        if isinstance(first_elem, (list, tuple)):
+            if len(first_elem) > 0:
+                second_elem = first_elem[0]
+                if isinstance(second_elem, (list, tuple, np.ndarray)):
+                    second_elem_arr = np.asarray(second_elem)
+                    if second_elem_arr.ndim == 2 and second_elem_arr.shape[1] == 2:
+                        # Multi-set: vertices is a list of polygon sets
+                        return len(vertices)
+        elif isinstance(first_elem, np.ndarray):
+            if first_elem.ndim == 3:
+                # Multi-set: vertices is a list of arrays of polygons
+                return len(vertices)
+    # Single set
+    return 1
+
+
+def _normalize_values(values, n_polygons_inferred=None, n_sets_inferred=None):
     """
     Normalize values to 2D array format.
 
@@ -94,7 +114,9 @@ def _normalize_values(values, n_polygons_inferred=None):
     if values is None:
         if n_polygons_inferred is None:
             raise ValueError("n_polygons_inferred required when values is None")
-        values = np.zeros(n_polygons_inferred)
+        # Create a matrix with zeros, one column per polygon set
+        n_columns = n_sets_inferred if n_sets_inferred is not None else 1
+        values = np.zeros((n_polygons_inferred, n_columns))
 
     values = np.asarray(values)
 
@@ -242,8 +264,11 @@ def _normalize_color_limits(color_limits, values, log_scale):
         if vmin <= 0:
             positive_values = finite_values[finite_values > 0]
             if len(positive_values) == 0:
-                raise ValueError("Cannot use log scale with all non-positive values")
-            vmin = np.min(positive_values)
+                # raise ValueError("Cannot use log scale with all non-positive values")
+                vmin = 0.0  # Default to 1.0 if no positive values
+                vmax = 1.0
+            else:
+                vmin = np.min(positive_values)
             print(f"Warning: Adjusting vmin to {vmin} for log scale (was <= 0)")
 
     return vmin, vmax
@@ -718,11 +743,19 @@ def _prepare_connection_data(connections, connection_values, all_centers, labels
         if labels is not None and labels[i] and labels[j]:
             from_label = labels[i]
             to_label = labels[j]
-            conn_name = f"{from_label}→{to_label}"
         else:
             from_label = str(i)
             to_label = str(j)
-            conn_name = f"{i}→{j}"
+
+        # Check if bidirectional for arrow selection
+        is_bidir = (conn_idx in bidirectional_info and \
+                    bidirectional_info[conn_idx]['is_bidirectional'])
+        arrow = "↔" if is_bidir else "→"
+
+        if labels is not None and labels[i] and labels[j]:
+            conn_name = f"{from_label}{arrow}{to_label}"
+        else:
+            conn_name = f"{i}{arrow}{j}"
 
         conn_from_labels.append(from_label)
         conn_to_labels.append(to_label)
@@ -1410,14 +1443,16 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
     ... )
     >>> show(panel)  # Two colorbars shown when connection scale is independent
     """
-    # Handle values=None case by inferring polygon count from vertices
+    # Handle values=None case by inferring polygon count and number of sets from vertices
     if values is None:
         n_polygons_inferred = _infer_polygon_count(vertices)
+        n_sets_inferred = _count_polygon_sets(vertices)
     else:
         n_polygons_inferred = None
+        n_sets_inferred = None
 
     # Normalize values to 2D array
-    values, n_polygons, n_columns = _normalize_values(values, n_polygons_inferred)
+    values, n_polygons, n_columns = _normalize_values(values, n_polygons_inferred, n_sets_inferred)
     is_matrix = n_columns > 1
 
     # Parse vertices into list of polygon sets
@@ -1782,7 +1817,7 @@ if __name__ == "__main__":
     connections_ = np.array([[0, 1], [1, 2], [2, 3], [3, 4],
                              [4, 5], [1, 0], [1, 4], [4, 1]])
     connection_values_ = np.array([[1000, 20], [25, 15], [50, 60], [70, 80],
-                                   [90, 100], [1000, 25], [40, 0.55], [0.55, 0.55]])
+                                   [90, 100], [1000, 20], [40, 0.55], [0.55, 0.55]])
 
     panel_limits = plot_polygon_grid(
         vertices=[vertices1, vertices2],
@@ -1791,14 +1826,14 @@ if __name__ == "__main__":
         connections=connections_,
         connection_values=connection_values_,
         connection_width=6.0,
-        # connection_border_color='black',
         palette='Turbo',
         connection_log_scale=True,
-        color_limits=(None, 100),
+        log_scale=True,
+        # color_limits=(0.1, 1000),
         out_of_range_colors=('blue', 'red'),
         nan_inf_color=None,
         colorbar_label='Cells',
-        connection_colorbar_label='Connection',
+        # connection_colorbar_label='Connection',
         title='Map Example'
     )
     show(panel_limits)
