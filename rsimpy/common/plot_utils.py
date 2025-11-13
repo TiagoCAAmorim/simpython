@@ -1243,7 +1243,8 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
 
     Parameters
     ----------
-    vertices : array-like, shape (n_polygons, n_vertices, 2), (n_sets, n_polygons, n_vertices, 2), or list
+    vertices : array-like, shape (n_polygons, n_vertices, 2),
+        (n_sets, n_polygons, n_vertices, 2), or list
         Coordinates of polygon vertices. Each polygon can have any number of vertices
         (minimum 3), and each vertex has (x, y) coordinates.
 
@@ -1622,35 +1623,49 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
 
     # 2. Below minimum (use color_below_min or palette min color)
     below_min_indices = np.where(below_min_mask)[0]
-    source_below_min = _create_patch_source(
-        xs, ys, face_ids, current_values, label_list, polygon_names, below_min_indices
-    )
-    if source_below_min is not None:
-        if color_below_min is None:
-            patches_below_min = _add_patches_to_plot(
-                p, source_below_min, mapper, line_color, line_width
-            )
-        else:
-            patches_below_min = _add_patches_to_plot(
-                p, source_below_min, mapper, line_color, line_width, fill_color=color_below_min
-            )
-        all_patches.append(patches_below_min)
+    # Always create source even if empty, for dynamic column switching
+    if len(below_min_indices) == 0:
+        source_below_min = ColumnDataSource(data={
+            'xs': [], 'ys': [], 'face': [], 'value': [], 'label': [], 'name': []
+        })
+    else:
+        source_below_min = _create_patch_source(
+            xs, ys, face_ids, current_values, label_list, polygon_names, below_min_indices
+        )
+
+    # Always add patches renderer, even if source starts empty
+    if color_below_min is None:
+        patches_below_min = _add_patches_to_plot(
+            p, source_below_min, mapper, line_color, line_width
+        )
+    else:
+        patches_below_min = _add_patches_to_plot(
+            p, source_below_min, mapper, line_color, line_width, fill_color=color_below_min
+        )
+    all_patches.append(patches_below_min)
 
     # 3. Above maximum (use color_above_max or palette max color)
     above_max_indices = np.where(above_max_mask)[0]
-    source_above_max = _create_patch_source(
-        xs, ys, face_ids, current_values, label_list, polygon_names, above_max_indices
-    )
-    if source_above_max is not None:
-        if color_above_max is None:
-            patches_above_max = _add_patches_to_plot(
-                p, source_above_max, mapper, line_color, line_width
-            )
-        else:
-            patches_above_max = _add_patches_to_plot(
-                p, source_above_max, mapper, line_color, line_width, fill_color=color_above_max
-            )
-        all_patches.append(patches_above_max)
+    # Always create source even if empty, for dynamic column switching
+    if len(above_max_indices) == 0:
+        source_above_max = ColumnDataSource(data={
+            'xs': [], 'ys': [], 'face': [], 'value': [], 'label': [], 'name': []
+        })
+    else:
+        source_above_max = _create_patch_source(
+            xs, ys, face_ids, current_values, label_list, polygon_names, above_max_indices
+        )
+
+    # Always add patches renderer, even if source starts empty
+    if color_above_max is None:
+        patches_above_max = _add_patches_to_plot(
+            p, source_above_max, mapper, line_color, line_width
+        )
+    else:
+        patches_above_max = _add_patches_to_plot(
+            p, source_above_max, mapper, line_color, line_width, fill_color=color_above_max
+        )
+    all_patches.append(patches_above_max)
 
     # 4. NaN/Inf polygons (show with specified color or hide)
     source_nan_inf = None
@@ -1846,7 +1861,7 @@ def main():
     vertices = vertices1
     # vertices = [vertices1, vertices2]
 
-    values_ = np.array([[5, 15, 25, np.nan, 45, 55],[15, 16, 27, 38, 49, 500]]).T
+    values_ = np.array([[5, 15, 25, np.nan, 450, 55],[15, 16, 27, 38, 49, 500]]).T
     labels_ = np.array(['V=5', 'V=15', 'V=25', 'NaN', 'V=45', 'V=55'])
     connections_ = np.array([[0, 1], [1, 2], [2, 3], [3, 4],
                              [4, 5], [1, 0], [1, 4], [4, 1]])
@@ -1875,7 +1890,7 @@ def main():
         connection_log_scale=True,
         log_scale=True,
         color_limits=(0.1, 100),
-        out_of_range_colors=('blue', 'red'),
+        # out_of_range_colors=('blue', 'red'),
         nan_inf_color=None,
         colorbar_label='Cells',
         # connection_colorbar_label='Connection',
