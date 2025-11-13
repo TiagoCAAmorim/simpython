@@ -2,6 +2,7 @@
 """
 Plotting utilities for rsimpy.
 """
+from matplotlib.pylab import f
 import numpy as np
 from bokeh.plotting import figure
 from bokeh.models import (
@@ -45,10 +46,12 @@ def _infer_polygon_count(vertices):
     if isinstance(vertices, np.ndarray):
         if vertices.ndim == 3:
             return vertices.shape[0]
+        elif vertices.ndim == 4:
+            return vertices.shape[1]
         else:
             raise ValueError(
-                "When values=None, vertices must be array with shape (n_polygons, n_vertices, 2) "
-                "or a list of polygon arrays"
+                "When values=None, vertices must be array with shape (n_polygons, n_vertices, 2), "
+                "(n_sets, n_polygons, n_vertices, 2), or a list of polygon arrays"
             )
     elif isinstance(vertices, (list, tuple)) and len(vertices) > 0:
         first_elem = vertices[0]
@@ -80,7 +83,11 @@ def _infer_polygon_count(vertices):
 
 def _count_polygon_sets(vertices):
     """Count the number of polygon sets in vertices structure."""
-    if isinstance(vertices, (list, tuple)) and len(vertices) > 0:
+    if isinstance(vertices, np.ndarray):
+        if vertices.ndim == 4:
+            # Multi-set: 4D array (n_sets, n_polygons, n_vertices, 2)
+            return vertices.shape[0]
+    elif isinstance(vertices, (list, tuple)) and len(vertices) > 0:
         first_elem = vertices[0]
         if isinstance(first_elem, (list, tuple)):
             if len(first_elem) > 0:
@@ -134,6 +141,12 @@ def _normalize_values(values, n_polygons_inferred=None, n_sets_inferred=None):
 
 def _is_multi_set_vertices(vertices):
     """Determine if vertices contains multiple polygon sets."""
+    if isinstance(vertices, np.ndarray):
+        if vertices.ndim == 4:
+            # 4D array: (n_sets, n_polygons, n_vertices, 2)
+            return True
+        return False
+
     if not isinstance(vertices, (list, tuple)) or len(vertices) == 0:
         return False
 
@@ -206,16 +219,29 @@ def _parse_vertices(vertices, n_polygons, n_columns):
 
     if vertices_are_multi_set:
         # Multiple polygon sets (one per column)
-        if len(vertices) != n_columns:
-            raise ValueError(
-                f"When providing multiple polygon sets, must have {n_columns} sets "
-                f"(one per data column), got {len(vertices)}"
-            )
-
-        all_vertices_lists = []
-        for col_idx, vert_set in enumerate(vertices):
-            vert_list = _parse_single_polygon_set(vert_set, n_polygons, col_idx)
-            all_vertices_lists.append(vert_list)
+        if isinstance(vertices, np.ndarray):
+            # 4D array: (n_sets, n_polygons, n_vertices, 2)
+            if vertices.shape[0] != n_columns:
+                raise ValueError(
+                    f"When providing multiple polygon sets, must have {n_columns} sets "
+                    f"(one per data column), got {vertices.shape[0]}"
+                )
+            all_vertices_lists = []
+            for col_idx in range(n_columns):
+                vert_set = vertices[col_idx]  # Extract 3D array for this column
+                vert_list = _parse_single_polygon_set(vert_set, n_polygons, col_idx)
+                all_vertices_lists.append(vert_list)
+        else:
+            # List of polygon sets
+            if len(vertices) != n_columns:
+                raise ValueError(
+                    f"When providing multiple polygon sets, must have {n_columns} sets "
+                    f"(one per data column), got {len(vertices)}"
+                )
+            all_vertices_lists = []
+            for col_idx, vert_set in enumerate(vertices):
+                vert_list = _parse_single_polygon_set(vert_set, n_polygons, col_idx)
+                all_vertices_lists.append(vert_list)
     else:
         # Single polygon set (used for all columns)
         vertices_list = _parse_single_polygon_set(vertices, n_polygons)
@@ -1217,19 +1243,23 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
 
     Parameters
     ----------
-    vertices : array-like, shape (n_polygons, n_vertices, 2) or list of such arrays
+    vertices : array-like, shape (n_polygons, n_vertices, 2), (n_sets, n_polygons, n_vertices, 2), or list
         Coordinates of polygon vertices. Each polygon can have any number of vertices
         (minimum 3), and each vertex has (x, y) coordinates.
 
         Single set (fixed polygons):
-            vertices[i] contains all vertices of polygon i.
-            vertices[i, j] contains the (x, y) coordinates of vertex j.
-            Can be a list of arrays with varying sizes for mixed polygons.
+            - 3D array: shape (n_polygons, n_vertices, 2)
+              vertices[i] contains all vertices of polygon i.
+              vertices[i, j] contains the (x, y) coordinates of vertex j.
+            - List: can contain arrays with varying sizes for mixed polygons.
 
         Multiple sets (dynamic polygons):
-            List of lists where vertices[col_idx] contains the polygon set for column col_idx.
-            When values is 2D with m columns, vertices must be a list of m polygon sets.
-            Each inner list must have the same number of polygons as rows in values.
+            - 4D array: shape (n_sets, n_polygons, n_vertices, 2)
+              When all polygons have the same number of vertices across all sets.
+              vertices[col_idx] is the 3D array for column col_idx.
+            - List of arrays: vertices[col_idx] contains the polygon set for column col_idx.
+              When values is 2D with m columns, vertices must have m polygon sets.
+              Each set must have the same number of polygons as rows in values.
     values : array-like, shape (n_polygons,) or (n_polygons, m), or None
         Values associated with each polygon. These determine the fill color.
         Can be a 1D array or 2D matrix. If 2D, a dropdown control will be
@@ -1793,11 +1823,12 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
 
     return panel
 
-if __name__ == "__main__":
-    from bokeh.plotting import show
+def main():
+    """Example usage of plot_polygon_grid function."""
+    from bokeh.plotting import show # pylint: disable=import-outside-toplevel
 
     vertices1 = [
-        np.array([[0.5, 0.5], [1, 0], [1, 1]]),
+        np.array([[0.5, 0.5], [1, 0], [1, 1], [0.5, 1]]),
         np.array([[1, 0], [2, 0], [2, 1], [1, 1]]),
         np.array([[0, 1], [1, 1], [1, 2], [0, 2]]),
         np.array([[1, 1], [2, 1], [2, 2], [1, 2]]),
@@ -1812,7 +1843,8 @@ if __name__ == "__main__":
         np.array([[2, 0], [3, 0], [3, 1], [2, 1]]),
         np.array([[2, 1], [3.2, 1], [3, 2], [2, 2.2]]),
     ]
-    vertices = [vertices1, vertices2]
+    vertices = vertices1
+    # vertices = [vertices1, vertices2]
 
     values_ = np.array([[5, 15, 25, np.nan, 45, 55],[15, 16, 27, 38, 49, 500]]).T
     labels_ = np.array(['V=5', 'V=15', 'V=25', 'NaN', 'V=45', 'V=55'])
@@ -1821,14 +1853,21 @@ if __name__ == "__main__":
     connection_values_ = np.array([[1000, 20], [25, 15], [50, 60], [70, 80],
                                    [90, 100], [1000, 20], [40, 0.55], [0.55, 0.55]])
 
-    print(f'Vertices: {len(vertices)} polygon sets.')
-    for i, v in enumerate(vertices):
-        print(f' Polygon set {i}: {len(v)} polygons.')
+    # print(f'Vertices: {len(vertices)} polygon sets.')
+    # for i, v in enumerate(vertices):
+    #     print(f' Polygon set {i}: {len(v)} polygons.')
+
+    print(f'Vertices array shape: {np.array(vertices).shape}')
+    print(f'Values shape: {values_.shape}')
+    print(f'Labels shape: {labels_.shape}')
+    print(f'Connections shape: {connections_.shape}')
+    print(f'Connection values shape: {connection_values_.shape}')
 
     panel_limits = plot_polygon_grid(
-        vertices=vertices,
+        vertices=np.array(vertices),
         values=values_,
         labels=labels_,
+        value_names=['Set 1', 'Set 2'],
         connections=connections_,
         connection_values=connection_values_,
         connection_width=6.0,
@@ -1843,3 +1882,6 @@ if __name__ == "__main__":
         title='Map Example'
     )
     show(panel_limits)
+
+if __name__ == "__main__":
+    main()
