@@ -1,14 +1,71 @@
 # simpython
-Python code and helpers for my PHD research
+Python code and helpers for reservoir simulation analysis.
 
-## rsimpy
-Reservoir simulation files handling.
+## rsimpy - Reservoir Simulation File Handler
 
-* **cmg**: collection of modules to read/write _CMG-style_ simulation files.
-    * **sr3reader.Sr3Reader**: class that reads SR3 results files.
-    * **gridfile.GridFile**: class that reads/writes ascii grid files with the *ALL* format.
-* **common**: other modules
-    * **template.TemplateProcessor**: class that generates text files based on a template.
+**rsimpy** is a comprehensive Python package for handling CMG (Computer Modelling Group) reservoir simulation files. It provides tools for reading results files (SR3), processing input files (DAT), manipulating grid properties, and generating parametric studies.
+
+### Key Features
+
+* **SR3Reader** - Read and analyze SR3 binary results files
+  - Support for IMEX, GEM, and STARS simulators
+  - Time-series data extraction for wells, groups, and grid properties
+  - Element hierarchy management
+  - Unit conversions and date/time handling
+  - Relative permeability tables and PVT data
+  - Interactive visualization with Bokeh
+  - Export to CSV, pandas, and xarray formats
+
+* **GridFile** - Read/write CMG ASCII grid files (ALL format)
+  - Support for single and dual-porosity models
+  - IJK coordinate transformations
+  - Sub-grid extraction
+  - Batch processing capabilities
+
+* **DatReader** - Parse and process DAT input files
+  - Keyword extraction and filtering
+  - Date/schedule manipulation
+  - Well definition extraction
+  - PVT table reading and interpolation
+
+* **TemplateProcessor** - Template-based file generation
+  - Parameter sampling with various distributions
+  - Uncertainty quantification workflows
+  - Ensemble generation for Monte Carlo simulations
+
+* **OutReader** - Extract data from OUT files
+  - Well index extraction
+  - Simulator type detection
+  - Connection information parsing
+
+### Documentation
+
+Comprehensive documentation is available in the `rsimpy/docs/` directory:
+
+- **[Main Index](rsimpy/docs/index.md)** - Overview and module listing
+- **[Getting Started](rsimpy/docs/getting_started.md)** - Installation and basic usage
+- **[Installation Guide](rsimpy/docs/installation.md)** - Detailed setup instructions
+- **[Quick Examples](rsimpy/docs/quick_examples.md)** - Practical code examples
+
+**Module Documentation:**
+- [SR3Reader](rsimpy/docs/sr3reader/overview.md) - SR3 results file handling
+- [GridFile](rsimpy/docs/gridfile.md) - Grid property file operations
+- [DatReader](rsimpy/docs/datreader/overview.md) - Input file processing
+- [OutReader](rsimpy/docs/outreader.md) - Output file parsing
+- [TemplateProcessor](rsimpy/docs/template.md) - Template-based generation
+
+### Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/TiagoCAAmorim/simpython.git
+cd simpython
+
+# Install in development mode
+pip install -e .
+```
+
+See [Installation Guide](rsimpy/docs/installation.md) for detailed instructions.
 
 ### Examples
 
