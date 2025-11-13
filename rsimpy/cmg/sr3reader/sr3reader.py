@@ -11,6 +11,7 @@ from .elements import ElementHandler
 from .data import DataHandler
 from .connections import ConnectionsHandler
 from .krel import KrelHandler
+from .plot import PlotHandler
 
 class Sr3Reader:
     """
@@ -67,6 +68,7 @@ class Sr3Reader:
         self.krel = KrelHandler(self.file, auto_read=auto_read)
         self.data = DataHandler(self)
         self.connections = ConnectionsHandler(self)
+        self.plot = PlotHandler(self)
 
         if usual_units and auto_read:
             self.set_usual_units()

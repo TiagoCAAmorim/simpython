@@ -149,7 +149,7 @@ class GridCoordHandler:
 
 # MARK: Getters
 
-    def get(self, cells, face=None):
+    def get(self, cells=None, face=4):
         """Get coordinates of nodes of a cell or cells.
 
         The cell numbering is as follows:
@@ -174,10 +174,12 @@ class GridCoordHandler:
         ----------
         cell : int, list of int or np.ndarray
             Cell number(s) (complete index).
+            If None, returns all nodes in the grid. Default is None.
         face : int, str or None
-            Face of the cell. If None, all nodes of the cell are returned.
+            Face of the cell.
             Valid values are "I-", "I+", "J-", "J+", "K-", "K+", or
             0, 1, 2, 3, 4, 5 for I-, I+, J-, J+, K-, K+, respectively.
+            Default is 4 (K-).
 
         Returns
         -------
@@ -190,6 +192,9 @@ class GridCoordHandler:
         if face not in NODE_NUM:
             raise ValueError(f"Invalid face: {face}.")
         edge_n = NODE_NUM[face]
+
+        if cells is None:
+            return self._nodes[self._blocks[:,edge_n]-1]
 
         if isinstance(cells, (int, np.integer)):
             cells = np.array([cells])
@@ -238,7 +243,7 @@ class GridCoordHandler:
                     label = f'{i}'
                 if len(face.shape) == 3:
                     face = face[0]
-                plot_face(ax, face, x, y, x_label, y_label, label, invert_yaxis=(y_label=='Z'))
+                plot_face(ax, face, x, y, x_label, y_label, label, invert_yaxis= y_label=='Z')
 
         for spine in axes[-1].spines.values():
             spine.set_visible(False)

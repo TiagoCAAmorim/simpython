@@ -166,3 +166,4 @@ temp/
 
 # _*/
 _no_sync/
+*.html
