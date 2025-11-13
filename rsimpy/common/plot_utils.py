@@ -1881,10 +1881,6 @@ def main():
     connection_values_ = np.array([[1000, 20], [25, 15], [50, 60], [70, 80],
                                    [90, 100], [1000, 20], [40, 0.55], [0.55, 0.55]])
 
-    # print(f'Vertices: {len(vertices)} polygon sets.')
-    # for i, v in enumerate(vertices):
-    #     print(f' Polygon set {i}: {len(v)} polygons.')
-
     print(f'Vertices array shape: {np.array(vertices).shape}')
     print(f'Values shape: {values_.shape}')
     print(f'Labels shape: {labels_.shape}')
