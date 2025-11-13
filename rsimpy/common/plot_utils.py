@@ -544,8 +544,6 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
 
         # Preprocess bidirectional connections
         # Detect pairs where both (i,j) and (j,i) exist
-        # Determine if we'll use log scale for connections (needed for mean calculation)
-        conn_use_log_scale = connection_log_scale if connection_log_scale is not None else log_scale
 
         # Create a dictionary to track bidirectional pairs
         connection_map = {}  # (min_idx, max_idx) -> [list of connection indices]
@@ -560,8 +558,6 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
             connection_map[key].append((conn_idx, i, j))
 
         # Process each unique connection pair
-        processed_connections = []
-        processed_values = []
         keep_connection = np.ones(n_connections, dtype=bool)
 
         for key, conn_list in connection_map.items():
@@ -579,7 +575,7 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
             elif len(conn_list) == 2:
                 # Bidirectional connection - merge into one
                 conn_idx_0, i0, j0 = conn_list[0]
-                conn_idx_1, i1, j1 = conn_list[1]
+                conn_idx_1, _, _ = conn_list[1]
 
                 # Use the first one as the primary (keep it), discard the second
                 kept_idx = conn_idx_0
@@ -1028,11 +1024,11 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
             if labels is not None and labels[i] and labels[j]:
                 from_label = labels[i]
                 to_label = labels[j]
-                conn_name = f"{from_label} → {to_label}"
+                conn_name = f"{from_label}→{to_label}"
             else:
                 from_label = str(i)
                 to_label = str(j)
-                conn_name = f"{i} → {j}"
+                conn_name = f"{i}→{j}"
             conn_from_labels.append(from_label)
             conn_to_labels.append(to_label)
             conn_names.append(conn_name)
@@ -1185,7 +1181,7 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
 
         # Create gradient lines for bidirectional connections
         # For bidirectional connections, create multiple segments with varying colors
-        n_gradient_segments = 20  # Number of segments for smooth gradient
+        n_gradient_segments = 10  # Number of segments for smooth gradient
 
         # Determine which connections need gradients (must be consistent across all columns)
         # A connection needs gradient segments if it's bidirectional AND has different values
@@ -1239,6 +1235,7 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
                     for seg_idx in range(n_gradient_segments):
                         t0 = seg_idx / n_gradient_segments
                         t1 = (seg_idx + 1) / n_gradient_segments
+                        t_val = seg_idx / (n_gradient_segments - 1)
 
                         # Interpolate position
                         seg_x0 = x0 + t0 * (x1 - x0)
@@ -1252,7 +1249,7 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
                             if forward_val > 0 and reverse_val > 0:
                                 log_forward = np.log(forward_val)
                                 log_reverse = np.log(reverse_val)
-                                log_val = log_forward + t0 * (log_reverse - log_forward)
+                                log_val = log_forward + t_val * (log_reverse - log_forward)
                                 seg_val = np.exp(log_val)
                             elif forward_val > 0:
                                 seg_val = forward_val
@@ -1262,7 +1259,7 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
                                 seg_val = 0
                         else:
                             # Linear interpolation
-                            seg_val = forward_val + t0 * (reverse_val - forward_val)
+                            seg_val = forward_val + t_val * (reverse_val - forward_val)
 
                         grad_x0.append(seg_x0)
                         grad_y0.append(seg_y0)
@@ -1306,8 +1303,8 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
         # Store gradient data for all columns (for column switching)
         for col_idx in range(n_columns):
             col_grad_data = create_gradient_for_column(col_idx)
-            for key in col_grad_data:
-                gradient_data[f'{key}_{col_idx}'] = col_grad_data[key]
+            for key, val in col_grad_data.items():
+                gradient_data[f'{key}_{col_idx}'] = val
 
         source_gradient = ColumnDataSource(data=gradient_data)
 
