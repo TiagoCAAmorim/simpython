@@ -1874,7 +1874,7 @@ def main():
         palette='Turbo',
         connection_log_scale=True,
         log_scale=True,
-        # color_limits=(0.1, 1000),
+        color_limits=(0.1, 100),
         out_of_range_colors=('blue', 'red'),
         nan_inf_color=None,
         colorbar_label='Cells',

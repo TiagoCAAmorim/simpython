@@ -16,7 +16,6 @@ panel = plot_handler.plot_map("matrix", "PRESSURE", days=100, layers=1)
 """
 
 import numpy as np
-from _no_sync.rsimpy.cmg.sr3reader import sr3
 from rsimpy.common import plot_utils, utils
 
 
@@ -125,7 +124,7 @@ class PlotHandler:
 
         value_names = None
         if len(days) > 1:
-            value_names = [f"{day} d" for day in days]
+            value_names = [f"{day} days" for day in days]
         elif len(layers) > 1:
             value_names = [f"k={layer}" for layer in layers]
 
@@ -145,8 +144,8 @@ class PlotHandler:
         values = values.reshape(nk, -1, len(days))
         layers_ = [layer - 1 for layer in layers]
         values = values[layers_, :, :]  # [n_layers, n_cells, n_dates]
-        values = values.transpose(0, 2, 1)  # [n_layers, n_dates, n_cells]
-        values = values.reshape(-1, values.shape[-1])  # [n_layers*n_dates, n_cells]
+        values = values.transpose(1, 0, 2)  # [n_cells, n_layers, n_dates]
+        values = values.reshape(values.shape[0], -1)  # [n_cells, n_layers*n_dates]
 
         # [n_cells, 4, 3], 4 vertices per cell, 3 coordinates (x,y,z)
         all_coords = self._sr3.grid.coordinates.get(face=4)
@@ -155,89 +154,32 @@ class PlotHandler:
         coords_2d = coords_2d[layers_, :, :, :]  # [n_layers, n_cells, 4, 2]
         if coords_2d.shape[0] == 1:
             coords_2d = coords_2d[0]
-        else:
-            coords_2d = [coords_2d[i] for i,_ in enumerate(layers_)]
+
+        # print(f"Coords shape: {coords_2d.shape}")
+        # print(f"Values shape: {values.shape}")
+        # print(f"Value names: {value_names}")
+
+        if 'nan_inf_color' not in kwargs:
+            kwargs['nan_inf_color'] = 'lightgray'
+
+        if 'title' not in kwargs:
+            if len(layers) > 1:
+                kwargs['title'] = f"{property_name} - {days[0]} days"
+            elif len(days) > 1:
+                kwargs['title'] = f"{property_name} - Layer {layers[0]}"
+            else:
+                kwargs['title'] = f"{property_name} - Layer {layers[0]} at {days[0]} days"
+
+        # Set default colorbar label if not provided
+        if 'colorbar_label' not in kwargs:
+            unit = self._sr3.properties.unit(property_name=property_name.upper())
+            kwargs['colorbar_label'] = f"{property_name} ({unit})"
 
         panel = plot_utils.plot_polygon_grid(
             vertices=coords_2d,
             values=values,
+            value_names=value_names,
             **kwargs
         )
 
         return panel
-
-        # # Convert active cell indices to i,j,k coordinates
-        # ijk_coords = self._grid.n2ijk(active_indices, as_active=False)  # Shape: (n_active_cells, 3 or 4)
-
-        # # Extract k indices (1-indexed)
-        # k_indices = ijk_coords[:, 2]  # Shape: (n_active_cells,)
-
-        # # Reorganize data and coordinates by layer
-        # # We need to group cells by their k-index
-
-        # # Determine which data dimension represents multiple columns
-        # n_days = len(days)
-        # n_layers = len(layers)
-        # n_columns = max(n_days, n_layers)
-
-        # # Filter to requested layers
-        # layer_masks = {}
-        # for layer in layers:
-        #     layer_masks[layer] = (k_indices == layer)
-
-        # # Prepare vertices and values for plotting
-        # if len(layers) > 1:
-        #     # Multiple layers: each layer is a separate polygon set
-        #     vertices = []
-        #     values_list = []
-
-        #     for layer in layers:
-        #         mask = layer_masks[layer]
-        #         layer_coords = active_coords[mask]
-        #         layer_data = property_data[mask, 0]  # Use first (and only) day
-
-        #         vertices.append(layer_coords)
-        #         values_list.append(layer_data)
-
-        #     # Stack values into columns (one column per layer)
-        #     values = np.column_stack(values_list)  # Shape: (n_cells_in_all_layers, n_layers)
-
-        #     # Set default value_names if not provided
-        #     if 'value_names' not in kwargs:
-        #         kwargs['value_names'] = [f"Layer {layer}" for layer in layers]
-
-        # else:
-        #     # Single layer: each day is a separate column
-        #     layer = layers[0]
-        #     mask = layer_masks[layer]
-        #     vertices = active_coords[mask]
-        #     values = property_data[mask, :]  # Shape: (n_cells_in_layer, n_days)
-
-        #     # Set default value_names if not provided
-        #     if 'value_names' not in kwargs and n_days > 1:
-        #         kwargs['value_names'] = [f"Day {day}" for day in days]
-
-        # # Set default title if not provided
-        # if 'title' not in kwargs:
-        #     if len(layers) > 1:
-        #         kwargs['title'] = f"{property_name} - Day {days[0]}"
-        #     else:
-        #         kwargs['title'] = f"{property_name} - Layer {layers[0]}"
-
-        # # Set default colorbar label if not provided
-        # if 'colorbar_label' not in kwargs:
-        #     # Try to get property description
-        #     prop_desc = self._data._properties.description(property_name)
-        #     if 'units' in prop_desc and prop_desc['units']:
-        #         kwargs['colorbar_label'] = f"{property_name} ({prop_desc['units']})"
-        #     else:
-        #         kwargs['colorbar_label'] = property_name
-
-        # # Call plot_polygon_grid with the prepared data
-        # panel = plot_utils.plot_polygon_grid(
-        #     vertices=vertices,
-        #     values=values,
-        #     **kwargs
-        # )
-
-        # return panel
