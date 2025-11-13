@@ -38,7 +38,14 @@ class PlotHandler:
         self._sr3 = sr3_reader
 
 
-    def plot_map(self, element, property_name, days=None, layers=None, **kwargs):
+    def plot_map(self,
+                 element,
+                 property_name,
+                 days=None, layers=None,
+                 grid_property=None,
+                 add_top=False,
+                 add_connections=False,
+                 **kwargs):
         """
         Creates a map plot for the selected property, dates, and layers.
 
@@ -57,6 +64,16 @@ class PlotHandler:
         layers : int or list of int, optional
             Layer(s) to read (1-indexed). If None, uses the first layer.
             If a list is provided, multiple layers will be plotted.
+        grid_property : np.ndarray, optional
+            A custom array of values to plot with size [n_cells, n_dates].
+            If None, data will be read from the SR3 file.
+            Default is None.
+        add_top : bool, optional
+            Whether to add contour lines to the plot. Default is False.
+        add_connections : bool, optional
+            Whether to add connections between grid cells.
+            Only connections within the same layer are plotted.
+            Default is False.
         **kwargs : dict
             Additional keyword arguments to pass to plot_polygon_grid.
             These can include: width, height, palette, line_color, line_width,
@@ -129,19 +146,23 @@ class PlotHandler:
             value_names = [f"k={layer}" for layer in layers]
 
         # [n_cells, n_dates]
-        values = self._sr3.data.get(
-            element_type="grid",
-            properties=property_name.upper(),
-            elements=element.upper(),
-            days=days,
-            active_only=False
-        )[property_name.upper()].values
+        if grid_property is not None:
+            values = grid_property
+        else:
+            values = self._sr3.data.get(
+                element_type="grid",
+                properties=property_name.upper(),
+                elements=element.upper(),
+                days=days,
+                active_only=False
+            )[property_name.upper()].values
 
-        # Future: remove inactive columns from values and coords
-        active_cells = self._sr3.grid.complete2active() > 0
-        values[~active_cells] = np.nan
+            # Future: remove inactive columns from values and coords
+            if not self._sr3.grid.is_complete(property_name):
+                inactive_cells = self._sr3.grid.complete2active() == 0
+                values[inactive_cells] = np.nan
 
-        values = values.reshape(nk, -1, len(days))
+        values = values.reshape(nk, -1, len(days)) # [nk, ni*nj, n_dates]
         layers_ = [layer - 1 for layer in layers]
         values = values[layers_, :, :]  # [n_layers, n_cells, n_dates]
         values = values.transpose(1, 0, 2)  # [n_cells, n_layers, n_dates]
@@ -149,18 +170,13 @@ class PlotHandler:
 
         # [n_cells, 4, 3], 4 vertices per cell, 3 coordinates (x,y,z)
         all_coords = self._sr3.grid.coordinates.get(face=4)
-        coords_2d = all_coords[:, :, :2]
-        coords_2d = coords_2d.reshape(nk, -1, 4, 2)
-        coords_2d = coords_2d[layers_, :, :, :]  # [n_layers, n_cells, 4, 2]
-        if coords_2d.shape[0] == 1:
-            coords_2d = coords_2d[0]
+        all_coords = all_coords.reshape(nk, -1, 4, all_coords.shape[2]) # [nk, ni*nj, 4, 3]
+        all_coords = all_coords[layers_, :, :, :]  # [n_layers, ni*nj, 4, 3]
+        if all_coords.shape[0] == 1:
+            all_coords = all_coords[0] # [ni*nj, 4, 3]
 
         ijk = self._sr3.grid.n2ijk(np.arange(1, ni*nj+1))
         labels = [f"({ijk[i,0]}, {ijk[i,1]})" for i in range(ijk.shape[0])]
-
-        # print(f"Coords shape: {coords_2d.shape}")
-        # print(f"Values shape: {values.shape}")
-        # print(f"Value names: {value_names}")
 
         if 'nan_inf_color' not in kwargs:
             kwargs['nan_inf_color'] = None
@@ -173,13 +189,12 @@ class PlotHandler:
             else:
                 kwargs['title'] = f"{property_name} - Layer {layers[0]} at {days[0]} days"
 
-        # Set default colorbar label if not provided
         if 'colorbar_label' not in kwargs:
             unit = self._sr3.properties.unit(property_name=property_name.upper())
             kwargs['colorbar_label'] = f"{property_name} ({unit})"
 
         panel = plot_utils.plot_polygon_grid(
-            vertices=coords_2d,
+            vertices=all_coords,
             values=values,
             value_names=value_names,
             labels=labels,

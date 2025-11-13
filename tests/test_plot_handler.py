@@ -3,6 +3,8 @@ Test script for the PlotHandler class.
 """
 import unittest
 from pathlib import Path
+from bokeh.plotting import show
+from matplotlib import contour
 
 import context  # noqa # pylint: disable=unused-import
 from rsimpy.cmg.sr3reader import Sr3Reader
@@ -18,6 +20,7 @@ class TestPlotHandler(unittest.TestCase):
         if not cls.test_file.exists():
             raise FileNotFoundError(f"Test file not found: {cls.test_file}")
         cls.sr3 = Sr3Reader(str(cls.test_file))
+        cls.show = True
 
     def test_sr3_reader_loads(self):
         """Test that SR3 file loads successfully."""
@@ -45,6 +48,8 @@ class TestPlotHandler(unittest.TestCase):
         # Bokeh panels/layouts have a children attribute
         self.assertTrue(hasattr(panel, 'children') or hasattr(panel, 'renderers'),
                        "Panel should be a valid Bokeh layout or figure")
+        if self.show:
+            show(panel)
 
     def test_plot_map_with_multiple_days(self):
         """Test that plot_map works with multiple days."""
@@ -64,6 +69,8 @@ class TestPlotHandler(unittest.TestCase):
         )
 
         self.assertIsNotNone(panel, "Panel should not be None")
+        if self.show:
+            show(panel)
 
     def test_plot_map_with_different_properties(self):
         """Test that plot_map works with different properties."""
@@ -100,6 +107,30 @@ class TestPlotHandler(unittest.TestCase):
         )
 
         self.assertIsNotNone(panel, "Panel should not be None")
+        if self.show:
+            show(panel)
+
+    def test_plot_map_with_complete_property_and_contour(self):
+        """Test that plot_map works with complete grid property and contour lines."""
+        days = self.sr3.dates.get_days('grid')
+
+        panel = self.sr3.plot.plot_map(
+            element="matrix",
+            property_name="BLOCKDEPTH",
+            days=days[0],
+            layers=range(50, 90),
+            width=800,
+            height=600,
+            palette='Viridis',
+            log_scale=False,
+            out_of_range_colors=('gray', 'red'),
+            nan_inf_color='gray',
+            contour_step=50.0,
+        )
+
+        self.assertIsNotNone(panel, "Panel should not be None")
+        if self.show:
+            show(panel)
 
 
 if __name__ == '__main__':
