@@ -318,23 +318,23 @@ Convert schedule to daily timesteps.
 
 #### Function
 
-**process(file_path, output_path, delta_days=1, encoding='utf-8')**
+**process(input_file_path, output_file_path, delta_days=1, encoding='utf-8')**
 Add daily dates between existing schedule dates:
 
 ```python
 from rsimpy.cmg.datreader import sch_to_daily
 
 sch_to_daily.process(
-    file_path="schedule.dat",
-    output_path="schedule_daily.dat",
+    input_file_path="schedule.dat",
+    output_file_path="schedule_daily.dat",
     delta_days=1,
     encoding='utf-8'
 )
 ```
 
 **Parameters:**
-- **file_path**: Input schedule file
-- **output_path**: Output file with added dates
+- **input_file_path**: Input schedule file
+- **output_file_path**: Output file with added dates
 - **delta_days**: Interval for new dates (default: 1)
 - **encoding**: File encoding (default: 'utf-8')
 
@@ -349,8 +349,8 @@ print(f"Original: {len(orig_dates)} dates")
 
 # Convert to daily
 sch_to_daily.process(
-    file_path="schedule.dat",
-    output_path="schedule_daily.dat",
+    input_file_path="schedule.dat",
+    output_file_path="schedule_daily.dat",
     delta_days=1
 )
 
@@ -360,8 +360,8 @@ print(f"Daily: {len(daily_dates)} dates")
 
 # Run again (should be idempotent)
 sch_to_daily.process(
-    file_path="schedule_daily.dat",
-    output_path="schedule_daily2.dat",
+    input_file_path="schedule_daily.dat",
+    output_file_path="schedule_daily2.dat",
     delta_days=1
 )
 

@@ -271,8 +271,8 @@ print(f"Last date: {dat_dates.to_str(dates[-1])}")
 
 # Convert to daily timesteps
 sch_to_daily.process(
-    file_path="schedule.dat",
-    output_path="schedule_daily.dat",
+    input_file_path="schedule.dat",
+    output_file_path="schedule_daily.dat",
     delta_days=1,
     encoding='utf-8'
 )
