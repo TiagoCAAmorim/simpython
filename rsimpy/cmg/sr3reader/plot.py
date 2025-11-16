@@ -31,7 +31,7 @@ class PlotHandler:
 
     Methods
     -------
-    plot_map(element, property, days=None, layers=None, **kwargs)
+    plot_map(element, property, days=None, layers=None, ijk_labels=True, **kwargs)
         Creates a map plot for the selected property, dates, and layers.
     """
 
@@ -46,6 +46,7 @@ class PlotHandler:
                  grid_property=None,
                  add_top=False,
                  add_connections=False,
+                ijk_labels=True,
                  **kwargs):
         """
         Creates a map plot for the selected property, dates, and layers.
@@ -79,6 +80,10 @@ class PlotHandler:
             Only connections within the same layer are plotted.
             Only works for single layer plots.
             Default is False.
+        ijk_labels : bool, optional
+            Whether to use (i,j) coordinates as labels for grid cells.
+            If False, uses cell numbers as labels.
+            Default is True.
         **kwargs : dict
             Additional keyword arguments to pass to common.plot_utils.plot_polygon_grid.
             These can include: width, height, palette, line_color, line_width,
@@ -193,8 +198,11 @@ class PlotHandler:
         if add_connections:
             self._get_connections(layers[0], kwargs)
 
-        ijk = self._sr3.grid.n2ijk(np.arange(1, ni*nj+1))
-        labels = [f"({ijk[i,0]}, {ijk[i,1]})" for i in range(ijk.shape[0])]
+        if ijk_labels:
+            ijk = self._sr3.grid.n2ijk(np.arange(1, ni*nj+1))
+            labels = [f"({ijk[i,0]}, {ijk[i,1]})" for i in range(ijk.shape[0])]
+        else:
+            labels = [f"{i+1}" for i in range(ni*nj)]
 
         if 'nan_inf_color' not in kwargs:
             kwargs['nan_inf_color'] = None
