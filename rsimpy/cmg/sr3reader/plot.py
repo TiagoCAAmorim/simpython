@@ -46,7 +46,7 @@ class PlotHandler:
                  grid_property=None,
                  add_top=False,
                  add_connections=False,
-                ijk_labels=True,
+                 ijk_labels=True,
                  **kwargs):
         """
         Creates a map plot for the selected property, dates, and layers.

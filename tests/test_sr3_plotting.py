@@ -141,14 +141,15 @@ class TestPlotHandler(unittest.TestCase):
             property_name="PERMI",
             days=days[0],
             layers=87,
-            width=800,
+            width=1600,
             height=600,
-            add_top=False,
+            add_top=True,
             add_connections=True,
             palette='Turbo',
             log_scale=True,
             out_of_range_colors=None,
             nan_inf_color=None,
+            ijk_labels=False,
         )
 
         self.assertIsNotNone(panel, "Panel should not be None")

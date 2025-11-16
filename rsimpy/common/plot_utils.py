@@ -1971,6 +1971,27 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
     # Calculate plot range
     x_range_tuple, y_range_tuple = _calculate_plot_range(all_vertices_lists, values, nan_inf_color)
 
+    # Calculate plot aspect ratio (width/height in pixels)
+    plot_aspect_ratio = width / height if height > 0 else 1.0
+
+    # Calculate data aspect ratio
+    data_x_range = x_range_tuple[1] - x_range_tuple[0]
+    data_y_range = y_range_tuple[1] - y_range_tuple[0]
+    data_aspect_ratio = data_x_range / data_y_range if data_y_range > 0 else 1.0
+
+    # Adjust axis ranges to match plot aspect ratio for equal scaling
+    # This ensures one unit in x equals one unit in y in screen space
+    if plot_aspect_ratio > data_aspect_ratio:
+        # Plot is wider than data - expand x range
+        x_center = (x_range_tuple[0] + x_range_tuple[1]) / 2
+        new_x_range = data_y_range * plot_aspect_ratio
+        x_range_tuple = (x_center - new_x_range / 2, x_center + new_x_range / 2)
+    elif plot_aspect_ratio < data_aspect_ratio:
+        # Plot is taller than data - expand y range
+        y_center = (y_range_tuple[0] + y_range_tuple[1]) / 2
+        new_y_range = data_x_range / plot_aspect_ratio
+        y_range_tuple = (y_center - new_y_range / 2, y_center + new_y_range / 2)
+
     # Create figure with equal axis scaling for map visualization
     p = figure(
         width=width,
