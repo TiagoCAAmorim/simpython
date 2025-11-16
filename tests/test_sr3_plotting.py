@@ -138,7 +138,7 @@ class TestPlotHandler(unittest.TestCase):
 
         panel = self.sr3.plot.plot_map(
             element="matrix",
-            property_name="PERMI",
+            property_name="PERMJ",
             days=days[0],
             layers=87,
             width=1600,
@@ -149,7 +149,7 @@ class TestPlotHandler(unittest.TestCase):
             log_scale=True,
             out_of_range_colors=None,
             nan_inf_color=None,
-            ijk_labels=False,
+            ijk_labels=True,
         )
 
         self.assertIsNotNone(panel, "Panel should not be None")

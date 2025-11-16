@@ -208,16 +208,25 @@ class PlotHandler:
             kwargs['nan_inf_color'] = None
 
         if 'title' not in kwargs:
+            prop_desc = self._sr3.properties.description(property_name=property_name.upper())
+            prop_desc = prop_desc['long description']
             if len(layers) > 1:
-                kwargs['title'] = f"{property_name} - {days[0]} days"
+                kwargs['title'] = f"{prop_desc} - {days[0]} days"
             elif len(days) > 1:
-                kwargs['title'] = f"{property_name} - Layer {layers[0]}"
+                kwargs['title'] = f"{prop_desc} - Layer {layers[0]}"
             else:
-                kwargs['title'] = f"{property_name} - Layer {layers[0]} at {days[0]} days"
+                kwargs['title'] = f"{prop_desc} - Layer {layers[0]} at {days[0]} days"
 
         if 'colorbar_label' not in kwargs:
+            prop_desc = self._sr3.properties.description(property_name=property_name.upper())
+            prop_desc = prop_desc['description']
             unit = self._sr3.properties.unit(property_name=property_name.upper())
-            kwargs['colorbar_label'] = f"{property_name} ({unit})"
+            unit = 'cP' if unit == 'cp' else unit
+            unit = 'mD' if unit == 'md' else unit
+            if unit is None or unit.strip() == '':
+                kwargs['colorbar_label'] = f"{prop_desc}"
+            else:
+                kwargs['colorbar_label'] = f"{prop_desc} ({unit})"
 
         panel = plot_utils.plot_polygon_grid(
             vertices=all_coords,
