@@ -231,10 +231,10 @@ class PlotHandler:
         filter_ = filter_ & (ijk1[:, 2] == layer)
         connections = connections[filter_]
         if len(connections) > 0:
-            conns = connections[:,:2].T - ni*nj*(layer-1)
-            kwargs['connections'] = conns - 1
+            conns = connections[:,:2].T - ni*nj*(layer-1) - 1
+            kwargs['connections'] = np.concat([conns, conns[[1,0]]], axis=1)
             conn_values = self._sr3.connections.get_transmissibilities(connections)
-            kwargs['connection_values'] = conn_values
+            kwargs['connection_values'] = np.concat([conn_values, conn_values], axis=0)
             kwargs['connection_log_scale'] = True
             kwargs['connection_colorbar_label'] = 'Transmissibility (mD.m)'
 
