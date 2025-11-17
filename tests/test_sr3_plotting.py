@@ -3,11 +3,18 @@ Test script for the PlotHandler class.
 """
 import unittest
 from pathlib import Path
-from bokeh.plotting import show
+from bokeh.plotting import show, column, figure
 
 import context  # noqa # pylint: disable=unused-import
 from rsimpy.cmg.sr3reader import Sr3Reader
 
+def get_figure(panel):
+    """Extract figure from panel (handles both direct figures and layouts)"""
+    if hasattr(panel, 'select'):
+        # It's a layout, find the first figure
+        figs = panel.select(dict(type=figure))
+        return next(figs) if figs else None
+    return panel  # It's already a figure
 
 class TestPlotHandler(unittest.TestCase):
     """Tests for PlotHandler functionality"""
@@ -77,6 +84,7 @@ class TestPlotHandler(unittest.TestCase):
         days = self.sr3.dates.get_days('grid')
         properties = ["PRES", "PERMI"]
 
+        panels = []
         for prop in properties:
             with self.subTest(property_name=prop):
                 panel = self.sr3.plot.plot_map(
@@ -88,6 +96,17 @@ class TestPlotHandler(unittest.TestCase):
                     height=600
                 )
                 self.assertIsNotNone(panel, f"Panel should not be None for {prop}")
+                panels.append(panel)
+
+        # Sync all figures to the first one's ranges
+        if len(panels) > 1:
+            fig_refs = [get_figure(panel) for panel in panels]
+            for fig in fig_refs[1:]:
+                fig.x_range = fig_refs[0].x_range
+                fig.y_range = fig_refs[0].y_range
+
+        if self.show:
+            show(column(*panels))
 
     def test_plot_map_with_custom_colors(self):
         """Test that plot_map works with custom color settings."""
