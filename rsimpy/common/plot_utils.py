@@ -15,6 +15,7 @@ from bokeh.palettes import (
 )
 from bokeh.layouts import column, row
 
+TRI_SIZE_RATIO = 0.01  # Triangle size as percentage of mean polygon area
 
 def _get_palette_map():
     """Get the mapping of palette names to Bokeh palettes."""
@@ -169,7 +170,9 @@ def _validate_polygon(poly_arr, index, set_index=None):
     prefix = f"vertices[{set_index}][{index}]" if set_index is not None else f"vertices[{index}]"
 
     if poly_arr.ndim != 2 or poly_arr.shape[1] not in (2, 3):
-        raise ValueError(f"{prefix} must have shape (n_vertices, 2) or (n_vertices, 3), got {poly_arr.shape}")
+        raise ValueError(
+            f"{prefix} must have shape (n_vertices, 2) or (n_vertices, 3), got {poly_arr.shape}"
+            )
     if poly_arr.shape[0] < 3:
         raise ValueError(f"{prefix} must have at least 3 vertices, got {poly_arr.shape[0]}")
 
@@ -526,16 +529,120 @@ def _calculate_polygon_centers(vertices_list):
     return np.array(centers)
 
 
+def _calculate_polygon_area(vertices):
+    """Calculate area of a polygon using the shoelace formula."""
+    x = vertices[:, 0]
+    y = vertices[:, 1]
+    return 0.5 * abs(np.dot(x, np.roll(y, 1)) - np.dot(y, np.roll(x, 1)))
+
+
+def _calculate_mean_polygon_area(vertices_list, sample_size=100):
+    """
+    Calculate mean polygon area from a sample, ignoring outliers.
+
+    Parameters
+    ----------
+    vertices_list : list of np.ndarray
+        List of polygon vertex arrays
+    sample_size : int
+        Maximum number of polygons to sample
+
+    Returns
+    -------
+    mean_area : float
+        Mean polygon area after removing outliers
+    """
+    n_polygons = len(vertices_list)
+
+    # Sample polygons (or use all if fewer than sample_size)
+    if n_polygons <= sample_size:
+        sample_indices = range(n_polygons)
+    else:
+        sample_indices = np.random.choice(n_polygons, sample_size, replace=False)
+
+    # Calculate areas
+    areas = []
+    for idx in sample_indices:
+        area = _calculate_polygon_area(vertices_list[idx])
+        if area > 0:  # Ignore zero or negative areas
+            areas.append(area)
+
+    if len(areas) == 0:
+        return 1.0  # Default fallback
+
+    areas = np.array(areas)
+
+    # Remove outliers using IQR method
+    q25, q75 = np.percentile(areas, [25, 75])
+    iqr = q75 - q25
+    lower_bound = q25 - 1.5 * iqr
+    upper_bound = q75 + 1.5 * iqr
+
+    filtered_areas = areas[(areas >= lower_bound) & (areas <= upper_bound)]
+
+    if len(filtered_areas) == 0:
+        return np.mean(areas)
+
+    return np.mean(filtered_areas)
+
+
+def _create_triangle_vertices(center_x, center_y, size, direction='up'):
+    """
+    Create vertices for a triangle marker.
+
+    Parameters
+    ----------
+    center_x : float
+        X-coordinate of the polygon center
+    center_y : float
+        Y-coordinate of the polygon center
+    size : float
+        Size of the triangle (base width and height)
+    direction : str, default='up'
+        'up' for upward pointing triangle, 'down' for downward pointing triangle
+
+    Returns
+    -------
+    vertices : list of [x, y]
+        Triangle vertices in counterclockwise order
+    """
+    half_size = size / 2
+
+    if direction == 'up':
+        # Upward triangle: shift right and up
+        offset_x = size * 0.25
+        offset_y = size * 0.25
+        # Vertices: bottom-left, bottom-right, top
+        vertices = [
+            [center_x + offset_x - half_size, center_y + offset_y - half_size],
+            [center_x + offset_x + half_size, center_y + offset_y - half_size],
+            [center_x + offset_x, center_y + offset_y + half_size]
+        ]
+    else:  # direction == 'down'
+        # Downward triangle: shift left and down
+        offset_x = -size * 0.25
+        offset_y = -size * 0.25
+        # Vertices: top-left, top-right, bottom
+        vertices = [
+            [center_x + offset_x - half_size, center_y + offset_y + half_size],
+            [center_x + offset_x + half_size, center_y + offset_y + half_size],
+            [center_x + offset_x, center_y + offset_y - half_size]
+        ]
+
+    return vertices
+
+
 def _process_connections(connections, n_polygons):
     """
     Validate and normalize connection array format.
+    Allows -1 values for triangle markers.
 
     Returns
     -------
     connections : np.ndarray
-        Array of shape (n_connections, 2)
+        Array of shape (n_connections, 2) with dtype int
     """
-    connections = np.asarray(connections)
+    connections = np.asarray(connections, dtype=int)
 
     if connections.ndim != 2:
         raise ValueError(f"connections must be 2D array, got shape {connections.shape}")
@@ -548,13 +655,91 @@ def _process_connections(connections, n_polygons):
             f"got {connections.shape}"
         )
 
-    if np.any(connections < 0) or np.any(connections >= n_polygons):
-        raise ValueError(
-            f"connection indices must be in range [0, {n_polygons}), "
-            f"got min={connections.min()}, max={connections.max()}"
-        )
+    # Check indices are in valid range (allow -1 for triangle markers)
+    for i in range(connections.shape[0]):
+        val_i = connections[i, 0]
+        val_j = connections[i, 1]
+
+        # Check first value (allow -1 for triangle marker)
+        if val_i != -1 and (val_i < 0 or val_i >= n_polygons):
+            raise ValueError(
+                f"connection indices must be in range [0, {n_polygons}) or -1, "
+                f"got connection[{i}, 0] = {val_i}"
+            )
+
+        # Check second value (allow -1 for triangle marker)
+        if val_j != -1 and (val_j < 0 or val_j >= n_polygons):
+            raise ValueError(
+                f"connection indices must be in range [0, {n_polygons}) or -1, "
+                f"got connection[{i}, 1] = {val_j}"
+            )
 
     return connections
+
+
+def _extract_triangle_connections(connections, connection_values):
+    """
+    Extract triangle marker connections from regular connections.
+    Filtering based on NaN/inf values is done dynamically per column in JavaScript.
+
+    Triangle connections are identified by having -1:
+    - [idx, -1] -> upward triangle
+    - [-1, idx] -> downward triangle
+
+    Parameters
+    ----------
+    connections : np.ndarray
+        Array of shape (n_connections, 2)
+    connection_values : np.ndarray
+        Array of shape (n_connections, n_columns)
+
+    Returns
+    -------
+    regular_connections : np.ndarray
+        Connections that are regular connections (not triangles)
+    regular_values : np.ndarray
+        Values for regular connections
+    triangle_info : list of dict
+        List of triangle information dictionaries with keys:
+        - 'idx': polygon index
+        - 'direction': 'up' or 'down'
+        - 'values': array of values for this triangle (one per column)
+    """
+    n_connections = connections.shape[0]
+    regular_mask = np.ones(n_connections, dtype=bool)
+    triangle_info = []
+
+    for conn_idx in range(n_connections):
+        i, j = connections[conn_idx]
+
+        # Check if this is a triangle marker (either position is -1)
+        if i == -1:
+            # [-1, idx] -> downward triangle
+            direction = 'down'
+            idx = j
+            values = connection_values[conn_idx, :]
+            triangle_info.append({
+                'idx': idx,
+                'direction': direction,
+                'values': values.copy()
+            })
+            regular_mask[conn_idx] = False
+        elif j == -1:
+            # [idx, -1] -> upward triangle
+            direction = 'up'
+            idx = i
+            values = connection_values[conn_idx, :]
+            triangle_info.append({
+                'idx': idx,
+                'direction': direction,
+                'values': values.copy()
+            })
+            regular_mask[conn_idx] = False
+
+    regular_connections = connections[regular_mask]
+    regular_values = connection_values[regular_mask]
+
+    return regular_connections, regular_values, triangle_info
 
 
 def _normalize_connection_values(connection_values, n_connections, n_columns):
@@ -707,6 +892,8 @@ def _create_gradient_segments(
     ):
     """Create gradient segments for a single connection."""
     i, j = connections[conn_idx]
+    i = int(i)
+    j = int(j)
     x0, y0 = all_centers[col_idx][i, 0], all_centers[col_idx][i, 1]
     x1, y1 = all_centers[col_idx][j, 0], all_centers[col_idx][j, 1]
 
@@ -773,6 +960,8 @@ def _prepare_connection_data(connections, connection_values, all_centers, labels
 
     for conn_idx in range(n_connections):
         i, j = connections[conn_idx]
+        i = int(i)
+        j = int(j)
         conn_x0.append(current_centers[i, 0])
         conn_y0.append(current_centers[i, 1])
         conn_x1.append(current_centers[j, 0])
@@ -818,11 +1007,16 @@ def _prepare_connection_data(connections, connection_values, all_centers, labels
             conn_reverse_vals.append(None)
 
     # Create connection data dictionary
+    # Set coordinates to NaN for connections with non-finite values (Bokeh won't render them)
+    filtered_x0 = [conn_x0[i] if np.isfinite(conn_vals[i]) else np.nan for i in range(len(conn_x0))]
+    filtered_y0 = [conn_y0[i] if np.isfinite(conn_vals[i]) else np.nan for i in range(len(conn_y0))]
+    filtered_x1 = [conn_x1[i] if np.isfinite(conn_vals[i]) else np.nan for i in range(len(conn_x1))]
+    filtered_y1 = [conn_y1[i] if np.isfinite(conn_vals[i]) else np.nan for i in range(len(conn_y1))]
     conn_data = {
-        'x0': conn_x0,
-        'y0': conn_y0,
-        'x1': conn_x1,
-        'y1': conn_y1,
+        'x0': filtered_x0,
+        'y0': filtered_y0,
+        'x1': filtered_x1,
+        'y1': filtered_y1,
         'value': conn_vals,
         'name': conn_names,
         'conn_id': list(range(n_connections)),
@@ -860,10 +1054,10 @@ def _prepare_connection_data(connections, connection_values, all_centers, labels
         conn_data[f'reverse_value_{col_idx}'] = reverse_vals_col
 
         centers = all_centers[col_idx]
-        x0_col = [centers[connections[i, 0], 0] for i in range(n_connections)]
-        y0_col = [centers[connections[i, 0], 1] for i in range(n_connections)]
-        x1_col = [centers[connections[i, 1], 0] for i in range(n_connections)]
-        y1_col = [centers[connections[i, 1], 1] for i in range(n_connections)]
+        x0_col = [centers[int(connections[i, 0]), 0] for i in range(n_connections)]
+        y0_col = [centers[int(connections[i, 0]), 1] for i in range(n_connections)]
+        x1_col = [centers[int(connections[i, 1]), 0] for i in range(n_connections)]
+        y1_col = [centers[int(connections[i, 1]), 1] for i in range(n_connections)]
         conn_data[f'x0_{col_idx}'] = x0_col
         conn_data[f'y0_{col_idx}'] = y0_col
         conn_data[f'x1_{col_idx}'] = x1_col
@@ -897,10 +1091,15 @@ def _prepare_connection_data(connections, connection_values, all_centers, labels
 
         # Store gradient data
         if col_idx == 0:
-            gradient_data['x0'] = grad_x0
-            gradient_data['y0'] = grad_y0
-            gradient_data['x1'] = grad_x1
-            gradient_data['y1'] = grad_y1
+            # Set coordinates to NaN for segments with non-finite values (Bokeh won't render them)
+            gradient_data['x0'] = [grad_x0[i] if np.isfinite(grad_values[i]) else
+                                   np.nan for i in range(len(grad_x0))]
+            gradient_data['y0'] = [grad_y0[i] if np.isfinite(grad_values[i]) else
+                                   np.nan for i in range(len(grad_y0))]
+            gradient_data['x1'] = [grad_x1[i] if np.isfinite(grad_values[i]) else
+                                   np.nan for i in range(len(grad_x1))]
+            gradient_data['y1'] = [grad_y1[i] if np.isfinite(grad_values[i]) else
+                                   np.nan for i in range(len(grad_y1))]
             gradient_data['value'] = grad_values
             gradient_data['name'] = grad_names
             gradient_data['conn_id'] = grad_conn_id
@@ -1054,7 +1253,7 @@ def _create_palette_selector(initial_palette, mapper):
 def _create_column_selector(
         value_names, source, source_in_range, source_below_min, source_above_max,
         source_nan_inf, source_connections, source_gradient, vmin, vmax,
-        nan_inf_color, has_connections, source_contours=None
+        nan_inf_color, has_connections, source_contours=None, source_triangles=None
     ):
     """Create column selector widget with callback for matrix data."""
     select = Select(
@@ -1074,6 +1273,7 @@ def _create_column_selector(
             source_conn=source_connections,
             source_grad=source_gradient,
             source_contour=source_contours,
+            source_tri=source_triangles,
             select=select,
             value_names=value_names,
             n_columns=len(value_names),
@@ -1170,35 +1370,89 @@ def _create_column_selector(
                 updateSource(source_nan, nan_inf);
             }
 
-            // Update connections if present
+            // Update connections if present - set coordinates to NaN for non-finite values
             if (has_connections && source_conn !== null) {
                 const conn_data = source_conn.data;
-                conn_data['value'] = conn_data['value_' + col_idx];
-                conn_data['forward_value'] = conn_data['forward_value_' + col_idx];
-                conn_data['reverse_value'] = conn_data['reverse_value_' + col_idx];
-                conn_data['x0'] = conn_data['x0_' + col_idx];
-                conn_data['y0'] = conn_data['y0_' + col_idx];
-                conn_data['x1'] = conn_data['x1_' + col_idx];
-                conn_data['y1'] = conn_data['y1_' + col_idx];
-                source_conn.change.emit();
-            }
+                const all_values = conn_data['value_' + col_idx];
+                const all_x0 = conn_data['x0_' + col_idx];
+                const all_y0 = conn_data['y0_' + col_idx];
+                const all_x1 = conn_data['x1_' + col_idx];
+                const all_y1 = conn_data['y1_' + col_idx];
+                const all_forward = conn_data['forward_value_' + col_idx];
+                const all_reverse = conn_data['reverse_value_' + col_idx];
 
-            // Update gradient segments if present
+                // Set coordinates to NaN for connections with non-finite values (Bokeh won't render)
+                const new_x0 = [];
+                const new_y0 = [];
+                const new_x1 = [];
+                const new_y1 = [];
+
+                for (let i = 0; i < all_values.length; i++) {
+                    if (isFinite(all_values[i])) {
+                        new_x0.push(all_x0[i]);
+                        new_y0.push(all_y0[i]);
+                        new_x1.push(all_x1[i]);
+                        new_y1.push(all_y1[i]);
+                    } else {
+                        new_x0.push(NaN);
+                        new_y0.push(NaN);
+                        new_x1.push(NaN);
+                        new_y1.push(NaN);
+                    }
+                }
+
+                conn_data['x0'] = new_x0;
+                conn_data['y0'] = new_y0;
+                conn_data['x1'] = new_x1;
+                conn_data['y1'] = new_y1;
+                conn_data['value'] = all_values;
+                conn_data['forward_value'] = all_forward;
+                conn_data['reverse_value'] = all_reverse;
+                source_conn.change.emit();
+            }            // Update gradient segments if present - set coordinates to NaN for non-finite values
             if (has_connections && source_grad !== null) {
                 const grad_data = source_grad.data;
-                grad_data['x0'] = grad_data['x0_' + col_idx];
-                grad_data['y0'] = grad_data['y0_' + col_idx];
-                grad_data['x1'] = grad_data['x1_' + col_idx];
-                grad_data['y1'] = grad_data['y1_' + col_idx];
-                grad_data['value'] = grad_data['value_' + col_idx];
-                grad_data['name'] = grad_data['name_' + col_idx];
-                grad_data['from_label'] = grad_data['from_label_' + col_idx];
-                grad_data['to_label'] = grad_data['to_label_' + col_idx];
-                grad_data['is_bidirectional'] = grad_data['is_bidirectional_' + col_idx];
-                source_grad.change.emit();
-            }
+                const all_grad_values = grad_data['value_' + col_idx];
+                const all_grad_x0 = grad_data['x0_' + col_idx];
+                const all_grad_y0 = grad_data['y0_' + col_idx];
+                const all_grad_x1 = grad_data['x1_' + col_idx];
+                const all_grad_y1 = grad_data['y1_' + col_idx];
+                const all_grad_names = grad_data['name_' + col_idx];
+                const all_grad_from = grad_data['from_label_' + col_idx];
+                const all_grad_to = grad_data['to_label_' + col_idx];
+                const all_grad_bidir = grad_data['is_bidirectional_' + col_idx];
 
-            // Update contour lines if present
+                // Set coordinates to NaN for segments with non-finite values (Bokeh won't render)
+                const new_grad_x0 = [];
+                const new_grad_y0 = [];
+                const new_grad_x1 = [];
+                const new_grad_y1 = [];
+
+                for (let i = 0; i < all_grad_values.length; i++) {
+                    if (isFinite(all_grad_values[i])) {
+                        new_grad_x0.push(all_grad_x0[i]);
+                        new_grad_y0.push(all_grad_y0[i]);
+                        new_grad_x1.push(all_grad_x1[i]);
+                        new_grad_y1.push(all_grad_y1[i]);
+                    } else {
+                        new_grad_x0.push(NaN);
+                        new_grad_y0.push(NaN);
+                        new_grad_x1.push(NaN);
+                        new_grad_y1.push(NaN);
+                    }
+                }
+
+                grad_data['x0'] = new_grad_x0;
+                grad_data['y0'] = new_grad_y0;
+                grad_data['x1'] = new_grad_x1;
+                grad_data['y1'] = new_grad_y1;
+                grad_data['value'] = all_grad_values;
+                grad_data['name'] = all_grad_names;
+                grad_data['from_label'] = all_grad_from;
+                grad_data['to_label'] = all_grad_to;
+                grad_data['is_bidirectional'] = all_grad_bidir;
+                source_grad.change.emit();
+            }            // Update contour lines if present
             if (source_contour !== null) {
                 const contour_data = source_contour.data;
                 contour_data['x0'] = contour_data['x0_' + col_idx];
@@ -1210,7 +1464,34 @@ def _create_column_selector(
                 source_contour.change.emit();
             }
 
-            source.change.emit();
+            // Update triangles if present - set coordinates to NaN for non-finite values
+            if (source_tri !== null) {
+                const tri_data = source_tri.data;
+                const all_tri_values = tri_data['value_' + col_idx];
+                const all_tri_xs = tri_data['xs_' + col_idx];
+                const all_tri_ys = tri_data['ys_' + col_idx];
+                const all_tri_names = tri_data['name_' + col_idx];
+
+                // Set coordinates to NaN for triangles with non-finite values (Bokeh won't render)
+                const new_tri_xs = [];
+                const new_tri_ys = [];
+
+                for (let i = 0; i < all_tri_values.length; i++) {
+                    if (isFinite(all_tri_values[i])) {
+                        new_tri_xs.push(all_tri_xs[i]);
+                        new_tri_ys.push(all_tri_ys[i]);
+                    } else {
+                        new_tri_xs.push([NaN, NaN, NaN]);
+                        new_tri_ys.push([NaN, NaN, NaN]);
+                    }
+                }
+
+                tri_data['xs'] = new_tri_xs;
+                tri_data['ys'] = new_tri_ys;
+                tri_data['value'] = all_tri_values;
+                tri_data['name'] = all_tri_names;
+                source_tri.change.emit();
+            }            source.change.emit();
         """
     )
 
@@ -1695,6 +1976,9 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
         Array defining connections between polygons. Each column (or row) contains
         a pair of polygon indices [i, j] indicating a connection from polygon i to j.
         If provided, lines will be drawn between polygon centers.
+        Special markers: use -1 for triangle markers:
+        - [idx, -1]: upward triangle at polygon idx
+        - [-1, idx]: downward triangle at polygon idx
     connection_values : array-like, shape (n_connections,) or (n_connections, m), optional
         Values associated with each connection. These determine the line colors.
         Can be 1D array or 2D matrix. If 2D, must match the number of columns in values.
@@ -1895,6 +2179,7 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
 
     # Process connections if provided
     has_connections = False
+    triangle_info = []
     if connections is not None:
         connections = _process_connections(connections, n_polygons)
         n_connections = connections.shape[0]
@@ -1903,6 +2188,13 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
         connection_values = _normalize_connection_values(
             connection_values, n_connections, n_columns
         )
+
+        # Extract triangle connections and filter NaN/inf values
+        connections, connection_values, triangle_info = _extract_triangle_connections(
+            connections, connection_values
+        )
+        n_connections = connections.shape[0]
+
         connections, connection_values, bidirectional_info = _detect_bidirectional_connections(
             connections, connection_values, n_connections
         )
@@ -1970,6 +2262,27 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
 
     # Calculate plot range
     x_range_tuple, y_range_tuple = _calculate_plot_range(all_vertices_lists, values, nan_inf_color)
+
+    # Calculate plot aspect ratio (width/height in pixels)
+    plot_aspect_ratio = width / height if height > 0 else 1.0
+
+    # Calculate data aspect ratio
+    data_x_range = x_range_tuple[1] - x_range_tuple[0]
+    data_y_range = y_range_tuple[1] - y_range_tuple[0]
+    data_aspect_ratio = data_x_range / data_y_range if data_y_range > 0 else 1.0
+
+    # Adjust axis ranges to match plot aspect ratio for equal scaling
+    # This ensures one unit in x equals one unit in y in screen space
+    if plot_aspect_ratio > data_aspect_ratio:
+        # Plot is wider than data - expand x range
+        x_center = (x_range_tuple[0] + x_range_tuple[1]) / 2
+        new_x_range = data_y_range * plot_aspect_ratio
+        x_range_tuple = (x_center - new_x_range / 2, x_center + new_x_range / 2)
+    elif plot_aspect_ratio < data_aspect_ratio:
+        # Plot is taller than data - expand y range
+        y_center = (y_range_tuple[0] + y_range_tuple[1]) / 2
+        new_y_range = data_x_range / plot_aspect_ratio
+        y_range_tuple = (y_center - new_y_range / 2, y_center + new_y_range / 2)
 
     # Create figure with equal axis scaling for map visualization
     p = figure(
@@ -2123,12 +2436,103 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
         )
         connection_renderers.append(conn_lines)
 
+        # Add triangle markers for NaN connections
+        triangle_patches = []
+        source_triangles = None
+        if len(triangle_info) > 0:
+            # Calculate triangle size based on mean polygon area
+            # Triangle area should be 10% of mean polygon area
+            mean_poly_area = _calculate_mean_polygon_area(all_vertices_lists[0])
+            target_triangle_area = TRI_SIZE_RATIO * mean_poly_area
+            # For an equilateral triangle: area = (sqrt(3)/4) * side^2
+            # So side = sqrt(4 * area / sqrt(3))
+            triangle_size = np.sqrt(4 * target_triangle_area / np.sqrt(3))
+
+            # Prepare triangle data for all columns
+            triangle_data = {}
+            for col_idx in range(n_columns):
+                tri_xs = []
+                tri_ys = []
+                tri_values = []
+                tri_names = []
+
+                for tri in triangle_info:
+                    poly_idx = tri['idx']
+                    direction = tri['direction']
+                    value = tri['values'][col_idx]
+
+                    # Get polygon center for this column
+                    center = all_centers[col_idx][poly_idx]
+
+                    # Create triangle vertices
+                    vertices = _create_triangle_vertices(
+                        center[0], center[1], triangle_size, direction
+                    )
+
+                    # Extract x and y coordinates
+                    tri_x = [v[0] for v in vertices]
+                    tri_y = [v[1] for v in vertices]
+
+                    tri_xs.append(tri_x)
+                    tri_ys.append(tri_y)
+                    tri_values.append(value)
+
+                    # Create name for tooltip
+                    if labels is not None and poly_idx < len(labels) and labels[poly_idx]:
+                        poly_name = labels[poly_idx]
+                    else:
+                        poly_name = str(poly_idx)
+                    arrow = '\u25b2' if direction == 'up' else '\u25bc'
+                    tri_names.append(f"{poly_name}{arrow}")
+
+                # Store data for this column
+                if col_idx == 0:
+                    # Set coordinates to NaN for triangles with non-finite values (will be hidden)
+                    triangle_data['xs'] = [[np.nan, np.nan, np.nan]
+                                           if not np.isfinite(tri_values[i])
+                                           else tri_xs[i] for i in range(len(tri_xs))]
+                    triangle_data['ys'] = [[np.nan, np.nan, np.nan]
+                                           if not np.isfinite(tri_values[i])
+                                           else tri_ys[i] for i in range(len(tri_ys))]
+                    triangle_data['value'] = tri_values
+                    triangle_data['name'] = tri_names
+
+                triangle_data[f'xs_{col_idx}'] = tri_xs
+                triangle_data[f'ys_{col_idx}'] = tri_ys
+                triangle_data[f'value_{col_idx}'] = tri_values
+                triangle_data[f'name_{col_idx}'] = tri_names
+
+            source_triangles = ColumnDataSource(data=triangle_data)
+
+            # Draw triangle borders first if border color is specified
+            if connection_border_color is not None:
+                tri_border = p.patches(
+                    'xs', 'ys',
+                    source=source_triangles,
+                    fill_color=connection_border_color,
+                    line_color=connection_border_color,
+                    line_width=connection_width * 0.5
+                )
+                triangle_patches.append(tri_border)
+
+            # Draw colored triangles
+            tri_fill = p.patches(
+                'xs', 'ys',
+                source=source_triangles,
+                fill_color={'field': 'value', 'transform': connection_mapper},
+                line_color=connection_border_color if connection_border_color else 'black',
+                line_width=connection_width * 0.3
+            )
+            triangle_patches.append(tri_fill)
+
         # Store connection color scale info for colorbar
         has_independent_connection_scale = (connection_palette is not None or
                                            connection_log_scale is not None or
                                            connection_color_limits is not None)
     else:
         source_connections = None
+        source_triangles = None
+        triangle_patches = []
         has_independent_connection_scale = False
         connection_mapper = None
         conn_log_scale = False
@@ -2176,6 +2580,8 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
     hover_renderers = all_patches.copy()
     if has_connections and conn_lines is not None:
         hover_renderers.append(conn_lines)
+    if has_connections and len(triangle_patches) > 0:
+        hover_renderers.extend(triangle_patches)
     if contour_renderer is not None:
         hover_renderers.append(contour_renderer)
 
@@ -2232,7 +2638,8 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
             source_nan_inf, source_connections if has_connections else None,
             source_gradient if has_connections else None,
             vmin, vmax, nan_inf_color, has_connections,
-            source_contours=source_contours
+            source_contours=source_contours,
+            source_triangles=source_triangles if has_connections else None
         )
 
         # Add connection width slider if connections are present
@@ -2282,11 +2689,14 @@ def main():
     vertices = [vertices1, vertices2]
 
     values_ = np.array([[5, 15, 25, np.nan, 450, 55],[15, 16, 27, 38, 49, 500]]).T
-    labels_ = np.array(['V=5', 'V=15', 'V=25', 'NaN', 'V=45', 'V=55'])
+    labels_ = np.array(['#0', 'cell 1', '02', '33', '#4#', 'c=5'])
     connections_ = np.array([[0, 1], [1, 2], [2, 3], [3, 4],
-                             [4, 5], [1, 0], [1, 4], [4, 1]])
-    connection_values_ = np.array([[1000, 20], [25, 15], [50, 60], [70, 80],
-                                   [90, 100], [1000, 20], [40, 0.55], [0.55, 0.55]])
+                             [4, 5], [1, 0], [1, 4], [4, 1],
+                             [0, -1], [-1, 0], [1, -1]])
+    connection_values_ = np.array([[1000, 20], [25, 15], [50, np.nan], [np.nan, 80],
+                                   [90, 100], [1000, 20], [40, 0.55], [0.55, 0.55],
+                                   [50, 60], [70, 1000], [np.nan, 100]])
+
 
     print(f'Vertices array shape: {np.array(vertices).shape}')
     print(f'Values shape: {values_.shape}')
@@ -2308,7 +2718,7 @@ def main():
         color_limits=(0.1, 100),
         # out_of_range_colors=('blue', 'red'),
         nan_inf_color=None,
-        colorbar_label='Cells',
+        colorbar_label='Cells Example',
         # connection_colorbar_label='Connection',
         title='Map Example'
     )
