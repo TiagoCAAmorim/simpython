@@ -140,7 +140,7 @@ class TestPlotHandler(unittest.TestCase):
             element="matrix",
             property_name="PERMJ",
             days=days[0],
-            layers=87,
+            layers=[86,87],
             width=1600,
             height=600,
             add_top=True,
