@@ -339,31 +339,23 @@ class GridFile:
             ValueError
                 If the file contains data that is not numeric.
         """
-        data = {'keyword': '', 'comments': [], 'values': []}
+        comments = []
+        keyword = ''
+        values = []
+        all_integers = True  # Track if all values are integers
 
-        def is_number(s):
+        def parse_number(s):
+            """Fast number parser that tries int first, then float."""
+            nonlocal all_integers
             try:
-                float(s)
-                return True
-            except ValueError:
-                return False
-
-        def int_or_float(s):
-            try:
-                x = int(s)
-                return x
-            except ValueError:
-                try:
-                    x = float(s)
-                    return x
-                except (ValueError, TypeError, NameError) as e:
-                    msg = "Input string is not a valid number"
-                    raise ValueError(msg) from e
-
-        def is_line_with_values(line):
-            parts = line.split(' ')
-            parts = parts[0].split('*')
-            return is_number(parts[0])
+                # Check if it's an integer (no decimal point)
+                if '.' not in s and 'e' not in s.lower():
+                    return int(s)
+                all_integers = False
+                return float(s)
+            except (ValueError, TypeError, NameError) as e:
+                msg = "Input string is not a valid number"
+                raise ValueError(msg) from e
 
         if not self._file_path.exists():
             raise FileNotFoundError(
@@ -372,36 +364,55 @@ class GridFile:
             raise FileNotFoundError(
                 f"Provided path is not a file: {self._file_path}.")
 
-
         with self._file_path.open(mode='r', encoding=self._encoding) as file:
             for line in file:
                 line = line.strip()
-                if line == '':
-                    pass
-                elif line.strip().startswith('**'):
-                    data['comments'].append(line)
-                elif not is_line_with_values(line):
-                    if data['keyword'] != '':
-                        raise ValueError("More than one keyword line found!")
-                    data['keyword'] = line
-                else:
-                    parts = line.split('**')
-                    parts = parts[0].strip().split(' ')
-                    for n in parts:
-                        value = n.split('*')
-                        if len(value) == 1:
-                            data['values'].append(int_or_float(value[0]))
-                        else:
-                            data['values'].extend(
-                                [int_or_float(value[1]) for _ in range(int_or_float(value[0]))])
+                if not line:
+                    continue
 
-        if len(data['values']) == 0:
+                if line.startswith('**'):
+                    comments.append(line)
+                    continue
+
+                # Check if line contains values (starts with a digit, optional minus, or decimal)
+                first_char = line[0]
+                if first_char.isdigit() or first_char in '-.':
+                    # Process value line
+                    # Split by comment marker first to ignore comments
+                    line = line.split('**', 1)[0].strip()
+
+                    # Split by whitespace and process each token
+                    for token in line.split():
+                        if '*' in token:
+                            # Format: count*value
+                            parts = token.split('*', 1)
+                            count = int(parts[0])
+                            value = parse_number(parts[1])
+                            # Pre-allocate and extend is faster than repeated appends
+                            values.extend([value] * count)
+                        else:
+                            values.append(parse_number(token))
+                else:
+                    # Keyword line
+                    if keyword:
+                        raise ValueError("More than one keyword line found!")
+                    keyword = line
+
+        if not values:
             raise ValueError("Input file is not a grid file!")
-        data['values'] = np.array(data['values'])
-        self._data = data
+
+        # Use appropriate dtype based on data type
+        dtype = np.int64 if all_integers else np.float64
+
+        self._data = {
+            'keyword': keyword,
+            'comments': comments,
+            'values': np.array(values, dtype=dtype)
+        }
+
         if self.shape is not None:
             ni, nj, nk = self.shape
-            if ni*nj*nk != len(data['values']):
+            if ni*nj*nk != len(values):
                 self.shape = None
 
 
