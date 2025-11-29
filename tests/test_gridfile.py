@@ -7,6 +7,7 @@ import shutil
 import unittest
 import numpy as np
 import numpy.testing as npt
+from bokeh.plotting import show
 
 import context  # noqa # pylint: disable=unused-import
 from rsimpy.cmg import gridfile
@@ -173,6 +174,17 @@ class TestGridFile(unittest.TestCase):
                                     np.array([8, 9, 11, 12, 14, 15, 17, 18])),
                                 "Should have [8, 9, 11, 12, 14, 15, 17, 18].")
 
+    def test_plotting(self):
+        """Test plotting function"""
+
+        ni, nj, nk = 10, 15, 5
+        n = ni * nj * nk
+        values = np.arange(1, n+1)
+        grid = gridfile.GridFile(file_path='test.grd', auto_read=False)
+        grid.set_values(values)
+        grid.set_shape((ni, nj, nk))
+        panel = grid.plot(cell_size=50.0, log_scale=False)
+        show(panel)
 
 if __name__ == '__main__':
     unittest.main()
