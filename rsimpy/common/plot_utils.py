@@ -1890,7 +1890,7 @@ def _create_contour_color_mapper(contour_levels):
 
 # MARK: Polygon Grid
 def plot_polygon_grid(vertices, values=None, width=800, height=600,
-                       palette='Viridis256', line_color='black', line_width=1,
+                       palette='Turbo256', line_color='black', line_width=1,
                        colorbar=True, colorbar_label=None, log_scale=False,
                        title='Polygon Grid', labels=None,
                        color_limits=None, out_of_range_colors=None,
@@ -1933,7 +1933,7 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
         Width of the plot in pixels.
     height : int, default=600
         Height of the plot in pixels.
-    palette : str, default='Viridis256'
+    palette : str, default='Turbo256'
         Color palette name. Options: 'Viridis256', 'Turbo256', 'Plasma256',
         'Inferno256', 'Magma256', or any Bokeh palette.
     line_color : str, default='black'
