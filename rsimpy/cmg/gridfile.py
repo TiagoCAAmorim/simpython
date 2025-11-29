@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 
 from rsimpy.common.utils import _n2ijk, _ijk2n
+from rsimpy.common.plot_utils import plot_polygon_grid
 
 class GridFile:
 
@@ -276,8 +277,10 @@ class GridFile:
 
         if flattened:
             return values.flatten()
-        return values.reshape((nk, nj, -1))
-
+        if self.shape is not None:
+            ni, nj, nk = self.shape
+            return values.reshape((nk, nj, -1))
+        return values
 
     def get_number_values(self):
         """Returns the number of values found in the grid file."""
@@ -584,3 +587,68 @@ class GridFile:
                     msg = 'Could not rewrite file: '
                     msg += out_file_path
                     raise ValueError(msg) from e
+
+    def plot(self, cell_size=100.0, log_scale=False, **kwargs):
+        """
+        Plots grid values to uniform grid.
+
+        Parameters
+        ----------
+        cell_size : float, optional
+            Size of each cell in the uniform grid.
+            (default: 100.0)
+        log_scale : bool, optional
+            If True, values are plotted in logarithmic scale.
+            (default: False)
+        **kwargs : dict, optional
+            Additional arguments passed to
+            rsimpy.common.plot_utils.plot_polygon_grid.
+
+        Raises
+        ------
+        ValueError
+            If shape is not defined.
+
+        Returns
+        -------
+        panel : bokeh.layouts.Panel
+            Bokeh panel containing the plot.
+        """
+        if self.shape is None:
+            msg = "Grid shape is not defined."
+            raise ValueError(msg)
+        ni, nj, nk = self.shape
+
+        # Create grid of cell vertices
+        x_list = np.arange(ni + 1) * cell_size
+        y_list = np.arange(nj + 1) * cell_size
+        x, y = np.meshgrid(x_list, y_list, indexing='ij')
+        vertices = np.zeros((nj, ni, 4, 2))
+        vertices[:, :, 0, 0] = x[:-1, :-1].T  # bottom-left x
+        vertices[:, :, 0, 1] = y[:-1, :-1].T  # bottom-left y
+        vertices[:, :, 1, 0] = x[1:, :-1].T   # bottom-right x
+        vertices[:, :, 1, 1] = y[1:, :-1].T   # bottom-right y
+        vertices[:, :, 2, 0] = x[1:, 1:].T    # top-right x
+        vertices[:, :, 2, 1] = y[1:, 1:].T    # top-right y
+        vertices[:, :, 3, 0] = x[:-1, 1:].T   # top-left x
+        vertices[:, :, 3, 1] = y[:-1, 1:].T   # top-left y
+        vertices = vertices.reshape((nj * ni, 4, 2))
+
+        i_list = np.arange(1, ni+1)
+        j_list = np.arange(1, nj+1)
+        i, j = np.meshgrid(j_list, i_list, indexing='ij')
+        labels = [f'({ii},{jj})' for ii, jj in zip(i.flatten(), j.flatten())]
+
+        value_names = [f'k={k+1}' for k in range(nk)]
+
+        values = self.get_values(flattened=False)
+        values = values.transpose(1, 2, 0).reshape((nj * ni, -1))
+
+        return plot_polygon_grid(
+            vertices=vertices,
+            values=values,
+            value_names=value_names,
+            log_scale=log_scale,
+            labels=labels,
+            **kwargs
+        )
