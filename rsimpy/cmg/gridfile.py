@@ -275,6 +275,10 @@ class GridFile:
             nj = j2 - j1 + 1
             nk = k2 - k1 + 1
 
+            if flattened:
+                return values.flatten()
+            return values
+
         if flattened:
             return values.flatten()
         if self.shape is not None:
