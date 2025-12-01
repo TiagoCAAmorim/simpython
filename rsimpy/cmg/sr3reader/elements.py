@@ -31,6 +31,9 @@ class ElementHandler:
     auto_read : bool, optional
         If True, reads date information from the SR3 file.
         (default: True)
+    read_grid : bool, optional
+        If True, reads grid data.
+        (default: True)
 
     Methods
     -------
@@ -50,7 +53,7 @@ class ElementHandler:
         Returns layer data.
     """
 
-    def __init__(self, sr3_file, units, grid, auto_read=True):
+    def __init__(self, sr3_file, units, grid, auto_read=True, read_grid=True):
         self._element = {k:{} for k in ElementHandler.valid_elements()}
         self._parent = {k:{} for k in ElementHandler.valid_elements()}
         self._property = {k:{} for k in ElementHandler.valid_elements()}
@@ -59,15 +62,19 @@ class ElementHandler:
         self._units = units
         self._grid = grid
 
+        self._read_grid = read_grid
         if auto_read:
             self.read()
 
     def read(self):
         """Reads element information."""
         for element_type in ElementHandler.valid_elements():
+            if element_type in ['grid', 'layer'] and not self._read_grid:
+                continue
             self._get_elements(element_type)
             self._get_parents(element_type)
-        self._get_layer_data()
+        if self._read_grid:
+            self._get_layer_data()
 
 
     @staticmethod

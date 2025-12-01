@@ -41,7 +41,7 @@ class Sr3Reader:
     """
 
 
-    def __init__(self, file_path, usual_units=True, auto_read=True):
+    def __init__(self, file_path, usual_units=True, auto_read=True, read_grid=True):
         """
         Parameters
         ----------
@@ -50,6 +50,12 @@ class Sr3Reader:
         usual_units : bool, optional
             Adds some unit aliases
             and changes some of the current units.
+            (default: True)
+        auto_read : bool, optional
+            If True, reads the indexes upon initialization.
+            (default: True)
+        read_grid : bool, optional
+            If True, reads grid data indexes. Initialization is faster if False.
             (default: True)
 
         Raises
@@ -62,9 +68,17 @@ class Sr3Reader:
 
         self.dates = DateHandler(self.file, auto_read=auto_read)
         self.units = UnitHandler(self.file, auto_read=auto_read)
-        self.grid = GridHandler(self.file, self.dates, auto_read=auto_read)
-        self.properties = PropertyHandler(self.file, self.units, self.grid, auto_read=auto_read)
-        self.elements = ElementHandler(self.file, self.units, self.grid, auto_read=auto_read)
+        self.grid = GridHandler(
+            self.file, self.dates,
+            auto_read=auto_read and read_grid
+        )
+        self.properties = PropertyHandler(
+            self.file, self.units, self.grid, auto_read=auto_read
+        )
+        self.elements = ElementHandler(
+            self.file, self.units, self.grid,
+            auto_read=auto_read, read_grid=read_grid
+        )
         self.krel = KrelHandler(self.file, auto_read=auto_read)
         self.data = DataHandler(self)
         self.connections = ConnectionsHandler(self)
@@ -72,13 +86,15 @@ class Sr3Reader:
 
         if usual_units and auto_read:
             self.set_usual_units()
+        self._read_grid = read_grid
 
 
     def read(self):
         """Reads the contents of the sr3 file."""
         self.dates.read()
         self.units.read()
-        self.grid.read()
+        if self._read_grid:
+            self.grid.read()
         self.properties.read()
         self.elements.read()
         self.krel.read()
