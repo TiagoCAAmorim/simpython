@@ -3,7 +3,7 @@ Python code and helpers for reservoir simulation analysis.
 
 ## rsimpy - Reservoir Simulation File Handler
 
-**rsimpy** is a comprehensive Python package for handling CMG (Computer Modelling Group) reservoir simulation files. It provides tools for reading results files (SR3), processing input files (DAT), manipulating grid properties, and generating parametric studies.
+**rsimpy** is a comprehensive Python package for handling CMG (Computer Modelling Group) reservoir simulation files. It provides tools for reading results files (SR3), processing input/output files (DAT/OUT), manipulating grid properties, and generating parametric studies.
 
 ### Key Features
 

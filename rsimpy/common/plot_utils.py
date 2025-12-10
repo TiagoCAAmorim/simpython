@@ -170,7 +170,9 @@ def _validate_polygon(poly_arr, index, set_index=None):
     prefix = f"vertices[{set_index}][{index}]" if set_index is not None else f"vertices[{index}]"
 
     if poly_arr.ndim != 2 or poly_arr.shape[1] not in (2, 3):
-        raise ValueError(f"{prefix} must have shape (n_vertices, 2) or (n_vertices, 3), got {poly_arr.shape}")
+        raise ValueError(
+            f"{prefix} must have shape (n_vertices, 2) or (n_vertices, 3), got {poly_arr.shape}"
+            )
     if poly_arr.shape[0] < 3:
         raise ValueError(f"{prefix} must have at least 3 vertices, got {poly_arr.shape[0]}")
 
@@ -1090,10 +1092,14 @@ def _prepare_connection_data(connections, connection_values, all_centers, labels
         # Store gradient data
         if col_idx == 0:
             # Set coordinates to NaN for segments with non-finite values (Bokeh won't render them)
-            gradient_data['x0'] = [grad_x0[i] if np.isfinite(grad_values[i]) else np.nan for i in range(len(grad_x0))]
-            gradient_data['y0'] = [grad_y0[i] if np.isfinite(grad_values[i]) else np.nan for i in range(len(grad_y0))]
-            gradient_data['x1'] = [grad_x1[i] if np.isfinite(grad_values[i]) else np.nan for i in range(len(grad_x1))]
-            gradient_data['y1'] = [grad_y1[i] if np.isfinite(grad_values[i]) else np.nan for i in range(len(grad_y1))]
+            gradient_data['x0'] = [grad_x0[i] if np.isfinite(grad_values[i]) else
+                                   np.nan for i in range(len(grad_x0))]
+            gradient_data['y0'] = [grad_y0[i] if np.isfinite(grad_values[i]) else
+                                   np.nan for i in range(len(grad_y0))]
+            gradient_data['x1'] = [grad_x1[i] if np.isfinite(grad_values[i]) else
+                                   np.nan for i in range(len(grad_x1))]
+            gradient_data['y1'] = [grad_y1[i] if np.isfinite(grad_values[i]) else
+                                   np.nan for i in range(len(grad_y1))]
             gradient_data['value'] = grad_values
             gradient_data['name'] = grad_names
             gradient_data['conn_id'] = grad_conn_id
@@ -1884,7 +1890,7 @@ def _create_contour_color_mapper(contour_levels):
 
 # MARK: Polygon Grid
 def plot_polygon_grid(vertices, values=None, width=800, height=600,
-                       palette='Viridis256', line_color='black', line_width=1,
+                       palette='Turbo256', line_color='black', line_width=1,
                        colorbar=True, colorbar_label=None, log_scale=False,
                        title='Polygon Grid', labels=None,
                        color_limits=None, out_of_range_colors=None,
@@ -1927,7 +1933,7 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
         Width of the plot in pixels.
     height : int, default=600
         Height of the plot in pixels.
-    palette : str, default='Viridis256'
+    palette : str, default='Turbo256'
         Color palette name. Options: 'Viridis256', 'Turbo256', 'Plasma256',
         'Inferno256', 'Magma256', or any Bokeh palette.
     line_color : str, default='black'
@@ -2481,9 +2487,13 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
 
                 # Store data for this column
                 if col_idx == 0:
-                    # Set coordinates to NaN for triangles with non-finite values (Bokeh won't render them)
-                    triangle_data['xs'] = [[np.nan, np.nan, np.nan] if not np.isfinite(tri_values[i]) else tri_xs[i] for i in range(len(tri_xs))]
-                    triangle_data['ys'] = [[np.nan, np.nan, np.nan] if not np.isfinite(tri_values[i]) else tri_ys[i] for i in range(len(tri_ys))]
+                    # Set coordinates to NaN for triangles with non-finite values (will be hidden)
+                    triangle_data['xs'] = [[np.nan, np.nan, np.nan]
+                                           if not np.isfinite(tri_values[i])
+                                           else tri_xs[i] for i in range(len(tri_xs))]
+                    triangle_data['ys'] = [[np.nan, np.nan, np.nan]
+                                           if not np.isfinite(tri_values[i])
+                                           else tri_ys[i] for i in range(len(tri_ys))]
                     triangle_data['value'] = tri_values
                     triangle_data['name'] = tri_names
 
