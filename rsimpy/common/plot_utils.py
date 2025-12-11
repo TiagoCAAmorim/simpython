@@ -6,7 +6,8 @@ import numpy as np
 from bokeh.plotting import figure
 from bokeh.models import (
     HoverTool, LinearColorMapper, LogColorMapper,
-    ColorBar, BasicTicker, LogTicker, Select, ColumnDataSource, CustomJS, Slider
+    ColorBar, BasicTicker, LogTicker, Select, ColumnDataSource, CustomJS, Slider,
+    CheckboxGroup
 )
 from bokeh.palettes import (
     Viridis256, Turbo256, Plasma256, Inferno256, Magma256,
@@ -15,9 +16,12 @@ from bokeh.palettes import (
 )
 from bokeh.layouts import column, row
 
-TRI_SIZE_RATIO = 0.01  # Triangle size as percentage of mean polygon area
-WELL_CIRCLE_SIZE_RATIO = 0.20  # Well circle radius as ratio of mean polygon "radius" (sqrt(area/pi))
-WELL_HOLLOW_ALPHA = 0.3  # Transparency level for hollow well circles (0=transparent, 1=opaque)
+# Triangle size as percentage of mean polygon area
+TRI_SIZE_RATIO = 0.01
+# Well circle radius as ratio of mean polygon "radius" (sqrt(area/pi))
+WELL_CIRCLE_SIZE_RATIO = 0.20
+# Transparency level for hollow well circles (0=transparent, 1=opaque)
+WELL_HOLLOW_ALPHA = 0.3
 
 def _get_palette_map():
     """Get the mapping of palette names to Bokeh palettes."""
@@ -1672,6 +1676,89 @@ def _create_well_size_slider(well_radius, well_circle_renderers, source_well_lin
     return well_size_slider
 
 
+def _create_cell_visibility_toggle(all_patches):
+    """Create toggle button for controlling visibility of cells (polygons)."""
+    checkbox_group = CheckboxGroup(
+        labels=['Cells'],
+        active=[0],
+        inline=True
+    )
+
+    callback = CustomJS(
+        args=dict(patch_renderers=all_patches),
+        code="""
+        const active_set = new Set(cb_obj.active);
+        const cells_visible = active_set.has(0);
+        for (let i = 0; i < patch_renderers.length; i++) {
+            patch_renderers[i].visible = cells_visible;
+        }
+        """
+    )
+
+    checkbox_group.js_on_change('active', callback)
+    return checkbox_group
+
+
+def _create_connection_visibility_toggle(connection_renderers, triangle_patches):
+    """Create toggle button for controlling visibility of connections."""
+    checkbox_group = CheckboxGroup(
+        labels=['Connections'],
+        active=[0],
+        inline=True
+    )
+
+    callback = CustomJS(
+        args=dict(
+            conn_renderers=connection_renderers,
+            tri_renderers=triangle_patches if triangle_patches else None
+        ),
+        code="""
+        const active_set = new Set(cb_obj.active);
+        const conn_visible = active_set.has(0);
+        for (let i = 0; i < conn_renderers.length; i++) {
+            conn_renderers[i].visible = conn_visible;
+        }
+        if (tri_renderers !== null) {
+            for (let i = 0; i < tri_renderers.length; i++) {
+                tri_renderers[i].visible = conn_visible;
+            }
+        }
+        """
+    )
+
+    checkbox_group.js_on_change('active', callback)
+    return checkbox_group
+
+
+def _create_well_visibility_toggle(well_circle_renderers, well_line_renderer):
+    """Create toggle button for controlling visibility of wells."""
+    checkbox_group = CheckboxGroup(
+        labels=['Wells'],
+        active=[0],
+        inline=True
+    )
+
+    callback = CustomJS(
+        args=dict(
+            well_renderers=well_circle_renderers,
+            well_line_renderer=well_line_renderer
+        ),
+        code="""
+        const active_set = new Set(cb_obj.active);
+        const well_visible = active_set.has(0);
+        for (let i = 0; i < well_renderers.length; i++) {
+            well_renderers[i].visible = well_visible;
+        }
+        if (well_line_renderer !== null) {
+            well_line_renderer.visible = well_visible;
+        }
+        """
+    )
+
+    checkbox_group.js_on_change('active', callback)
+    return checkbox_group
+
+
 def _interpolate_edge_contour(p1, p2, z1, z2, contour_value):
     """
     Find the point where a contour line crosses an edge.
@@ -2090,11 +2177,12 @@ def _process_wells(wells, n_polygons, n_columns):
                     )
 
         # Process well values
-        # Expected: list of lists matching locations structure, or single value, or list of m values
+        # Expected: list of lists matching locations structure, single value, or list of m values
         well_value = well_info.get('value', -999.99)
 
         # Check if it's a list of lists (full specification)
-        if isinstance(well_value, (list, tuple)) and len(well_value) > 0 and isinstance(well_value[0], (list, tuple)):
+        if isinstance(well_value, (list, tuple)) and len(well_value) > 0 and \
+            isinstance(well_value[0], (list, tuple)):
             # List of lists - must match locations structure
             if len(well_value) != len(locations):
                 raise ValueError(
@@ -2269,7 +2357,8 @@ def _draw_wells(plot, wells, all_centers, mean_poly_area, n_columns):
     if not circle_data:
         return [], None, None
 
-    # Separate circles into current column (visible with hover) and other columns (transparent without hover)
+    # Separate circles into current column (visible with hover)
+    # and other columns (transparent without hover)
     visible_data = [c for c in circle_data if c['col_idx'] == 0]
     hidden_data = [c for c in circle_data if c['col_idx'] != 0]
 
@@ -2433,7 +2522,18 @@ def _draw_wells(plot, wells, all_centers, mean_poly_area, n_columns):
         source_well_lines = None
         well_line_renderer = None
 
-    return well_renderers, source_all_circles, source_visible, source_hidden, source_well_lines, circle_renderers, well_line_renderer
+    # Pack return values into a dictionary
+    well_data = {
+        'renderers': well_renderers,
+        'source_all': source_all_circles,
+        'source_visible': source_visible,
+        'source_hidden': source_hidden,
+        'source_lines': source_well_lines,
+        'circle_renderers': circle_renderers,
+        'line_renderer': well_line_renderer
+    }
+
+    return well_data
 
 
 # MARK: Polygon Grid
@@ -3148,9 +3248,16 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
         mean_poly_area = _calculate_mean_polygon_area(all_vertices_lists[0])
 
         # Draw wells
-        well_renderers, source_all_circles, source_visible, source_hidden, source_well_lines, well_circle_renderers, well_line_renderer = _draw_wells(
+        well_data = _draw_wells(
             p, processed_wells, all_centers, mean_poly_area, n_columns
         )
+        well_renderers = well_data['renderers']
+        source_all_circles = well_data['source_all']
+        source_visible = well_data['source_visible']
+        source_hidden = well_data['source_hidden']
+        source_well_lines = well_data['source_lines']
+        well_circle_renderers = well_data['circle_renderers']
+        well_line_renderer = well_data['line_renderer']
 
     # Add unified hover tool for both polygons and connections
     # Using HTML formatting to hide field labels and center align
@@ -3241,57 +3348,71 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
             source_well_lines=source_well_lines if has_wells else None
         )
 
-        # Add connection width slider if connections are present
+        # Build controls in rows
+        control_rows = []
+
+        # Row 1: Column selector, palette selector, cell visibility
+        cell_toggle = _create_cell_visibility_toggle(all_patches)
+        row1 = row(select, palette_select, cell_toggle)
+        control_rows.append(row1)
+
+        # Row 2: Well controls (if wells exist)
+        if has_wells:
+            well_size_slider = _create_well_size_slider(
+                well_circle_renderers[0].glyph.radius, well_circle_renderers, source_well_lines
+            )
+            well_toggle = _create_well_visibility_toggle(well_circle_renderers, well_line_renderer)
+            row2 = row(well_size_slider, well_toggle)
+            control_rows.append(row2)
+
+        # Row 3: Connection controls (if connections exist)
         if has_connections:
             conn_width_slider = _create_connection_width_slider(
                 connection_width, connection_renderers, connection_border_color
             )
-            if has_wells:
-                well_size_slider = _create_well_size_slider(
-                    well_circle_renderers[0].glyph.radius, well_circle_renderers, source_well_lines
-                )
-                controls = row(select, palette_select, conn_width_slider, well_size_slider)
-            else:
-                controls = row(select, palette_select, conn_width_slider)
-            panel = column(controls, p)
-        else:
-            if has_wells:
-                well_size_slider = _create_well_size_slider(
-                    well_circle_renderers[0].glyph.radius, well_circle_renderers, source_well_lines
-                )
-                controls = row(select, palette_select, well_size_slider)
-            else:
-                controls = row(select, palette_select)
-            panel = column(controls, p)
+            conn_toggle = _create_connection_visibility_toggle(
+                connection_renderers, triangle_patches if source_triangles is not None else None
+            )
+            row3 = row(conn_width_slider, conn_toggle)
+            control_rows.append(row3)
+
+        panel = column(*control_rows, p)
     else:
         # No matrix values
+        control_rows = []
+
+        # Row 1: Palette selector, cell visibility
+        cell_toggle = _create_cell_visibility_toggle(all_patches)
+        row1 = row(palette_select, cell_toggle)
+        control_rows.append(row1)
+
+        # Row 2: Well controls (if wells exist)
+        if has_wells:
+            well_size_slider = _create_well_size_slider(
+                well_circle_renderers[0].glyph.radius, well_circle_renderers, source_well_lines
+            )
+            well_toggle = _create_well_visibility_toggle(well_circle_renderers, well_line_renderer)
+            row2 = row(well_size_slider, well_toggle)
+            control_rows.append(row2)
+
+        # Row 3: Connection controls (if connections exist)
         if has_connections:
             conn_width_slider = _create_connection_width_slider(
                 connection_width, connection_renderers, connection_border_color
             )
-            if has_wells:
-                well_size_slider = _create_well_size_slider(
-                    well_circle_renderers[0].glyph.radius, well_circle_renderers, source_well_lines
-                )
-                controls = row(palette_select, conn_width_slider, well_size_slider)
-            else:
-                controls = row(palette_select, conn_width_slider)
-            panel = column(controls, p)
-        else:
-            if has_wells:
-                well_size_slider = _create_well_size_slider(
-                    well_circle_renderers[0].glyph.radius, well_circle_renderers, source_well_lines
-                )
-                controls = row(palette_select, well_size_slider)
-            else:
-                controls = row(palette_select)
-            panel = column(controls, p)
+            conn_toggle = _create_connection_visibility_toggle(
+                connection_renderers, triangle_patches if source_triangles is not None else None
+            )
+            row3 = row(conn_width_slider, conn_toggle)
+            control_rows.append(row3)
+
+        panel = column(*control_rows, p)
 
     return panel
 
 def main():
     """Example usage of plot_polygon_grid function."""
-    from bokeh.plotting import show # pylint: disable=import-outside-toplevel
+    from bokeh.plotting import output_file, save # pylint: disable=import-outside-toplevel
 
     vertices1 = [
         np.array([[0.5, 0.5], [1, 0], [1, 1], [0.5, 1]]),
@@ -3341,8 +3462,8 @@ def main():
         labels=labels_,
         value_names=['Set 1', 'Set 2'],
         wells=wells,
-        # connections=connections_,
-        # connection_values=connection_values_,
+        connections=connections_,
+        connection_values=connection_values_,
         connection_width=6.0,
         palette='Turbo',
         connection_log_scale=True,
@@ -3354,7 +3475,8 @@ def main():
         # connection_colorbar_label='Connection',
         title='Map Example'
     )
-    show(panel_limits)
+    output_file('/root/dev/simpython/rsimpy/common/plot_utils.html')
+    save(panel_limits)
 
 if __name__ == "__main__":
     main()
