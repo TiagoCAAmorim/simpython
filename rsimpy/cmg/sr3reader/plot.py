@@ -44,6 +44,8 @@ class PlotHandler:
                  property_name,
                  days=None, layers=None,
                  grid_property=None,
+                 add_wells=False,
+                 well_property_name=None,
                  add_top=False,
                  add_connections=False,
                  ijk_labels=True,
@@ -69,6 +71,13 @@ class PlotHandler:
         grid_property : np.ndarray, optional
             A custom array of values to plot with size [n_cells, n_dates].
             If None, data will be read from the SR3 file.
+            Default is None.
+        add_wells : bool, optional
+            Whether to add well locations to the plot.
+            Default is False.
+        well_property_name : str, optional
+            Connection (layer) property name to read from the grid data.
+            If None, no well properties are read.
             Default is None.
         add_top : bool, optional
             Whether to add contour lines to the plot.
@@ -194,6 +203,9 @@ class PlotHandler:
         if all_coords.shape[0] == 1:
             all_coords = all_coords[0] # [ni*nj, 4, 3]
 
+        if add_wells:
+            kwargs['wells'] = self._get_wells(layers, well_property_name)
+
         if add_connections:
             self._get_connections(layers, kwargs)
 
@@ -236,6 +248,24 @@ class PlotHandler:
         )
 
         return panel
+
+    def _get_wells(self, layers, well_property_name):
+        """Get well locations and add to kwargs."""
+        conn_cells = self._sr3.elements.get_layer_data('cell')
+        conn_cells = self._sr3.grid.active2complete(conn_cells) - 1  # to complete, 0-indexed
+        layers_ = [layer - 1 for layer in layers] # 0-indexed
+        wells = {}
+        for well in self._sr3.elements.get('well').keys():
+            wells[well] = {}
+            conns = self._sr3.elements.get_children(
+                element_type='layer',
+                element_name=well,
+                deep_search=False
+            )
+
+
+
+        return wells
 
     def _get_connections(self, layers, kwargs):
         """Get connections for the specified layer and add to kwargs."""

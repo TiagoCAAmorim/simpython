@@ -3,7 +3,7 @@ Test script for the PlotHandler class.
 """
 import unittest
 from pathlib import Path
-from bokeh.plotting import show, column, figure
+from bokeh.plotting import save, column, figure, output_file
 
 import context  # noqa # pylint: disable=unused-import
 from rsimpy.cmg.sr3reader import Sr3Reader
@@ -12,7 +12,7 @@ def get_figure(panel):
     """Extract figure from panel (handles both direct figures and layouts)"""
     if hasattr(panel, 'select'):
         # It's a layout, find the first figure
-        figs = panel.select(dict(type=figure))
+        figs = panel.select({"type": figure})
         return next(figs) if figs else None
     return panel  # It's already a figure
 
@@ -26,7 +26,7 @@ class TestPlotHandler(unittest.TestCase):
         if not cls.test_file.exists():
             raise FileNotFoundError(f"Test file not found: {cls.test_file}")
         cls.sr3 = Sr3Reader(str(cls.test_file))
-        cls.show = True
+        cls.save = True
 
     def test_sr3_reader_loads(self):
         """Test that SR3 file loads successfully."""
@@ -54,8 +54,9 @@ class TestPlotHandler(unittest.TestCase):
         # Bokeh panels/layouts have a children attribute
         self.assertTrue(hasattr(panel, 'children') or hasattr(panel, 'renderers'),
                        "Panel should be a valid Bokeh layout or figure")
-        if self.show:
-            show(panel)
+        if self.save:
+            output_file("test_plot_map_returns_panel.html")
+            save(panel)
 
     def test_plot_map_with_multiple_days(self):
         """Test that plot_map works with multiple days."""
@@ -76,8 +77,9 @@ class TestPlotHandler(unittest.TestCase):
         )
 
         self.assertIsNotNone(panel, "Panel should not be None")
-        if self.show:
-            show(panel)
+        if self.save:
+            output_file("test_plot_map_with_multiple_days.html")
+            save(panel)
 
     def test_plot_map_with_different_properties(self):
         """Test that plot_map works with different properties."""
@@ -105,8 +107,9 @@ class TestPlotHandler(unittest.TestCase):
                 fig.x_range = fig_refs[0].x_range
                 fig.y_range = fig_refs[0].y_range
 
-        if self.show:
-            show(column(*panels))
+        if self.save:
+            output_file("test_plot_map_with_different_properties.html")
+            save(column(*panels))
 
     def test_plot_map_with_custom_colors(self):
         """Test that plot_map works with custom color settings."""
@@ -126,8 +129,9 @@ class TestPlotHandler(unittest.TestCase):
         )
 
         self.assertIsNotNone(panel, "Panel should not be None")
-        if self.show:
-            show(panel)
+        if self.save:
+            output_file("test_plot_map_with_custom_colors.html")
+            save(panel)
 
     def test_plot_map_with_complete_property_and_contour(self):
         """Test that plot_map works with complete grid property and contour lines."""
@@ -148,8 +152,9 @@ class TestPlotHandler(unittest.TestCase):
         )
 
         self.assertIsNotNone(panel, "Panel should not be None")
-        if self.show:
-            show(panel)
+        if self.save:
+            output_file("test_plot_map_with_complete_property_and_contour.html")
+            save(panel)
 
     def test_plot_map_with_connections(self):
         """Test that plot_map works with connections."""
@@ -172,8 +177,36 @@ class TestPlotHandler(unittest.TestCase):
         )
 
         self.assertIsNotNone(panel, "Panel should not be None")
-        if self.show:
-            show(panel)
+        if self.save:
+            output_file("test_plot_map_with_connections.html")
+            save(panel)
+
+    def test_plot_map_with_wells(self):
+        """Test that plot_map works with connections."""
+        days = self.sr3.dates.get_days('grid')
+
+        panel = self.sr3.plot.plot_map(
+            element="matrix",
+            property_name="PERMJ",
+            days=days[0],
+            layers=[86,87],
+            width=1600,
+            height=600,
+            add_top=True,
+            add_connections=False,
+            add_wells=True,
+            well_property_name="WELLID",
+            palette='Turbo',
+            log_scale=True,
+            out_of_range_colors=None,
+            nan_inf_color=None,
+            ijk_labels=True,
+        )
+
+        self.assertIsNotNone(panel, "Panel should not be None")
+        if self.save:
+            output_file("test_plot_map_with_connections.html")
+            save(panel)
 
 if __name__ == '__main__':
     unittest.main()
