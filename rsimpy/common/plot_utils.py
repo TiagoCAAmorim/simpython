@@ -1261,7 +1261,7 @@ def _create_column_selector(
         value_names, source, source_in_range, source_below_min, source_above_max,
         source_nan_inf, source_connections, source_gradient, vmin, vmax,
         nan_inf_color, has_connections, source_contours=None, source_triangles=None,
-        source_wells=None, source_well_lines=None, source_hollow=None
+        source_all_circles=None, source_visible=None, source_hidden=None, source_well_lines=None
     ):
     """Create column selector widget with callback for matrix data."""
     select = Select(
@@ -1282,9 +1282,10 @@ def _create_column_selector(
             source_grad=source_gradient,
             source_contour=source_contours,
             source_tri=source_triangles,
-            source_wells=source_wells,
+            source_all_circles=source_all_circles,
+            source_visible=source_visible,
+            source_hidden=source_hidden,
             source_well_lines=source_well_lines,
-            source_hollow=source_hollow,
             select=select,
             value_names=value_names,
             n_columns=len(value_names),
@@ -1507,36 +1508,51 @@ def _create_column_selector(
                 tri_data['name'] = all_tri_names;
                 source_tri.change.emit();
             }
-            // Update wells if present
-            if (source_wells !== null) {
-                const wells_data = source_wells.data;
-                wells_data['x'] = wells_data['x_' + col_idx];
-                wells_data['y'] = wells_data['y_' + col_idx];
-                wells_data['color'] = wells_data['color_' + col_idx];
-                wells_data['name'] = wells_data['name_' + col_idx];
-                wells_data['value'] = wells_data['value_' + col_idx];
-                source_wells.change.emit();
-            }
+            // Update wells if present - filter circles by column
+            if (source_all_circles !== null) {
+                const all_data = source_all_circles.data;
+                const n_wells = all_data['col_idx'].length;
 
-            // Update well lines if present
-            if (source_well_lines !== null) {
-                const lines_data = source_well_lines.data;
-                lines_data['x'] = lines_data['x_' + col_idx];
-                lines_data['y'] = lines_data['y_' + col_idx];
-                lines_data['name'] = lines_data['name_' + col_idx];
-                lines_data['value'] = lines_data['value_' + col_idx];
-                source_well_lines.change.emit();
-            }
+                // Arrays for visible circles (current column)
+                const vis_x = [], vis_y = [], vis_color = [], vis_name = [], vis_value = [], vis_col = [];
+                // Arrays for hidden circles (other columns)
+                const hid_x = [], hid_y = [], hid_color = [], hid_name = [], hid_value = [], hid_col = [];
 
-            // Update hollow circles if present
-            if (source_hollow !== null) {
-                const hollow_data = source_hollow.data;
-                hollow_data['x'] = hollow_data['x_' + col_idx];
-                hollow_data['y'] = hollow_data['y_' + col_idx];
-                hollow_data['color'] = hollow_data['color_' + col_idx];
-                hollow_data['name'] = hollow_data['name_' + col_idx];
-                hollow_data['value'] = hollow_data['value_' + col_idx];
-                source_hollow.change.emit();
+                // Filter circles by column
+                for (let i = 0; i < n_wells; i++) {
+                    if (all_data['col_idx'][i] === col_idx) {
+                        // Current column - visible with hover
+                        vis_x.push(all_data['x'][i]);
+                        vis_y.push(all_data['y'][i]);
+                        vis_color.push(all_data['color'][i]);
+                        vis_name.push(all_data['name'][i]);
+                        vis_value.push(all_data['value'][i]);
+                        vis_col.push(all_data['col_idx'][i]);
+                    } else {
+                        // Other column - transparent without hover
+                        hid_x.push(all_data['x'][i]);
+                        hid_y.push(all_data['y'][i]);
+                        hid_color.push(all_data['color'][i]);
+                        hid_name.push(all_data['name'][i]);
+                        hid_value.push(all_data['value'][i]);
+                        hid_col.push(all_data['col_idx'][i]);
+                    }
+                }
+
+                // Update visible circles source
+                source_visible.data = {
+                    'x': vis_x, 'y': vis_y, 'color': vis_color,
+                    'name': vis_name, 'value': vis_value, 'col_idx': vis_col
+                };
+
+                // Update hidden circles source
+                source_hidden.data = {
+                    'x': hid_x, 'y': hid_y, 'color': hid_color,
+                    'name': hid_name, 'value': hid_value, 'col_idx': hid_col
+                };
+
+                source_visible.change.emit();
+                source_hidden.change.emit();
             }
             source.change.emit();
         """
@@ -1999,18 +2015,42 @@ def _process_wells(wells, n_polygons, n_columns):
                     )
 
         # Process well values
+        # Expected: list of lists matching locations structure, or single value, or list of m values
         well_value = well_info.get('value', -999.99)
-        if isinstance(well_value, (list, tuple)):
-            # Multiple values provided - validate count
-            values = list(well_value)
-            if len(values) != n_columns:
+
+        # Check if it's a list of lists (full specification)
+        if isinstance(well_value, (list, tuple)) and len(well_value) > 0 and isinstance(well_value[0], (list, tuple)):
+            # List of lists - must match locations structure
+            if len(well_value) != len(locations):
                 raise ValueError(
-                    f"Well '{well_name}': number of values ({len(values)}) "
-                    f"must match number of value columns ({n_columns})"
+                    f"Well '{well_name}': value has {len(well_value)} sublists, "
+                    f"but locations has {len(locations)} sublists."
                 )
+            values = []
+            for col_idx, (col_vals, col_locs) in enumerate(zip(well_value, locations)):
+                if len(col_vals) != len(col_locs):
+                    raise ValueError(
+                        f"Well '{well_name}': column {col_idx} has {len(col_vals)} values "
+                        f"but {len(col_locs)} locations."
+                    )
+                values.append(list(col_vals))
+        elif isinstance(well_value, (list, tuple)):
+            # List of values (one per column) - replicate for each location in that column
+            if len(well_value) != n_columns:
+                raise ValueError(
+                    f"Well '{well_name}': value list has {len(well_value)} elements, "
+                    f"but expected {n_columns} to match value columns."
+                )
+            values = []
+            for col_idx, col_val in enumerate(well_value):
+                n_locs = len(locations[col_idx])
+                values.append([col_val] * n_locs)
         else:
-            # Single value - replicate for all columns
-            values = [well_value] * n_columns
+            # Single value - replicate for all locations in all columns
+            values = []
+            for col_idx in range(n_columns):
+                n_locs = len(locations[col_idx])
+                values.append([well_value] * n_locs)
 
         processed_wells.append({
             'name': well_name,
@@ -2110,10 +2150,12 @@ def _draw_wells(plot, wells, all_centers, mean_poly_area, n_columns):
     well_renderers : list
         List of Bokeh renderers for wells (for hover tool)
     source_wells : ColumnDataSource or None
-        Data source for active well locations
+        Data source for well circles
+    source_well_lines : ColumnDataSource or None
+        Data source for well connection lines
     """
     if not wells:
-        return [], None
+        return [], None, None
 
     # Calculate well circle radius
     target_circle_area = WELL_CIRCLE_SIZE_RATIO * mean_poly_area
@@ -2121,184 +2163,146 @@ def _draw_wells(plot, wells, all_centers, mean_poly_area, n_columns):
 
     well_renderers = []
 
-    # Prepare data for all well locations across all columns
-    # We'll draw hollow circles for all locations, then filled circles for active column
-
-    # First, collect all unique well locations across all columns
-    all_well_locations = []  # List of (well_name, well_type, col_idx, loc_list)
+    # Collect all well circle data
+    # Each circle is positioned at its polygon center for its corresponding column
+    # Only transparency changes when switching columns
+    circle_data = []
 
     for well in wells:
         well_name = well['name']
         well_type = well['type']
+        well_color = _get_well_color(well_type)
+
+        # For each column, add circles for all locations in that column
         for col_idx in range(n_columns):
-            loc_list = well['locations'][col_idx]
-            if loc_list:
-                all_well_locations.append((well_name, well_type, col_idx, loc_list))
+            for loc_idx, poly_idx in enumerate(well['locations'][col_idx]):
+                center = all_centers[col_idx][poly_idx]
+                well_val = well['values'][col_idx][loc_idx]
 
-    # Draw connecting lines for each column
-    # Lines connect all polygon locations in order, including across different column location lists
-    # For display purposes, all locations use the current display column's polygon centers
-    line_data_by_col = {col_idx: {'x': [], 'y': [], 'name': []}
-                        for col_idx in range(n_columns)}
+                circle_data.append({
+                    'x': center[0],
+                    'y': center[1],
+                    'color': well_color,
+                    'name': well_name,
+                    'value': well_val,
+                    'col_idx': col_idx,  # Which column this circle belongs to
+                    'well_name': well_name,
+                    'poly_idx': poly_idx
+                })
+
+    if not circle_data:
+        return [], None, None
+
+    # Separate circles into current column (visible with hover) and other columns (transparent without hover)
+    visible_data = [c for c in circle_data if c['col_idx'] == 0]
+    hidden_data = [c for c in circle_data if c['col_idx'] != 0]
+
+    # Build data sources
+    source_visible = ColumnDataSource(data={
+        'x': [c['x'] for c in visible_data],
+        'y': [c['y'] for c in visible_data],
+        'color': [c['color'] for c in visible_data],
+        'name': [c['name'] for c in visible_data],
+        'value': [c['value'] for c in visible_data],
+        'col_idx': [c['col_idx'] for c in visible_data]
+    })
+
+    source_hidden = ColumnDataSource(data={
+        'x': [c['x'] for c in hidden_data],
+        'y': [c['y'] for c in hidden_data],
+        'color': [c['color'] for c in hidden_data],
+        'name': [c['name'] for c in hidden_data],
+        'value': [c['value'] for c in hidden_data],
+        'col_idx': [c['col_idx'] for c in hidden_data]
+    })
+
+    # Store all circle data for callback (needed for switching columns)
+    source_all_circles = ColumnDataSource(data={
+        'x': [c['x'] for c in circle_data],
+        'y': [c['y'] for c in circle_data],
+        'color': [c['color'] for c in circle_data],
+        'name': [c['name'] for c in circle_data],
+        'value': [c['value'] for c in circle_data],
+        'col_idx': [c['col_idx'] for c in circle_data]
+    })
+
+    # Draw visible circles (full opacity, with hover)
+    visible_circles = plot.circle(
+        'x', 'y',
+        source=source_visible,
+        radius=well_radius,
+        fill_color='color',
+        fill_alpha=1.0,
+        line_color='black',
+        line_width=2
+    )
+    well_renderers.append(visible_circles)
+
+    # Draw hidden circles (transparent, no hover)
+    hidden_circles = plot.circle(
+        'x', 'y',
+        source=source_hidden,
+        radius=well_radius,
+        fill_color='color',
+        fill_alpha=WELL_HOLLOW_ALPHA,
+        line_color='black',
+        line_width=2
+    )
+    # Don't add hidden_circles to well_renderers - they won't have hover
+
+    # Draw connecting lines
+    # Lines connect locations within each well, across all columns
+    line_data = []
 
     for well in wells:
         well_name = well['name']
 
-        for display_col_idx in range(n_columns):
-            # Collect ALL locations for this well across all columns, in order
-            all_locations_ordered = []
-            for col_idx in range(n_columns):
-                all_locations_ordered.extend(well['locations'][col_idx])
-
-            # Connect consecutive locations (using display column's centers)
-            if len(all_locations_ordered) > 1:
-                for i in range(len(all_locations_ordered) - 1):
-                    poly_idx1 = all_locations_ordered[i]
-                    poly_idx2 = all_locations_ordered[i + 1]
-                    center1 = all_centers[display_col_idx][poly_idx1]
-                    center2 = all_centers[display_col_idx][poly_idx2]
-
-                    line_data_by_col[display_col_idx]['x'].append([center1[0], center2[0]])
-                    line_data_by_col[display_col_idx]['y'].append([center1[1], center2[1]])
-                    line_data_by_col[display_col_idx]['name'].append(well_name)
-
-    # Calculate max length for lines (will create data source after padding)
-    max_line_len = max((len(line_data_by_col[col_idx]['x']) for col_idx in range(n_columns)), default=0)
-
-    # Draw hollow circles for all locations (not in current column)
-    hollow_circle_data_by_col = {col_idx: {'x': [], 'y': [], 'color': [], 'name': []}
-                                 for col_idx in range(n_columns)}
-
-    for well in wells:
-        well_name = well['name']
-        well_type = well['type']
-        well_color = _get_well_color(well_type)
-        # For each column, collect locations from OTHER columns
-        for display_col_idx in range(n_columns):
-            for other_col_idx in range(n_columns):
-                if other_col_idx != display_col_idx:
-                    for poly_idx in well['locations'][other_col_idx]:
-                        center = all_centers[display_col_idx][poly_idx]
-                        hollow_circle_data_by_col[display_col_idx]['x'].append(center[0])
-                        hollow_circle_data_by_col[display_col_idx]['y'].append(center[1])
-                        hollow_circle_data_by_col[display_col_idx]['color'].append(well_color)
-                        hollow_circle_data_by_col[display_col_idx]['name'].append(well_name)
-
-    # Calculate max length for hollow circles (will create data source after padding)
-    max_hollow_len = max((len(hollow_circle_data_by_col[col_idx]['x']) for col_idx in range(n_columns)), default=0)
-
-    # Draw filled circles for current column's locations
-    filled_circle_data_by_col = {col_idx: {'x': [], 'y': [], 'color': [], 'name': [], 'well_value': []}
-                                 for col_idx in range(n_columns)}
-
-    for well in wells:
-        well_name = well['name']
-        well_type = well['type']
-        well_color = _get_well_color(well_type)
-        well_values = well['values']
-
+        # Collect all locations across all columns in order
+        all_locs = []
         for col_idx in range(n_columns):
             for poly_idx in well['locations'][col_idx]:
-                center = all_centers[col_idx][poly_idx]
-                filled_circle_data_by_col[col_idx]['x'].append(center[0])
-                filled_circle_data_by_col[col_idx]['y'].append(center[1])
-                filled_circle_data_by_col[col_idx]['color'].append(well_color)
-                filled_circle_data_by_col[col_idx]['name'].append(well_name)
-                filled_circle_data_by_col[col_idx]['well_value'].append(well_values[col_idx])
+                all_locs.append((col_idx, poly_idx))
 
-    # Calculate max length for filled circles
-    max_filled_len = max((len(filled_circle_data_by_col[col_idx]['x']) for col_idx in range(n_columns)), default=0)
+        # Create lines connecting consecutive locations
+        if len(all_locs) > 1:
+            for i in range(len(all_locs) - 1):
+                col_idx1, poly_idx1 = all_locs[i]
+                col_idx2, poly_idx2 = all_locs[i + 1]
 
-    # Pad all data to consistent length
-    for col_idx in range(n_columns):
-        _pad_well_data(line_data_by_col[col_idx], max_line_len)
-        _pad_well_data(hollow_circle_data_by_col[col_idx], max_hollow_len)
-        _pad_well_data(filled_circle_data_by_col[col_idx], max_filled_len)
+                # Use the center from each location's own column
+                center1 = all_centers[col_idx1][poly_idx1]
+                center2 = all_centers[col_idx2][poly_idx2]
 
-    # Create line data source with padded values
-    initial_line_data = {
-        'x': line_data_by_col[0]['x'],
-        'y': line_data_by_col[0]['y'],
-        'name': line_data_by_col[0]['name'],
-        'value': [-999.99] * max_line_len
-    }
-    for col_idx in range(n_columns):
-        initial_line_data[f'x_{col_idx}'] = line_data_by_col[col_idx]['x']
-        initial_line_data[f'y_{col_idx}'] = line_data_by_col[col_idx]['y']
-        initial_line_data[f'name_{col_idx}'] = line_data_by_col[col_idx]['name']
-        initial_line_data[f'value_{col_idx}'] = [-999.99] * max_line_len
+                line_data.append({
+                    'x': [center1[0], center2[0]],
+                    'y': [center1[1], center2[1]],
+                    'name': well_name
+                })
 
-    source_well_lines = ColumnDataSource(data=initial_line_data)
+    # Create line data source
+    if line_data:
+        line_x = [ld['x'] for ld in line_data]
+        line_y = [ld['y'] for ld in line_data]
+        line_name = [ld['name'] for ld in line_data]
 
-    # Draw lines (black) - not added to well_renderers to exclude from hover tooltips
-    if max_line_len > 0:
+        source_well_lines = ColumnDataSource(data={
+            'x': line_x,
+            'y': line_y,
+            'name': line_name,
+            'value': [-999.99] * len(line_data)
+        })
+
+        # Draw lines (black) - not added to well_renderers to exclude from hover tooltips
         well_lines = plot.multi_line(
             'x', 'y',
             source=source_well_lines,
             line_color='black',
             line_width=2
         )
+    else:
+        source_well_lines = None
 
-    # Create hollow data source with padded values
-    initial_hollow_data = {
-        'x': hollow_circle_data_by_col[0]['x'],
-        'y': hollow_circle_data_by_col[0]['y'],
-        'color': hollow_circle_data_by_col[0]['color'],
-        'name': hollow_circle_data_by_col[0]['name'],
-        'value': [-999.99] * max_hollow_len
-    }
-    for col_idx in range(n_columns):
-        initial_hollow_data[f'x_{col_idx}'] = hollow_circle_data_by_col[col_idx]['x']
-        initial_hollow_data[f'y_{col_idx}'] = hollow_circle_data_by_col[col_idx]['y']
-        initial_hollow_data[f'color_{col_idx}'] = hollow_circle_data_by_col[col_idx]['color']
-        initial_hollow_data[f'name_{col_idx}'] = hollow_circle_data_by_col[col_idx]['name']
-        initial_hollow_data[f'value_{col_idx}'] = [-999.99] * max_hollow_len
-
-    source_hollow = ColumnDataSource(data=initial_hollow_data)
-
-    # Draw hollow circles with transparency
-    if max_hollow_len > 0:
-        hollow_circles = plot.circle(
-            'x', 'y',
-            source=source_hollow,
-            radius=well_radius,
-            fill_color='color',
-            fill_alpha=WELL_HOLLOW_ALPHA,  # Transparent fill with original color
-            line_color='black',
-            line_width=2
-        )
-        well_renderers.append(hollow_circles)    # Initial filled circle data
-    initial_filled_data = {
-        'x': filled_circle_data_by_col[0]['x'],
-        'y': filled_circle_data_by_col[0]['y'],
-        'color': filled_circle_data_by_col[0]['color'],
-        'name': filled_circle_data_by_col[0]['name'],
-        'value': filled_circle_data_by_col[0]['well_value']  # Well value for tooltip
-    }
-
-    # Store all columns
-    for col_idx in range(n_columns):
-        initial_filled_data[f'x_{col_idx}'] = filled_circle_data_by_col[col_idx]['x']
-        initial_filled_data[f'y_{col_idx}'] = filled_circle_data_by_col[col_idx]['y']
-        initial_filled_data[f'color_{col_idx}'] = filled_circle_data_by_col[col_idx]['color']
-        initial_filled_data[f'name_{col_idx}'] = filled_circle_data_by_col[col_idx]['name']
-        initial_filled_data[f'value_{col_idx}'] = filled_circle_data_by_col[col_idx]['well_value']
-
-    source_wells = ColumnDataSource(data=initial_filled_data)
-
-    # Draw filled circles
-    if initial_filled_data['x']:
-        filled_circles = plot.circle(
-            'x', 'y',
-            source=source_wells,
-            radius=well_radius,
-            fill_color='color',
-            line_color='black',
-            line_width=2
-        )
-        well_renderers.append(filled_circles)
-
-    return well_renderers, source_wells, source_well_lines, source_hollow
+    return well_renderers, source_all_circles, source_visible, source_hidden, source_well_lines
 
 
 # MARK: Polygon Grid
@@ -3002,15 +3006,16 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
 
     # Draw wells if provided
     well_renderers = []
-    source_wells = None
+    source_all_circles = None
+    source_visible = None
+    source_hidden = None
     source_well_lines = None
-    source_hollow = None
     if has_wells:
         # Calculate mean polygon area for well sizing
         mean_poly_area = _calculate_mean_polygon_area(all_vertices_lists[0])
 
         # Draw wells
-        well_renderers, source_wells, source_well_lines, source_hollow = _draw_wells(
+        well_renderers, source_all_circles, source_visible, source_hidden, source_well_lines = _draw_wells(
             p, processed_wells, all_centers, mean_poly_area, n_columns
         )
 
@@ -3097,9 +3102,10 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
             vmin, vmax, nan_inf_color, has_connections,
             source_contours=source_contours,
             source_triangles=source_triangles if has_connections else None,
-            source_wells=source_wells if has_wells else None,
-            source_well_lines=source_well_lines if has_wells else None,
-            source_hollow=source_hollow if has_wells else None
+            source_all_circles=source_all_circles if has_wells else None,
+            source_visible=source_visible if has_wells else None,
+            source_hidden=source_hidden if has_wells else None,
+            source_well_lines=source_well_lines if has_wells else None
         )
 
         # Add connection width slider if connections are present
@@ -3159,7 +3165,7 @@ def main():
     wells = {
         'P1': {'type': 'prod', 'loc': [0, 1], 'value': 122.5},
         'P2': {'type': 'unknown', 'loc': [[2, 3], [4]], 'value': [32.1, 23.4]},
-        # 'I1': {'type': 'injw', 'loc': [3], 'value': 450.0},
+        'I1': {'type': 'injw', 'loc': [5], 'value': [55.5, 66.6]},
         # 'I2': {'type': 'injg', 'loc': [4]},
         # 'I3': {'type': 'inj', 'loc': [5], 'value': [88.8, 99.9]},
         # 'C1': {'type': 'conv', 'loc': [1], 'value': 777.7},
