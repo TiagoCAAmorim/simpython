@@ -241,7 +241,8 @@ class ElementHandler:
             The dictionary contains the following keys:
                 - number (int): layer number
                 - cell_str (str): string representation of the cell
-                - cell (int): cell number, as active cell index
+                - cell (int): cell number, as complete cell index
+                - cell_act (int): cell number, as active cell index
                 - parent (str): parent well
                 - connection (int): previous layer number
                 - perf (bool): True if the layer is perforated
@@ -255,7 +256,8 @@ class ElementHandler:
             f"{parent.decode()}{{{cell_str.decode()}}}": {
                 "number": int(number),
                 "cell_str": cell_str.decode(),
-                "cell": self._grid.complete2active(self._grid.ijk2n(cell_str.decode())),
+                "cell": self._grid.ijk2n(cell_str.decode()),
+                "cell_act": self._grid.complete2active(self._grid.ijk2n(cell_str.decode())),
                 "parent": parent.decode(),
                 "connection": int(connection),
                 "perf": int(perf) == 0,
@@ -270,14 +272,15 @@ class ElementHandler:
         }
 
 
-    def get_layer_data(self, data_name):
+    def get_layer_data(self, data_name=None):
         """
         Get layer data.
 
         Dictionary by layer name of one of the following options:
             - number: layer number (int)
             - cell_str: string representation of the cell (str)
-            - cell: cell number, as active cell index (int)
+            - cell: cell number, as complete cell index (int)
+            - cell_act: cell number, as active cell index (int)
             - parent: parent well (str)
             - connection: previous layer number (int)
             - perf: True if the layer is perforated (bool)
@@ -288,7 +291,8 @@ class ElementHandler:
         Parameters
         ----------
         data_name : str
-            Name of the data to retrieve.
+            Name of the data to retrieve. If None, returns all data.
+            Default is None.
 
         Returns
         -------
@@ -297,8 +301,10 @@ class ElementHandler:
         """
         if self._layer_data is None:
             self._get_layer_data()
-        valid_names = ["number", "cell_str", "cell", "parent", "connection", "perf"]
-        if data_name not in valid_names:
+        if data_name is None:
+            return self._layer_data
+        valid_names = ["number", "cell_str", "cell", "cell_act", "parent", "connection", "perf"]
+        if data_name is not None and data_name not in valid_names:
             msg = f"Invalid data name: {data_name}. "
             msg += f"Expected one of: {', '.join(valid_names)}."
             raise ValueError(msg)
