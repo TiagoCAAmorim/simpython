@@ -251,17 +251,31 @@ class PlotHandler:
 
     def _get_wells(self, layers, well_property_name):
         """Get well locations and add to kwargs."""
-        conn_cells = self._sr3.elements.get_layer_data('cell')
-        conn_cells = self._sr3.grid.active2complete(conn_cells) - 1  # to complete, 0-indexed
-        layers_ = [layer - 1 for layer in layers] # 0-indexed
+        conn_data = self._sr3.elements.get_layer_data('cell')
+        cells = np.array(list(conn_data.values()))
+        ijk = self._sr3.grid.n2ijk(cells)
+        mask = np.isin(ijk[:, -1], layers)
+        if mask.sum() == 0:
+            return {}
+        conn_data = self._sr3.elements.get_layer_data('parent')
+        names = np.array(list(conn_data.values()))
+
         wells = {}
         for well in self._sr3.elements.get('well').keys():
-            wells[well] = {}
-            conns = self._sr3.elements.get_children(
-                element_type='layer',
-                element_name=well,
-                deep_search=False
-            )
+            mask_well = names == well
+            final_mask = mask & mask_well
+            if final_mask.sum() == 0:
+                continue
+            wells[well] = {'loc': [], 'value': []}
+            for ijk_cell in ijk[final_mask]:
+                wells[well]['loc'].append()
+
+
+            # conns = self._sr3.elements.get_children(
+            #     element_type='layer',
+            #     element_name=well,
+            #     deep_search=False
+            # )
 
 
 
