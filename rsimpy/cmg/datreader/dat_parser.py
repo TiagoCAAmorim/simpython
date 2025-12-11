@@ -413,7 +413,8 @@ class DatParser: #pylint: disable=too-many-instance-attributes
                     file_path=include_path,
                     lines_fn=self._clean_lines_wrapper).split('\n')
                 if not self._search_keywords(include_txt):
-                    print(f'Finished reading in include file: {include_path.name}')
+                    if self._verbose:
+                        print(f'Finished reading in include file: {include_path.name}')
                     return False
             else:
                 current_key = new_key
