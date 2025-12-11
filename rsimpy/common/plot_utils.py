@@ -1759,6 +1759,29 @@ def _create_well_visibility_toggle(well_circle_renderers, well_line_renderer):
     return checkbox_group
 
 
+def _create_contour_visibility_toggle(contour_renderer):
+    """Create toggle button for controlling visibility of contour lines."""
+    checkbox_group = CheckboxGroup(
+        labels=['Contours'],
+        active=[0],
+        inline=True
+    )
+
+    callback = CustomJS(
+        args=dict(contour_renderer=contour_renderer),
+        code="""
+        const active_set = new Set(cb_obj.active);
+        const contour_visible = active_set.has(0);
+        if (contour_renderer !== null) {
+            contour_renderer.visible = contour_visible;
+        }
+        """
+    )
+
+    checkbox_group.js_on_change('active', callback)
+    return checkbox_group
+
+
 def _interpolate_edge_contour(p1, p2, z1, z2, contour_value):
     """
     Find the point where a contour line crosses an edge.
@@ -3351,9 +3374,13 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
         # Build controls in rows
         control_rows = []
 
-        # Row 1: Column selector, palette selector, cell visibility
+        # Row 1: Column selector, palette selector, cell visibility, contour visibility
         cell_toggle = _create_cell_visibility_toggle(all_patches)
-        row1 = row(select, palette_select, cell_toggle)
+        row1_widgets = [select, palette_select, cell_toggle]
+        if contour_renderer is not None:
+            contour_toggle = _create_contour_visibility_toggle(contour_renderer)
+            row1_widgets.append(contour_toggle)
+        row1 = row(*row1_widgets)
         control_rows.append(row1)
 
         # Row 2: Well controls (if wells exist)
@@ -3381,9 +3408,13 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
         # No matrix values
         control_rows = []
 
-        # Row 1: Palette selector, cell visibility
+        # Row 1: Palette selector, cell visibility, contour visibility
         cell_toggle = _create_cell_visibility_toggle(all_patches)
-        row1 = row(palette_select, cell_toggle)
+        row1_widgets = [palette_select, cell_toggle]
+        if contour_renderer is not None:
+            contour_toggle = _create_contour_visibility_toggle(contour_renderer)
+            row1_widgets.append(contour_toggle)
+        row1 = row(*row1_widgets)
         control_rows.append(row1)
 
         # Row 2: Well controls (if wells exist)
