@@ -421,7 +421,7 @@ class GridHandler:
         return ijk
 
 
-    def ijk2n(self, ijk):
+    def ijk2n(self, ijk, as_active=False):
         """Returns cell number of the (i,j,k) cell.
 
             Parameters
@@ -432,6 +432,9 @@ class GridHandler:
                 element indicating if the cell is matrix
                 (1) or fracture (2).
                 E.g.: (i, j, k, 1) or [(i, j, k, 2), ...]
+            as_active : bool, optional
+                If True, returns the cell number referring
+                to the active cells only.
 
             Raises
             ------
@@ -440,7 +443,10 @@ class GridHandler:
             ValueError
                 If shape is not defined.
         """
-        return _ijk2n(self._sizes["nijk"], ijk)
+        n = _ijk2n(self._sizes["nijk"], ijk)
+        if as_active:
+            n = self.complete2active(n)
+        return n
 
     def is_neighbor(self, ijk1, ijk2):
         """Checks if cells as neighbors.
