@@ -16,7 +16,7 @@ from bokeh.palettes import (
 from bokeh.layouts import column, row
 
 TRI_SIZE_RATIO = 0.01  # Triangle size as percentage of mean polygon area
-WELL_CIRCLE_SIZE_RATIO = 0.05  # Well circle area as percentage of mean polygon area
+WELL_CIRCLE_SIZE_RATIO = 0.20  # Well circle radius as ratio of mean polygon "radius" (sqrt(area/pi))
 WELL_HOLLOW_ALPHA = 0.3  # Transparency level for hollow well circles (0=transparent, 1=opaque)
 
 def _get_palette_map():
@@ -1597,13 +1597,13 @@ def _create_connection_width_slider(
     return conn_width_slider
 
 
-def _create_well_size_slider(well_radius, well_circle_renderers):
+def _create_well_size_slider(well_radius, well_circle_renderers, source_well_lines):
     """Create well circle size slider widget with callback."""
-    # Convert radius to a percentage for more intuitive control
-    # The slider will range from 5% to 50% of the original size
+    # Slider controls radius as ratio of mean polygon radius
+    # Range from 5% to 50% of the mean polygon radius
     well_size_slider = Slider(
         start=0.05,
-        end=0.5,
+        end=0.50,
         value=WELL_CIRCLE_SIZE_RATIO,
         step=0.01,
         title="Well Circle Size:",
@@ -1614,13 +1614,56 @@ def _create_well_size_slider(well_radius, well_circle_renderers):
         args=dict(
             slider=well_size_slider,
             renderers=well_circle_renderers,
-            base_radius=well_radius / WELL_CIRCLE_SIZE_RATIO
+            base_radius=well_radius / WELL_CIRCLE_SIZE_RATIO,
+            line_source=source_well_lines
         ),
         code="""
             const ratio = slider.value;
             const new_radius = base_radius * ratio;
+
+            // Update circle radii
             for (let i = 0; i < renderers.length; i++) {
                 renderers[i].glyph.radius = new_radius;
+            }
+
+            // Update line endpoints to circle borders
+            if (line_source !== null) {
+                const line_data = line_source.data;
+                const n_lines = line_data['cx1'].length;
+
+                for (let i = 0; i < n_lines; i++) {
+                    const cx1 = line_data['cx1'][i];
+                    const cy1 = line_data['cy1'][i];
+                    const cx2 = line_data['cx2'][i];
+                    const cy2 = line_data['cy2'][i];
+
+                    // Calculate direction vector
+                    const dx = cx2 - cx1;
+                    const dy = cy2 - cy1;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+
+                    // Only adjust endpoints if centers are far enough apart
+                    if (dist > 2.0 * new_radius) {
+                        // Normalize direction vector
+                        const dx_norm = dx / dist;
+                        const dy_norm = dy / dist;
+
+                        // Calculate endpoints at circle borders
+                        const x1 = cx1 + dx_norm * new_radius;
+                        const y1 = cy1 + dy_norm * new_radius;
+                        const x2 = cx2 - dx_norm * new_radius;
+                        const y2 = cy2 - dy_norm * new_radius;
+
+                        line_data['x'][i] = [x1, x2];
+                        line_data['y'][i] = [y1, y2];
+                    } else if (dist > 0) {
+                        // Centers very close - draw line between centers
+                        line_data['x'][i] = [cx1, cx2];
+                        line_data['y'][i] = [cy1, cy2];
+                    }
+                }
+
+                line_source.change.emit();
             }
         """
     )
@@ -2190,8 +2233,9 @@ def _draw_wells(plot, wells, all_centers, mean_poly_area, n_columns):
         return [], None, None
 
     # Calculate well circle radius
-    target_circle_area = WELL_CIRCLE_SIZE_RATIO * mean_poly_area
-    well_radius = np.sqrt(target_circle_area / np.pi)
+    # Use radius ratio (not area ratio) for more intuitive sizing
+    mean_poly_radius = np.sqrt(mean_poly_area / np.pi)
+    well_radius = WELL_CIRCLE_SIZE_RATIO * mean_poly_radius
 
     well_renderers = []
 
@@ -2287,7 +2331,9 @@ def _draw_wells(plot, wells, all_centers, mean_poly_area, n_columns):
 
     # Draw connecting lines
     # Lines connect locations within each well, across all columns
+    # Store center coordinates and calculate line endpoints at circle borders
     line_data = []
+    line_centers = []  # Store center coordinates for dynamic updates
 
     for well in wells:
         well_name = well['name']
@@ -2308,11 +2354,49 @@ def _draw_wells(plot, wells, all_centers, mean_poly_area, n_columns):
                 center1 = all_centers[col_idx1][poly_idx1]
                 center2 = all_centers[col_idx2][poly_idx2]
 
-                line_data.append({
-                    'x': [center1[0], center2[0]],
-                    'y': [center1[1], center2[1]],
-                    'name': well_name
-                })
+                # Calculate direction vector
+                dx = center2[0] - center1[0]
+                dy = center2[1] - center1[1]
+                dist = np.sqrt(dx**2 + dy**2)
+
+                # Only draw line if centers are far enough apart (more than 2*radius)
+                if dist > 2.0 * well_radius:
+                    # Normalize direction vector
+                    dx_norm = dx / dist
+                    dy_norm = dy / dist
+
+                    # Calculate endpoints at circle borders
+                    x1 = center1[0] + dx_norm * well_radius
+                    y1 = center1[1] + dy_norm * well_radius
+                    x2 = center2[0] - dx_norm * well_radius
+                    y2 = center2[1] - dy_norm * well_radius
+
+                    line_data.append({
+                        'x': [x1, x2],
+                        'y': [y1, y2],
+                        'name': well_name
+                    })
+
+                    line_centers.append({
+                        'cx1': center1[0],
+                        'cy1': center1[1],
+                        'cx2': center2[0],
+                        'cy2': center2[1]
+                    })
+                elif dist > 0:
+                    # Centers very close - draw line between centers (will be hidden by circles)
+                    line_data.append({
+                        'x': [center1[0], center2[0]],
+                        'y': [center1[1], center2[1]],
+                        'name': well_name
+                    })
+
+                    line_centers.append({
+                        'cx1': center1[0],
+                        'cy1': center1[1],
+                        'cx2': center2[0],
+                        'cy2': center2[1]
+                    })
 
     # Create line data source
     if line_data:
@@ -2320,24 +2404,36 @@ def _draw_wells(plot, wells, all_centers, mean_poly_area, n_columns):
         line_y = [ld['y'] for ld in line_data]
         line_name = [ld['name'] for ld in line_data]
 
+        # Store center coordinates for dynamic recalculation
+        cx1 = [lc['cx1'] for lc in line_centers]
+        cy1 = [lc['cy1'] for lc in line_centers]
+        cx2 = [lc['cx2'] for lc in line_centers]
+        cy2 = [lc['cy2'] for lc in line_centers]
+
         source_well_lines = ColumnDataSource(data={
             'x': line_x,
             'y': line_y,
             'name': line_name,
-            'value': [-999.99] * len(line_data)
+            'value': [-999.99] * len(line_data),
+            'cx1': cx1,  # Center coordinates for recalculation
+            'cy1': cy1,
+            'cx2': cx2,
+            'cy2': cy2
         })
 
-        # Draw lines (black) - not added to well_renderers to exclude from hover tooltips
-        well_lines = plot.multi_line(
+        # Draw lines (black, dashed) - not added to well_renderers to exclude from hover tooltips
+        well_line_renderer = plot.multi_line(
             'x', 'y',
             source=source_well_lines,
             line_color='black',
-            line_width=2
+            line_width=2,
+            line_dash='dashed'
         )
     else:
         source_well_lines = None
+        well_line_renderer = None
 
-    return well_renderers, source_all_circles, source_visible, source_hidden, source_well_lines, circle_renderers
+    return well_renderers, source_all_circles, source_visible, source_hidden, source_well_lines, circle_renderers, well_line_renderer
 
 
 # MARK: Polygon Grid
@@ -3046,12 +3142,13 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
     source_hidden = None
     source_well_lines = None
     well_circle_renderers = None
+    well_line_renderer = None
     if has_wells:
         # Calculate mean polygon area for well sizing
         mean_poly_area = _calculate_mean_polygon_area(all_vertices_lists[0])
 
         # Draw wells
-        well_renderers, source_all_circles, source_visible, source_hidden, source_well_lines, well_circle_renderers = _draw_wells(
+        well_renderers, source_all_circles, source_visible, source_hidden, source_well_lines, well_circle_renderers, well_line_renderer = _draw_wells(
             p, processed_wells, all_centers, mean_poly_area, n_columns
         )
 
@@ -3151,7 +3248,7 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
             )
             if has_wells:
                 well_size_slider = _create_well_size_slider(
-                    well_circle_renderers[0].glyph.radius, well_circle_renderers
+                    well_circle_renderers[0].glyph.radius, well_circle_renderers, source_well_lines
                 )
                 controls = row(select, palette_select, conn_width_slider, well_size_slider)
             else:
@@ -3160,7 +3257,7 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
         else:
             if has_wells:
                 well_size_slider = _create_well_size_slider(
-                    well_circle_renderers[0].glyph.radius, well_circle_renderers
+                    well_circle_renderers[0].glyph.radius, well_circle_renderers, source_well_lines
                 )
                 controls = row(select, palette_select, well_size_slider)
             else:
@@ -3174,7 +3271,7 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
             )
             if has_wells:
                 well_size_slider = _create_well_size_slider(
-                    well_circle_renderers[0].glyph.radius, well_circle_renderers
+                    well_circle_renderers[0].glyph.radius, well_circle_renderers, source_well_lines
                 )
                 controls = row(palette_select, conn_width_slider, well_size_slider)
             else:
@@ -3183,7 +3280,7 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
         else:
             if has_wells:
                 well_size_slider = _create_well_size_slider(
-                    well_circle_renderers[0].glyph.radius, well_circle_renderers
+                    well_circle_renderers[0].glyph.radius, well_circle_renderers, source_well_lines
                 )
                 controls = row(palette_select, well_size_slider)
             else:
