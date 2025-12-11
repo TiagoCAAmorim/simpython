@@ -16,6 +16,8 @@ from bokeh.palettes import (
 from bokeh.layouts import column, row
 
 TRI_SIZE_RATIO = 0.01  # Triangle size as percentage of mean polygon area
+WELL_CIRCLE_SIZE_RATIO = 0.10  # Well circle area as percentage of mean polygon area
+WELL_HOLLOW_ALPHA = 0.3  # Transparency level for hollow well circles (0=transparent, 1=opaque)
 
 def _get_palette_map():
     """Get the mapping of palette names to Bokeh palettes."""
@@ -473,6 +475,11 @@ def _prepare_base_data(
         ys_col = [v[:, 1].tolist() for v in col_vertices]
         base_data[f'xs_{col_idx}'] = xs_col
         base_data[f'ys_{col_idx}'] = ys_col
+
+    # Add label and name columns (same for all columns, but needed for callback)
+    for col_idx in range(n_columns):
+        base_data[f'label_{col_idx}'] = label_list
+        base_data[f'name_{col_idx}'] = polygon_names
 
     # Set active value column
     base_data['value'] = current_values.tolist()
@@ -1253,7 +1260,8 @@ def _create_palette_selector(initial_palette, mapper):
 def _create_column_selector(
         value_names, source, source_in_range, source_below_min, source_above_max,
         source_nan_inf, source_connections, source_gradient, vmin, vmax,
-        nan_inf_color, has_connections, source_contours=None, source_triangles=None
+        nan_inf_color, has_connections, source_contours=None, source_triangles=None,
+        source_wells=None, source_well_lines=None, source_hollow=None
     ):
     """Create column selector widget with callback for matrix data."""
     select = Select(
@@ -1274,6 +1282,9 @@ def _create_column_selector(
             source_grad=source_gradient,
             source_contour=source_contours,
             source_tri=source_triangles,
+            source_wells=source_wells,
+            source_well_lines=source_well_lines,
+            source_hollow=source_hollow,
             select=select,
             value_names=value_names,
             n_columns=len(value_names),
@@ -1291,14 +1302,18 @@ def _create_column_selector(
             const data = source.data;
             const n_polygons = data['xs_0'].length;  // Use stored vertices count
 
-            // Update the active value and vertices columns
+            // Update the active value, vertices, and label columns
             const new_values = data['value_' + col_idx];
             const new_xs = data['xs_' + col_idx];
             const new_ys = data['ys_' + col_idx];
+            const new_labels = data['label_' + col_idx];
+            const new_names = data['name_' + col_idx];
 
             data['value'] = new_values;
             data['xs'] = new_xs;
             data['ys'] = new_ys;
+            data['label'] = new_labels;
+            data['name'] = new_names;
 
             // Categorize polygons
             const in_range = new Array(n_polygons);
@@ -1491,7 +1506,39 @@ def _create_column_selector(
                 tri_data['value'] = all_tri_values;
                 tri_data['name'] = all_tri_names;
                 source_tri.change.emit();
-            }            source.change.emit();
+            }
+            // Update wells if present
+            if (source_wells !== null) {
+                const wells_data = source_wells.data;
+                wells_data['x'] = wells_data['x_' + col_idx];
+                wells_data['y'] = wells_data['y_' + col_idx];
+                wells_data['color'] = wells_data['color_' + col_idx];
+                wells_data['name'] = wells_data['name_' + col_idx];
+                wells_data['value'] = wells_data['value_' + col_idx];
+                source_wells.change.emit();
+            }
+
+            // Update well lines if present
+            if (source_well_lines !== null) {
+                const lines_data = source_well_lines.data;
+                lines_data['x'] = lines_data['x_' + col_idx];
+                lines_data['y'] = lines_data['y_' + col_idx];
+                lines_data['name'] = lines_data['name_' + col_idx];
+                lines_data['value'] = lines_data['value_' + col_idx];
+                source_well_lines.change.emit();
+            }
+
+            // Update hollow circles if present
+            if (source_hollow !== null) {
+                const hollow_data = source_hollow.data;
+                hollow_data['x'] = hollow_data['x_' + col_idx];
+                hollow_data['y'] = hollow_data['y_' + col_idx];
+                hollow_data['color'] = hollow_data['color_' + col_idx];
+                hollow_data['name'] = hollow_data['name_' + col_idx];
+                hollow_data['value'] = hollow_data['value_' + col_idx];
+                source_hollow.change.emit();
+            }
+            source.change.emit();
         """
     )
 
@@ -1888,6 +1935,372 @@ def _create_contour_color_mapper(contour_levels):
 
     return mapper
 
+
+def _process_wells(wells, n_polygons, n_columns):
+    """
+    Process well data into a standardized format.
+
+    Parameters
+    ----------
+    wells : dict or None
+        Dictionary with well names as keys and well info as values
+    n_polygons : int
+        Total number of polygons
+    n_columns : int
+        Number of value columns
+
+    Returns
+    -------
+    processed_wells : list of dict
+        List of well dictionaries with standardized format:
+        - 'name': str, well name
+        - 'type': str, well type ('prod', 'injw', 'injg', 'inj')
+        - 'locations': list of lists, locations[col_idx] = list of polygon indices
+    """
+    if wells is None:
+        return []
+
+    processed_wells = []
+
+    for well_name, well_info in wells.items():
+        well_type = well_info.get('type', 'prod')
+        loc = well_info.get('loc', [])
+
+        # Normalize locations to list of lists format
+        if not loc:
+            continue
+
+        # Check if loc is a list of lists or a single list
+        if isinstance(loc[0], (list, tuple)):
+            # Multiple location lists provided
+            locations = [list(subloc) for subloc in loc]
+            # Validate that we have the right number of location lists
+            if len(locations) != n_columns:
+                raise ValueError(
+                    f"Well '{well_name}': number of location lists ({len(locations)}) "
+                    f"must match number of value columns ({n_columns})"
+                )
+        else:
+            # Single location list - replicate for all columns
+            locations = [list(loc) for _ in range(n_columns)]
+
+        # Validate polygon indices
+        for col_idx, col_locs in enumerate(locations):
+            for poly_idx in col_locs:
+                if not isinstance(poly_idx, (int, np.integer)):
+                    raise ValueError(
+                        f"Well '{well_name}', column {col_idx}: "
+                        f"polygon index must be integer, got {type(poly_idx)}"
+                    )
+                if poly_idx < 0 or poly_idx >= n_polygons:
+                    raise ValueError(
+                        f"Well '{well_name}', column {col_idx}: "
+                        f"polygon index {poly_idx} out of range [0, {n_polygons})"
+                    )
+
+        # Process well values
+        well_value = well_info.get('value', -999.99)
+        if isinstance(well_value, (list, tuple)):
+            # Multiple values provided - validate count
+            values = list(well_value)
+            if len(values) != n_columns:
+                raise ValueError(
+                    f"Well '{well_name}': number of values ({len(values)}) "
+                    f"must match number of value columns ({n_columns})"
+                )
+        else:
+            # Single value - replicate for all columns
+            values = [well_value] * n_columns
+
+        processed_wells.append({
+            'name': well_name,
+            'type': well_type,
+            'locations': locations,
+            'values': values
+        })
+
+    return processed_wells
+
+
+def _get_well_color(well_type):
+    """
+    Get the fill color for a well based on its type.
+
+    Parameters
+    ----------
+    well_type : str
+        Well type: 'prod', 'injw', 'injg', 'inj', 'conv', or other
+
+    Returns
+    -------
+    color : str
+        HTML color string
+    """
+    color_map = {
+        'prod': 'green',
+        'injw': 'blue',
+        'injg': 'red',
+        'inj': 'orange',
+        'conv': 'purple'
+    }
+    return color_map.get(well_type, 'black')
+
+
+def _pad_well_data(data_dict, target_length, pad_value_scalar=np.nan, pad_value_list=None):
+    """
+    Pad well data lists to a target length with NaN values.
+
+    Parameters
+    ----------
+    data_dict : dict
+        Dictionary with lists to pad
+    target_length : int
+        Target length for all lists
+    pad_value_scalar : scalar
+        Value to use for padding scalar fields (x, y, color, well_name)
+    pad_value_list : list or None
+        Value to use for padding list fields (for multi_line x, y). If None, uses [[nan, nan]]
+
+    Returns
+    -------
+    None (modifies data_dict in place)
+    """
+    if pad_value_list is None:
+        pad_value_list = [[np.nan, np.nan]]
+
+    for key, values in data_dict.items():
+        current_len = len(values)
+        if current_len < target_length:
+            # Determine if this is a list field (for multi_line) or scalar field
+            if current_len > 0 and isinstance(values[0], list):
+                # List field - pad with [[nan, nan]]
+                data_dict[key] = values + pad_value_list * (target_length - current_len)
+            else:
+                # Scalar field - pad with nan or empty string
+                if key in ['well_name', 'name']:
+                    pad_val = ''
+                elif key == 'color':
+                    pad_val = 'white'  # Invisible on typical backgrounds
+                elif key in ['value', 'well_value']:
+                    pad_val = -999.99
+                else:
+                    pad_val = pad_value_scalar
+                data_dict[key] = values + [pad_val] * (target_length - current_len)
+
+
+def _draw_wells(plot, wells, all_centers, mean_poly_area, n_columns):
+    """
+    Draw well locations on the plot.
+
+    Parameters
+    ----------
+    plot : bokeh.plotting.figure
+        Bokeh plot object
+    wells : list of dict
+        Processed well data from _process_wells
+    all_centers : list of np.ndarray
+        List of polygon center arrays, one per column
+    mean_poly_area : float
+        Mean polygon area
+    n_columns : int
+        Number of value columns
+
+    Returns
+    -------
+    well_renderers : list
+        List of Bokeh renderers for wells (for hover tool)
+    source_wells : ColumnDataSource or None
+        Data source for active well locations
+    """
+    if not wells:
+        return [], None
+
+    # Calculate well circle radius
+    target_circle_area = WELL_CIRCLE_SIZE_RATIO * mean_poly_area
+    well_radius = np.sqrt(target_circle_area / np.pi)
+
+    well_renderers = []
+
+    # Prepare data for all well locations across all columns
+    # We'll draw hollow circles for all locations, then filled circles for active column
+
+    # First, collect all unique well locations across all columns
+    all_well_locations = []  # List of (well_name, well_type, col_idx, loc_list)
+
+    for well in wells:
+        well_name = well['name']
+        well_type = well['type']
+        for col_idx in range(n_columns):
+            loc_list = well['locations'][col_idx]
+            if loc_list:
+                all_well_locations.append((well_name, well_type, col_idx, loc_list))
+
+    # Draw connecting lines for each column
+    # Lines connect all polygon locations in order, including across different column location lists
+    # For display purposes, all locations use the current display column's polygon centers
+    line_data_by_col = {col_idx: {'x': [], 'y': [], 'name': []}
+                        for col_idx in range(n_columns)}
+
+    for well in wells:
+        well_name = well['name']
+
+        for display_col_idx in range(n_columns):
+            # Collect ALL locations for this well across all columns, in order
+            all_locations_ordered = []
+            for col_idx in range(n_columns):
+                all_locations_ordered.extend(well['locations'][col_idx])
+
+            # Connect consecutive locations (using display column's centers)
+            if len(all_locations_ordered) > 1:
+                for i in range(len(all_locations_ordered) - 1):
+                    poly_idx1 = all_locations_ordered[i]
+                    poly_idx2 = all_locations_ordered[i + 1]
+                    center1 = all_centers[display_col_idx][poly_idx1]
+                    center2 = all_centers[display_col_idx][poly_idx2]
+
+                    line_data_by_col[display_col_idx]['x'].append([center1[0], center2[0]])
+                    line_data_by_col[display_col_idx]['y'].append([center1[1], center2[1]])
+                    line_data_by_col[display_col_idx]['name'].append(well_name)
+
+    # Calculate max length for lines (will create data source after padding)
+    max_line_len = max((len(line_data_by_col[col_idx]['x']) for col_idx in range(n_columns)), default=0)
+
+    # Draw hollow circles for all locations (not in current column)
+    hollow_circle_data_by_col = {col_idx: {'x': [], 'y': [], 'color': [], 'name': []}
+                                 for col_idx in range(n_columns)}
+
+    for well in wells:
+        well_name = well['name']
+        well_type = well['type']
+        well_color = _get_well_color(well_type)
+        # For each column, collect locations from OTHER columns
+        for display_col_idx in range(n_columns):
+            for other_col_idx in range(n_columns):
+                if other_col_idx != display_col_idx:
+                    for poly_idx in well['locations'][other_col_idx]:
+                        center = all_centers[display_col_idx][poly_idx]
+                        hollow_circle_data_by_col[display_col_idx]['x'].append(center[0])
+                        hollow_circle_data_by_col[display_col_idx]['y'].append(center[1])
+                        hollow_circle_data_by_col[display_col_idx]['color'].append(well_color)
+                        hollow_circle_data_by_col[display_col_idx]['name'].append(well_name)
+
+    # Calculate max length for hollow circles (will create data source after padding)
+    max_hollow_len = max((len(hollow_circle_data_by_col[col_idx]['x']) for col_idx in range(n_columns)), default=0)
+
+    # Draw filled circles for current column's locations
+    filled_circle_data_by_col = {col_idx: {'x': [], 'y': [], 'color': [], 'name': [], 'well_value': []}
+                                 for col_idx in range(n_columns)}
+
+    for well in wells:
+        well_name = well['name']
+        well_type = well['type']
+        well_color = _get_well_color(well_type)
+        well_values = well['values']
+
+        for col_idx in range(n_columns):
+            for poly_idx in well['locations'][col_idx]:
+                center = all_centers[col_idx][poly_idx]
+                filled_circle_data_by_col[col_idx]['x'].append(center[0])
+                filled_circle_data_by_col[col_idx]['y'].append(center[1])
+                filled_circle_data_by_col[col_idx]['color'].append(well_color)
+                filled_circle_data_by_col[col_idx]['name'].append(well_name)
+                filled_circle_data_by_col[col_idx]['well_value'].append(well_values[col_idx])
+
+    # Calculate max length for filled circles
+    max_filled_len = max((len(filled_circle_data_by_col[col_idx]['x']) for col_idx in range(n_columns)), default=0)
+
+    # Pad all data to consistent length
+    for col_idx in range(n_columns):
+        _pad_well_data(line_data_by_col[col_idx], max_line_len)
+        _pad_well_data(hollow_circle_data_by_col[col_idx], max_hollow_len)
+        _pad_well_data(filled_circle_data_by_col[col_idx], max_filled_len)
+
+    # Create line data source with padded values
+    initial_line_data = {
+        'x': line_data_by_col[0]['x'],
+        'y': line_data_by_col[0]['y'],
+        'name': line_data_by_col[0]['name'],
+        'value': [-999.99] * max_line_len
+    }
+    for col_idx in range(n_columns):
+        initial_line_data[f'x_{col_idx}'] = line_data_by_col[col_idx]['x']
+        initial_line_data[f'y_{col_idx}'] = line_data_by_col[col_idx]['y']
+        initial_line_data[f'name_{col_idx}'] = line_data_by_col[col_idx]['name']
+        initial_line_data[f'value_{col_idx}'] = [-999.99] * max_line_len
+
+    source_well_lines = ColumnDataSource(data=initial_line_data)
+
+    # Draw lines (black) - not added to well_renderers to exclude from hover tooltips
+    if max_line_len > 0:
+        well_lines = plot.multi_line(
+            'x', 'y',
+            source=source_well_lines,
+            line_color='black',
+            line_width=2
+        )
+
+    # Create hollow data source with padded values
+    initial_hollow_data = {
+        'x': hollow_circle_data_by_col[0]['x'],
+        'y': hollow_circle_data_by_col[0]['y'],
+        'color': hollow_circle_data_by_col[0]['color'],
+        'name': hollow_circle_data_by_col[0]['name'],
+        'value': [-999.99] * max_hollow_len
+    }
+    for col_idx in range(n_columns):
+        initial_hollow_data[f'x_{col_idx}'] = hollow_circle_data_by_col[col_idx]['x']
+        initial_hollow_data[f'y_{col_idx}'] = hollow_circle_data_by_col[col_idx]['y']
+        initial_hollow_data[f'color_{col_idx}'] = hollow_circle_data_by_col[col_idx]['color']
+        initial_hollow_data[f'name_{col_idx}'] = hollow_circle_data_by_col[col_idx]['name']
+        initial_hollow_data[f'value_{col_idx}'] = [-999.99] * max_hollow_len
+
+    source_hollow = ColumnDataSource(data=initial_hollow_data)
+
+    # Draw hollow circles with transparency
+    if max_hollow_len > 0:
+        hollow_circles = plot.circle(
+            'x', 'y',
+            source=source_hollow,
+            radius=well_radius,
+            fill_color='color',
+            fill_alpha=WELL_HOLLOW_ALPHA,  # Transparent fill with original color
+            line_color='black',
+            line_width=2
+        )
+        well_renderers.append(hollow_circles)    # Initial filled circle data
+    initial_filled_data = {
+        'x': filled_circle_data_by_col[0]['x'],
+        'y': filled_circle_data_by_col[0]['y'],
+        'color': filled_circle_data_by_col[0]['color'],
+        'name': filled_circle_data_by_col[0]['name'],
+        'value': filled_circle_data_by_col[0]['well_value']  # Well value for tooltip
+    }
+
+    # Store all columns
+    for col_idx in range(n_columns):
+        initial_filled_data[f'x_{col_idx}'] = filled_circle_data_by_col[col_idx]['x']
+        initial_filled_data[f'y_{col_idx}'] = filled_circle_data_by_col[col_idx]['y']
+        initial_filled_data[f'color_{col_idx}'] = filled_circle_data_by_col[col_idx]['color']
+        initial_filled_data[f'name_{col_idx}'] = filled_circle_data_by_col[col_idx]['name']
+        initial_filled_data[f'value_{col_idx}'] = filled_circle_data_by_col[col_idx]['well_value']
+
+    source_wells = ColumnDataSource(data=initial_filled_data)
+
+    # Draw filled circles
+    if initial_filled_data['x']:
+        filled_circles = plot.circle(
+            'x', 'y',
+            source=source_wells,
+            radius=well_radius,
+            fill_color='color',
+            line_color='black',
+            line_width=2
+        )
+        well_renderers.append(filled_circles)
+
+    return well_renderers, source_wells, source_well_lines, source_hollow
+
+
 # MARK: Polygon Grid
 def plot_polygon_grid(vertices, values=None, width=800, height=600,
                        palette='Turbo256', line_color='black', line_width=1,
@@ -1899,7 +2312,7 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
                        connection_width=3.0, connection_border_color='white',
                        connection_palette=None, connection_log_scale=None,
                        connection_color_limits=None, connection_colorbar_label=None,
-                       contour_step=None):
+                       contour_step=None, wells=None):
     """
     Plot a grid of n-sided polygons in 2D with color-coded values using Bokeh.
     Interactive plot with hover functionality showing face number and value.
@@ -2014,6 +2427,21 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
         drawn inside each polygon independently, spaced by contour_step intervals.
         Uses grayscale colors (black for highest values). If the range of z-values
         is smaller than contour_step, no contours are shown. Default is None (no contours).
+    wells : dict, optional
+        Dictionary defining wells to be plotted on the grid. Each key is a well name,
+        and the value is a dictionary with:
+        - 'type': str, one of 'prod' (producer, green fill), 'injw' (water injector, blue),
+          'injg' (gas injector, red), or 'inj' (generic injector, orange)
+        - 'loc': list or list of lists of polygon indices where the well is located.
+          If a single list [idx1, idx2, ...], well location is the same for all value columns.
+          If list of lists [[idx1, idx2], [idx3], ...], the i-th sublist corresponds to
+          well locations for the i-th value column.
+        Wells are drawn as circles with area equal to 20% of mean polygon area (configurable
+        via WELL_CIRCLE_SIZE_RATIO constant), connected by lines following the order in loc.
+        The currently selected value's locations are shown as filled circles, while locations
+        for other values are shown as hollow circles. Hovering shows the well name.
+        Example: {'P1': {'type': 'prod', 'loc': [0, 1]},
+                  'I1': {'type': 'injw', 'loc': [[2], [3, 4]]}}
 
     Returns
     -------
@@ -2246,12 +2674,17 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
         else:
             label_list.append("")
 
-    # Calculate polygon centers for connections (for all polygon sets)
-    if has_connections:
+    # Calculate polygon centers for connections and wells (for all polygon sets)
+    all_centers = None
+    if has_connections or wells is not None:
         all_centers = []
         for col_idx in range(n_columns):
             col_vertices = all_vertices_lists[col_idx]
             all_centers.append(_calculate_polygon_centers(col_vertices))
+
+    # Process wells if provided
+    processed_wells = _process_wells(wells, n_polygons, n_columns)
+    has_wells = len(processed_wells) > 0
 
     # Start with the first column (or only column)
     current_values = values[:, 0]
@@ -2567,6 +3000,20 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
                     line_alpha=0.7
                 )
 
+    # Draw wells if provided
+    well_renderers = []
+    source_wells = None
+    source_well_lines = None
+    source_hollow = None
+    if has_wells:
+        # Calculate mean polygon area for well sizing
+        mean_poly_area = _calculate_mean_polygon_area(all_vertices_lists[0])
+
+        # Draw wells
+        well_renderers, source_wells, source_well_lines, source_hollow = _draw_wells(
+            p, processed_wells, all_centers, mean_poly_area, n_columns
+        )
+
     # Add unified hover tool for both polygons and connections
     # Using HTML formatting to hide field labels and center align
     unified_tooltips = """
@@ -2584,6 +3031,16 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
         hover_renderers.extend(triangle_patches)
     if contour_renderer is not None:
         hover_renderers.append(contour_renderer)
+    if has_wells:
+        hover_renderers.extend(well_renderers)
+
+    # Create hover tooltips
+    unified_tooltips = """
+        <div style="text-align: center;">
+            <div><b>@name</b></div>
+            <div>@value{0.0000}</div>
+        </div>
+    """
 
     hover = HoverTool(
         renderers=hover_renderers,
@@ -2639,7 +3096,10 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
             source_gradient if has_connections else None,
             vmin, vmax, nan_inf_color, has_connections,
             source_contours=source_contours,
-            source_triangles=source_triangles if has_connections else None
+            source_triangles=source_triangles if has_connections else None,
+            source_wells=source_wells if has_wells else None,
+            source_well_lines=source_well_lines if has_wells else None,
+            source_hollow=source_hollow if has_wells else None
         )
 
         # Add connection width slider if connections are present
@@ -2696,7 +3156,14 @@ def main():
     connection_values_ = np.array([[1000, 20], [25, 15], [50, np.nan], [np.nan, 80],
                                    [90, 100], [1000, 20], [40, 0.55], [0.55, 0.55],
                                    [50, 60], [70, 1000], [np.nan, 100]])
-
+    wells = {
+        'P1': {'type': 'prod', 'loc': [0, 1], 'value': 122.5},
+        'P2': {'type': 'unknown', 'loc': [[2, 3], [4]], 'value': [32.1, 23.4]},
+        # 'I1': {'type': 'injw', 'loc': [3], 'value': 450.0},
+        # 'I2': {'type': 'injg', 'loc': [4]},
+        # 'I3': {'type': 'inj', 'loc': [5], 'value': [88.8, 99.9]},
+        # 'C1': {'type': 'conv', 'loc': [1], 'value': 777.7},
+    }
 
     print(f'Vertices array shape: {np.array(vertices).shape}')
     print(f'Values shape: {values_.shape}')
@@ -2709,8 +3176,9 @@ def main():
         values=values_,
         labels=labels_,
         value_names=['Set 1', 'Set 2'],
-        connections=connections_,
-        connection_values=connection_values_,
+        wells=wells,
+        # connections=connections_,
+        # connection_values=connection_values_,
         connection_width=6.0,
         palette='Turbo',
         connection_log_scale=True,
