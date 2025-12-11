@@ -16,7 +16,7 @@ from bokeh.palettes import (
 from bokeh.layouts import column, row
 
 TRI_SIZE_RATIO = 0.01  # Triangle size as percentage of mean polygon area
-WELL_CIRCLE_SIZE_RATIO = 0.10  # Well circle area as percentage of mean polygon area
+WELL_CIRCLE_SIZE_RATIO = 0.05  # Well circle area as percentage of mean polygon area
 WELL_HOLLOW_ALPHA = 0.3  # Transparency level for hollow well circles (0=transparent, 1=opaque)
 
 def _get_palette_map():
@@ -1597,6 +1597,38 @@ def _create_connection_width_slider(
     return conn_width_slider
 
 
+def _create_well_size_slider(well_radius, well_circle_renderers):
+    """Create well circle size slider widget with callback."""
+    # Convert radius to a percentage for more intuitive control
+    # The slider will range from 5% to 50% of the original size
+    well_size_slider = Slider(
+        start=0.05,
+        end=0.5,
+        value=WELL_CIRCLE_SIZE_RATIO,
+        step=0.01,
+        title="Well Circle Size:",
+        width=200
+    )
+
+    well_size_callback = CustomJS(
+        args=dict(
+            slider=well_size_slider,
+            renderers=well_circle_renderers,
+            base_radius=well_radius / WELL_CIRCLE_SIZE_RATIO
+        ),
+        code="""
+            const ratio = slider.value;
+            const new_radius = base_radius * ratio;
+            for (let i = 0; i < renderers.length; i++) {
+                renderers[i].glyph.radius = new_radius;
+            }
+        """
+    )
+
+    well_size_slider.js_on_change('value', well_size_callback)
+    return well_size_slider
+
+
 def _interpolate_edge_contour(p1, p2, z1, z2, contour_value):
     """
     Find the point where a contour line crosses an edge.
@@ -2248,6 +2280,9 @@ def _draw_wells(plot, wells, all_centers, mean_poly_area, n_columns):
         line_color='black',
         line_width=2
     )
+
+    # Store circle renderers for size adjustment
+    circle_renderers = [visible_circles, hidden_circles]
     # Don't add hidden_circles to well_renderers - they won't have hover
 
     # Draw connecting lines
@@ -2302,7 +2337,7 @@ def _draw_wells(plot, wells, all_centers, mean_poly_area, n_columns):
     else:
         source_well_lines = None
 
-    return well_renderers, source_all_circles, source_visible, source_hidden, source_well_lines
+    return well_renderers, source_all_circles, source_visible, source_hidden, source_well_lines, circle_renderers
 
 
 # MARK: Polygon Grid
@@ -3010,12 +3045,13 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
     source_visible = None
     source_hidden = None
     source_well_lines = None
+    well_circle_renderers = None
     if has_wells:
         # Calculate mean polygon area for well sizing
         mean_poly_area = _calculate_mean_polygon_area(all_vertices_lists[0])
 
         # Draw wells
-        well_renderers, source_all_circles, source_visible, source_hidden, source_well_lines = _draw_wells(
+        well_renderers, source_all_circles, source_visible, source_hidden, source_well_lines, well_circle_renderers = _draw_wells(
             p, processed_wells, all_centers, mean_poly_area, n_columns
         )
 
@@ -3113,10 +3149,22 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
             conn_width_slider = _create_connection_width_slider(
                 connection_width, connection_renderers, connection_border_color
             )
-            controls = row(select, palette_select, conn_width_slider)
+            if has_wells:
+                well_size_slider = _create_well_size_slider(
+                    well_circle_renderers[0].glyph.radius, well_circle_renderers
+                )
+                controls = row(select, palette_select, conn_width_slider, well_size_slider)
+            else:
+                controls = row(select, palette_select, conn_width_slider)
             panel = column(controls, p)
         else:
-            controls = row(select, palette_select)
+            if has_wells:
+                well_size_slider = _create_well_size_slider(
+                    well_circle_renderers[0].glyph.radius, well_circle_renderers
+                )
+                controls = row(select, palette_select, well_size_slider)
+            else:
+                controls = row(select, palette_select)
             panel = column(controls, p)
     else:
         # No matrix values
@@ -3124,10 +3172,23 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
             conn_width_slider = _create_connection_width_slider(
                 connection_width, connection_renderers, connection_border_color
             )
-            controls = row(palette_select, conn_width_slider)
+            if has_wells:
+                well_size_slider = _create_well_size_slider(
+                    well_circle_renderers[0].glyph.radius, well_circle_renderers
+                )
+                controls = row(palette_select, conn_width_slider, well_size_slider)
+            else:
+                controls = row(palette_select, conn_width_slider)
             panel = column(controls, p)
         else:
-            panel = column(palette_select, p)
+            if has_wells:
+                well_size_slider = _create_well_size_slider(
+                    well_circle_renderers[0].glyph.radius, well_circle_renderers
+                )
+                controls = row(palette_select, well_size_slider)
+            else:
+                controls = row(palette_select)
+            panel = column(controls, p)
 
     return panel
 
