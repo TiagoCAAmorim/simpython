@@ -247,6 +247,9 @@ class ElementHandler:
                 - connection (int): previous layer number
                 - perf (bool): True if the layer is perforated
         """
+        if self._layer_data is not None:
+            return
+
         dataset = self._file.get_element_table(
             element_type='layer',
             dataset_string="LayerTable",
@@ -299,8 +302,7 @@ class ElementHandler:
         Dict
             A dictionary with layer data indexed by layer name.
         """
-        if self._layer_data is None:
-            self._get_layer_data()
+        self._get_layer_data()
         if data_name is None:
             return self._layer_data
         valid_names = ["number", "cell_str", "cell", "cell_act", "parent", "connection", "perf"]
