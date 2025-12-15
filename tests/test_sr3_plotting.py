@@ -205,7 +205,7 @@ class TestPlotHandler(unittest.TestCase):
 
         self.assertIsNotNone(panel, "Panel should not be None")
         if self.save:
-            output_file("test_plot_map_with_connections.html")
+            output_file("test_plot_map_with_wells.html")
             save(panel)
 
 if __name__ == '__main__':

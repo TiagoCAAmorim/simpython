@@ -254,31 +254,30 @@ class PlotHandler:
         conn_data = self._sr3.elements.get_layer_data('cell')
         cells = np.array(list(conn_data.values()))
         ijk = self._sr3.grid.n2ijk(cells)
+        n_cell = ijk[:,0] - 1 + (ijk[:,1]-1)*self._sr3.grid.get_size('nijk')[0]
         mask = np.isin(ijk[:, -1], layers)
         if mask.sum() == 0:
             return {}
         conn_data = self._sr3.elements.get_layer_data('parent')
         names = np.array(list(conn_data.values()))
+        names_unique = np.unique(names)
 
         wells = {}
-        for well in self._sr3.elements.get('well').keys():
-            mask_well = names == well
-            final_mask = mask & mask_well
-            if final_mask.sum() == 0:
+        for well in names_unique:
+            well_mask = mask & (names == well)
+            if well_mask.sum() == 0:
                 continue
             wells[well] = {'loc': [], 'value': []}
-            for ijk_cell in ijk[final_mask]:
-                wells[well]['loc'].append()
-
-
-            # conns = self._sr3.elements.get_children(
-            #     element_type='layer',
-            #     element_name=well,
-            #     deep_search=False
-            # )
-
-
-
+            for layer in layers:
+                loc = []
+                layer_mask = well_mask & (ijk[:, -1] == layer)
+                if layer_mask.sum() == 0:
+                    loc = []
+                else:
+                    loc = n_cell[layer_mask].tolist()
+                wells[well]['loc'].append(loc)
+            wells[well]['type'] = 'prod'
+            wells[well]['value'] = 0.0
         return wells
 
     def _get_connections(self, layers, kwargs):
