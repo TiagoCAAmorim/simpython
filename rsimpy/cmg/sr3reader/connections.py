@@ -149,8 +149,9 @@ class ConnectionsHandler:
         vi = Q / Ai = Tran * (kr/B.mu) * dPhi * sqrt(Di.Di) / (A.Di)
         ti = sqrt(Di.Di) / vi = sqrt(Di.Di) * (A.Di) / (Tran * (kr/B.mu) * dPhi * sqrt(Di.Di))
            = (A.Di) / (Tran * (kr/B.mu) * dPhi)
-        tof_i = (A.Di) / Tran
-        tof = tof_i + tof_j = (A.Di + A.Dj) / Tran
+        Assuming (kr/B.mu) * dPhi / sqrt(Di.Di) = cte
+        tof_i = (A.Di/sqrt(Di.Di)) / Tran
+        tof = tof_i + tof_j = (A.Di/sqrt(Di.Di) + A.Dj/sqrt(Dj.Dj)) / Tran
 
         vi: Velocity from the center of cell i to the common face.
         Q: Flow rate through the connection.
@@ -158,7 +159,7 @@ class ConnectionsHandler:
         kr: Relative permeability.
         B: Formation volume factor.
         mu: Viscosity.
-        dPhi: Pressure difference between the two cells.
+        dPhi: Pressure potential difference between the two cells.
         ti: Time for a particle to travel from the center of cell i to the common face.
         tof: Normalized time of flight through the connection.
 
@@ -378,7 +379,7 @@ class ConnectionsHandler:
         kr: Relative permeability.
         B: Formation volume factor.
         mu: Viscosity.
-        dPhi: Pressure difference between the two cells.
+        dPhi: Pressure potential difference between the two cells.
         ti: Time for a particle to travel from the center of cell i to the common face.
         tof: Normalized time of flight through the connection.
 
