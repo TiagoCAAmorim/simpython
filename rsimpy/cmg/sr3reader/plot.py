@@ -204,7 +204,7 @@ class PlotHandler:
             all_coords = all_coords[0] # [ni*nj, 4, 3]
 
         if add_wells:
-            kwargs['wells'] = self._get_wells(layers, well_property_name)
+            kwargs['wells'] = self._get_wells(layers, len(days), well_property_name)
 
         if add_connections:
             self._get_connections(layers, kwargs)
@@ -249,8 +249,24 @@ class PlotHandler:
 
         return panel
 
-    def _get_wells(self, layers, well_property_name):
-        """Get well locations and add to kwargs."""
+    def _get_wells(self, layers, n_dates, well_property_name):
+        """Get well locations and add to kwargs.
+
+        Parameters
+        ----------
+        layers : list of int
+            List of layers to get well data for.
+        n_dates : int
+            Number of dates being plotted.
+        well_property_name : str or None
+            Name of well property to read (currently not used).
+
+        Returns
+        -------
+        dict
+            Dictionary with well data. Each well has 'loc' (list of cell locations),
+            'type' (well type), and 'value' (property value).
+        """
         conn_data = self._sr3.elements.get_layer_data('cell')
         cells = np.array(list(conn_data.values()))
         ijk = self._sr3.grid.n2ijk(cells)
@@ -268,14 +284,38 @@ class PlotHandler:
             if well_mask.sum() == 0:
                 continue
             wells[well] = {'loc': [], 'value': []}
-            for layer in layers:
-                loc = []
-                layer_mask = well_mask & (ijk[:, -1] == layer)
-                if layer_mask.sum() == 0:
+
+            # If we have multiple layers (one date), create one location per layer
+            if len(layers) > 1:
+                for layer in layers:
                     loc = []
-                else:
+                    layer_mask = well_mask & (ijk[:, -1] == layer)
+                    if layer_mask.sum() == 0:
+                        loc = []
+                    else:
+                        loc = n_cell[layer_mask].tolist()
+                    wells[well]['loc'].append(loc)
+            # If we have multiple dates (one layer), replicate the same location for each date
+            elif n_dates > 1:
+                layer = layers[0]
+                layer_mask = well_mask & (ijk[:, -1] == layer)
+                if layer_mask.sum() > 0:
                     loc = n_cell[layer_mask].tolist()
+                else:
+                    loc = []
+                # Replicate the same well location for each date
+                for _ in range(n_dates):
+                    wells[well]['loc'].append(loc)
+            # Single layer, single date
+            else:
+                layer = layers[0]
+                layer_mask = well_mask & (ijk[:, -1] == layer)
+                if layer_mask.sum() > 0:
+                    loc = n_cell[layer_mask].tolist()
+                else:
+                    loc = []
                 wells[well]['loc'].append(loc)
+
             wells[well]['type'] = 'prod'
             wells[well]['value'] = 0.0
         return wells

@@ -208,5 +208,32 @@ class TestPlotHandler(unittest.TestCase):
             output_file("test_plot_map_with_wells.html")
             save(panel)
 
+    def test_plot_map_with_wells_dates(self):
+        """Test that plot_map works with connections and multiple dates."""
+        days = self.sr3.dates.get_days('grid')
+
+        panel = self.sr3.plot.plot_map(
+            element="matrix",
+            property_name="PRES",
+            days=days[0:5],
+            layers=[86],
+            width=1600,
+            height=600,
+            add_top=True,
+            add_connections=False,
+            add_wells=True,
+            well_property_name="WELLID",
+            palette='Turbo',
+            log_scale=True,
+            out_of_range_colors=None,
+            nan_inf_color=None,
+            ijk_labels=True,
+        )
+
+        self.assertIsNotNone(panel, "Panel should not be None")
+        if self.save:
+            output_file("test_plot_map_with_wells_multiple_dates.html")
+            save(panel)
+
 if __name__ == '__main__':
     unittest.main()
