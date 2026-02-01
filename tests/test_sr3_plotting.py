@@ -235,5 +235,29 @@ class TestPlotHandler(unittest.TestCase):
             output_file("test_plot_map_with_wells_multiple_dates.html")
             save(panel)
 
+    def test_plot_map_with_custom_prop(self):
+        """Test that plot_map works with custom property."""
+        n_cells = self.sr3.grid.get_size("n_cells")
+        ni, nj, _ = self.sr3.grid.get_size("nijk")
+        custom_property = [i % (ni*nj) for i in range(n_cells)]
+
+        panel = self.sr3.plot.plot_map(
+            element="matrix",
+            property_name="Cell Index",
+            grid_property=custom_property,
+            days=[10],
+            layers=[89],
+            title="Test Plot: Cell Index",
+            width=800,
+            height=600,
+            contour_step=50.0,
+        )
+
+        self.assertIsNotNone(panel, "Panel should not be None")
+        if self.save:
+            output_file("test_plot_map_with_custom_property.html")
+            save(panel)
+
+
 if __name__ == '__main__':
     unittest.main()

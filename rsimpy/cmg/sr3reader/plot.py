@@ -167,7 +167,7 @@ class PlotHandler:
 
         # [n_cells, n_dates]
         if grid_property is not None:
-            values = grid_property
+            values = np.array(grid_property)
         else:
             values = self._sr3.data.get(
                 element_type="grid",
@@ -219,8 +219,11 @@ class PlotHandler:
             kwargs['nan_inf_color'] = None
 
         if 'title' not in kwargs:
-            prop_desc = self._sr3.properties.description(property_name=property_name.upper())
-            prop_desc = prop_desc['long description']
+            try:
+                prop_desc = self._sr3.properties.description(property_name=property_name.upper())
+                prop_desc = prop_desc['long description']
+            except ValueError:
+                prop_desc = property_name
             if len(layers) > 1:
                 kwargs['title'] = f"{prop_desc} - {days[0]} days"
             elif len(days) > 1:
@@ -229,9 +232,13 @@ class PlotHandler:
                 kwargs['title'] = f"{prop_desc} - Layer {layers[0]} at {days[0]} days"
 
         if 'colorbar_label' not in kwargs:
-            prop_desc = self._sr3.properties.description(property_name=property_name.upper())
-            prop_desc = prop_desc['description']
-            unit = self._sr3.properties.unit(property_name=property_name.upper())
+            try:
+                prop_desc = self._sr3.properties.description(property_name=property_name.upper())
+                prop_desc = prop_desc['description']
+                unit = self._sr3.properties.unit(property_name=property_name.upper())
+            except ValueError:
+                prop_desc = property_name
+                unit = None
             unit = 'cP' if unit == 'cp' else unit
             unit = 'mD' if unit == 'md' else unit
             if unit is None or unit.strip() == '':
