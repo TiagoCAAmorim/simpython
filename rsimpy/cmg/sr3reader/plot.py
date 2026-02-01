@@ -44,6 +44,8 @@ class PlotHandler:
                  property_name,
                  days=None, layers=None,
                  grid_property=None,
+                 add_wells=False,
+                 well_property_name=None,
                  add_top=False,
                  add_connections=False,
                  ijk_labels=True,
@@ -69,6 +71,13 @@ class PlotHandler:
         grid_property : np.ndarray, optional
             A custom array of values to plot with size [n_cells, n_dates].
             If None, data will be read from the SR3 file.
+            Default is None.
+        add_wells : bool, optional
+            Whether to add well locations to the plot.
+            Default is False.
+        well_property_name : str, optional
+            Connection (layer) property name to read from the grid data.
+            If None, no well properties are read.
             Default is None.
         add_top : bool, optional
             Whether to add contour lines to the plot.
@@ -158,7 +167,7 @@ class PlotHandler:
 
         # [n_cells, n_dates]
         if grid_property is not None:
-            values = grid_property
+            values = np.array(grid_property)
         else:
             values = self._sr3.data.get(
                 element_type="grid",
@@ -194,6 +203,9 @@ class PlotHandler:
         if all_coords.shape[0] == 1:
             all_coords = all_coords[0] # [ni*nj, 4, 3]
 
+        if add_wells:
+            kwargs['wells'] = self._get_wells(layers, len(days), well_property_name)
+
         if add_connections:
             self._get_connections(layers, kwargs)
 
@@ -207,8 +219,11 @@ class PlotHandler:
             kwargs['nan_inf_color'] = None
 
         if 'title' not in kwargs:
-            prop_desc = self._sr3.properties.description(property_name=property_name.upper())
-            prop_desc = prop_desc['long description']
+            try:
+                prop_desc = self._sr3.properties.description(property_name=property_name.upper())
+                prop_desc = prop_desc['long description']
+            except ValueError:
+                prop_desc = property_name
             if len(layers) > 1:
                 kwargs['title'] = f"{prop_desc} - {days[0]} days"
             elif len(days) > 1:
@@ -217,9 +232,13 @@ class PlotHandler:
                 kwargs['title'] = f"{prop_desc} - Layer {layers[0]} at {days[0]} days"
 
         if 'colorbar_label' not in kwargs:
-            prop_desc = self._sr3.properties.description(property_name=property_name.upper())
-            prop_desc = prop_desc['description']
-            unit = self._sr3.properties.unit(property_name=property_name.upper())
+            try:
+                prop_desc = self._sr3.properties.description(property_name=property_name.upper())
+                prop_desc = prop_desc['description']
+                unit = self._sr3.properties.unit(property_name=property_name.upper())
+            except ValueError:
+                prop_desc = property_name
+                unit = None
             unit = 'cP' if unit == 'cp' else unit
             unit = 'mD' if unit == 'md' else unit
             if unit is None or unit.strip() == '':
@@ -236,6 +255,77 @@ class PlotHandler:
         )
 
         return panel
+
+    def _get_wells(self, layers, n_dates, well_property_name):
+        """Get well locations and add to kwargs.
+
+        Parameters
+        ----------
+        layers : list of int
+            List of layers to get well data for.
+        n_dates : int
+            Number of dates being plotted.
+        well_property_name : str or None
+            Name of well property to read (currently not used).
+
+        Returns
+        -------
+        dict
+            Dictionary with well data. Each well has 'loc' (list of cell locations),
+            'type' (well type), and 'value' (property value).
+        """
+        conn_data = self._sr3.elements.get_layer_data('cell')
+        cells = np.array(list(conn_data.values()))
+        ijk = self._sr3.grid.n2ijk(cells)
+        n_cell = ijk[:,0] - 1 + (ijk[:,1]-1)*self._sr3.grid.get_size('nijk')[0]
+        mask = np.isin(ijk[:, -1], layers)
+        if mask.sum() == 0:
+            return {}
+        conn_data = self._sr3.elements.get_layer_data('parent')
+        names = np.array(list(conn_data.values()))
+        names_unique = np.unique(names)
+
+        wells = {}
+        for well in names_unique:
+            well_mask = mask & (names == well)
+            if well_mask.sum() == 0:
+                continue
+            wells[well] = {'loc': [], 'value': []}
+
+            # If we have multiple layers (one date), create one location per layer
+            if len(layers) > 1:
+                for layer in layers:
+                    loc = []
+                    layer_mask = well_mask & (ijk[:, -1] == layer)
+                    if layer_mask.sum() == 0:
+                        loc = []
+                    else:
+                        loc = n_cell[layer_mask].tolist()
+                    wells[well]['loc'].append(loc)
+            # If we have multiple dates (one layer), replicate the same location for each date
+            elif n_dates > 1:
+                layer = layers[0]
+                layer_mask = well_mask & (ijk[:, -1] == layer)
+                if layer_mask.sum() > 0:
+                    loc = n_cell[layer_mask].tolist()
+                else:
+                    loc = []
+                # Replicate the same well location for each date
+                for _ in range(n_dates):
+                    wells[well]['loc'].append(loc)
+            # Single layer, single date
+            else:
+                layer = layers[0]
+                layer_mask = well_mask & (ijk[:, -1] == layer)
+                if layer_mask.sum() > 0:
+                    loc = n_cell[layer_mask].tolist()
+                else:
+                    loc = []
+                wells[well]['loc'].append(loc)
+
+            wells[well]['type'] = 'prod'
+            wells[well]['value'] = 0.0
+        return wells
 
     def _get_connections(self, layers, kwargs):
         """Get connections for the specified layer and add to kwargs."""
