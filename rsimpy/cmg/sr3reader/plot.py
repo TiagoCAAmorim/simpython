@@ -174,8 +174,8 @@ class PlotHandler:
                 if values.shape[0] != n_act:
                     raise ValueError(
                         f"Provided grid_property has incorrect size {values.shape}. "
-                        f"Expected size is ({ni*nj*nk:,}, {len(days)}) for complete grid "
-                        f"or ({n_act:,}, {len(days)}) for active cells."
+                        f"Expected size is ({ni*nj*nk}, {len(days)}) for complete grid "
+                        f"or ({n_act}, {len(days)}) for active cells."
                     )
                 complete_values = np.full((ni*nj*nk, len(days)), np.nan)
                 active2complete = self._sr3.grid.active2complete()
