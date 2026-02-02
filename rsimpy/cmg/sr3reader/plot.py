@@ -168,6 +168,19 @@ class PlotHandler:
         # [n_cells, n_dates]
         if grid_property is not None:
             values = np.array(grid_property)
+            values = values.reshape(-1, len(days))
+            if values.shape[0] != ni*nj:
+                n_act = self._sr3.grid.get_size("n_active")
+                if values.shape[0] != n_act:
+                    raise ValueError(
+                        f"Provided grid_property has incorrect size {values.shape}. "
+                        f"Expected size is ({ni*nj*nk:,}, {len(days)}) for complete grid "
+                        f"or ({n_act:,}, {len(days)}) for active cells."
+                    )
+                complete_values = np.full((ni*nj*nk, len(days)), np.nan)
+                active2complete = self._sr3.grid.active2complete()
+                complete_values[active2complete-1, :] = values
+                values = complete_values
         else:
             values = self._sr3.data.get(
                 element_type="grid",
