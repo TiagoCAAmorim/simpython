@@ -83,7 +83,7 @@ class TestPlotHandler(unittest.TestCase):
     def test_plot_map_with_different_properties(self):
         """Test that plot_map works with different properties."""
         days = self.sr3.dates.get_days('grid')
-        properties = ["PRES", "PERMI","POR"]
+        properties = ["PRES", "PERMI", "POR"]
 
         panels = []
         for prop in properties:
@@ -94,7 +94,8 @@ class TestPlotHandler(unittest.TestCase):
                     days=days[0],
                     layers=[89],
                     width=800,
-                    height=600
+                    height=600,
+                    log_scale=prop in ["PERMI"],  # Log scale for PERMI only
                 )
                 self.assertIsNotNone(panel, f"Panel should not be None for {prop}")
                 panels.append(panel)
