@@ -3,6 +3,7 @@ Test script for the PlotHandler class.
 """
 import unittest
 from pathlib import Path
+import numpy as np
 from bokeh.plotting import save, column, figure, output_file
 
 from rsimpy.cmg.sr3reader import Sr3Reader
@@ -278,6 +279,76 @@ class TestPlotHandler(unittest.TestCase):
         self.assertIsNotNone(panel, "Panel should not be None")
         if self.save:
             output_file("test_plot_map_with_custom_property_act.html")
+            save(panel)
+
+    def test_plot_map_with_custom_connections(self):
+        """Test that plot_map works with custom connection values."""
+        layers = [86, 87]
+        day = self.sr3.dates.get_days('grid')[0]
+        n_connections = self.sr3.connections.get_connections(as_active=False).shape[0]
+
+        custom_connections = np.ones((n_connections, 1))
+
+        panel = self.sr3.plot.plot_map(
+            element="matrix",
+            property_name="PERMJ",
+            days=[day],
+            layers=layers,
+            add_connections=True,
+            connection_property=custom_connections,
+            width=1000,
+            height=500,
+            ijk_labels=True,
+        )
+
+        self.assertIsNotNone(panel, "Panel should not be None")
+
+    def test_plot_map_with_invalid_custom_connections(self):
+        """Test that plot_map validates custom connection values shape."""
+        layers = [86, 87]
+        day = self.sr3.dates.get_days('grid')[0]
+        n_connections = self.sr3.connections.get_connections(as_active=False).shape[0]
+
+        invalid_connections = np.ones((n_connections - 1, 1))
+
+        with self.assertRaises(ValueError):
+            self.sr3.plot.plot_map(
+                element="matrix",
+                property_name="PERMJ",
+                days=[day],
+                layers=layers,
+                add_connections=True,
+                connection_property=invalid_connections,
+                width=1000,
+                height=500,
+                ijk_labels=True,
+            )
+
+    def test_plot_map_with_custom_connections_multiple_dates(self):
+        """Test custom time-varying connection values for multiple dates."""
+        days = self.sr3.dates.get_days('grid')[:3]
+        layers = [86]
+        n_connections = self.sr3.connections.get_connections(as_active=False).shape[0]
+
+        custom_connections = np.ones((n_connections, len(days)))
+        if len(days) > 1:
+            custom_connections[:, 1:] = 2.0
+
+        panel = self.sr3.plot.plot_map(
+            element="matrix",
+            property_name="PRES",
+            days=days,
+            layers=layers,
+            add_connections=True,
+            connection_property=custom_connections,
+            width=1000,
+            height=500,
+            ijk_labels=True,
+        )
+
+        self.assertIsNotNone(panel, "Panel should not be None")
+        if self.save:
+            output_file("test_plot_map_with_custom_connections.html")
             save(panel)
 
 
