@@ -5,7 +5,6 @@ import unittest
 from pathlib import Path
 from bokeh.plotting import save, column, figure, output_file
 
-import context  # noqa # pylint: disable=unused-import
 from rsimpy.cmg.sr3reader import Sr3Reader
 
 def get_figure(panel):
@@ -84,7 +83,7 @@ class TestPlotHandler(unittest.TestCase):
     def test_plot_map_with_different_properties(self):
         """Test that plot_map works with different properties."""
         days = self.sr3.dates.get_days('grid')
-        properties = ["PRES", "PERMI"]
+        properties = ["PRES", "PERMI","POR"]
 
         panels = []
         for prop in properties:

@@ -3,7 +3,6 @@ outreader module tests
 """
 import unittest
 
-import context  # noqa # pylint: disable=unused-import
 from rsimpy.cmg.outreader import wi, utils
 
 

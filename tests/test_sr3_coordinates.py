@@ -8,7 +8,6 @@ import unittest
 import matplotlib.pyplot as plt
 import numpy as np
 
-import context  # noqa # pylint: disable=unused-import
 from rsimpy.cmg.sr3reader import Sr3Reader
 
 

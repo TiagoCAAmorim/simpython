@@ -7,7 +7,6 @@ from pathlib import Path
 import os
 import numpy as np
 
-import context  # noqa # pylint: disable=unused-import
 from rsimpy.cmg.datreader import dat_dates, dat_parser, dat_run, sch_to_daily, dat_pvt
 
 

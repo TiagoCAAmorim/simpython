@@ -9,7 +9,6 @@ import numpy as np
 import numpy.testing as npt
 from bokeh.plotting import show
 
-import context  # noqa # pylint: disable=unused-import
 from rsimpy.cmg import gridfile
 
 

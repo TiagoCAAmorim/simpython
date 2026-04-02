@@ -7,7 +7,6 @@ from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
 
-import context  # noqa # pylint: disable=unused-import
 from rsimpy.cmg.sr3reader import Sr3Reader
 from rsimpy.cmg.datreader import dat_pvt
 
