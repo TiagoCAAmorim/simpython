@@ -536,15 +536,13 @@ class DashMapPlot(BaseDashPlot):
             height=self.height,
             xaxis_title="X",
             yaxis_title="Y",
+            xaxis={"tickformat": ".2f"},
+            yaxis={"tickformat": ".2f"},
             template="plotly_white",
             margin={"l": 40, "r": 190, "t": 60, "b": 40},
             uirevision="dash-map-view",
         )
-        x_min, x_max, y_min, y_max = _compute_polygon_bounds(self.vertices)
-        x_pad = 0.05 * max(x_max - x_min, 1.0)
-        y_pad = 0.05 * max(y_max - y_min, 1.0)
-        fig.update_xaxes(range=[x_min - x_pad, x_max + x_pad])
-        fig.update_yaxes(range=[y_min - y_pad, y_max + y_pad], scaleanchor="x", scaleratio=1)
+        fig.update_yaxes(scaleanchor="x", scaleratio=1)
 
         if add_connections and self.has_connections():
             conn_values = self.connection_data[connection_property_index, day_index, :]

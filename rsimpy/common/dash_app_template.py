@@ -79,9 +79,11 @@ def build_step_2_2_demo_map_plot(n_rows=5, n_cols=6, n_days=5):
     layer2_rows, layer2_cols = 3, 4
     layer3_rows, layer3_cols = 3, 4
 
-    layer1_vertices = _make_regular_grid_vertices(layer1_rows, layer1_cols)
-    layer2_vertices = _make_regular_grid_vertices(layer2_rows, layer2_cols)
-    layer3_vertices = _make_regular_grid_vertices(layer3_rows, layer3_cols)
+    # Create grid vertices and shift origin to (1000, 10000) for demo
+    origin_x, origin_y = 1000.0, 10000.0
+    layer1_vertices = _make_regular_grid_vertices(layer1_rows, layer1_cols) + np.array([origin_x, origin_y, 0.0])
+    layer2_vertices = _make_regular_grid_vertices(layer2_rows, layer2_cols) + np.array([origin_x, origin_y, 0.0])
+    layer3_vertices = _make_regular_grid_vertices(layer3_rows, layer3_cols) + np.array([origin_x, origin_y, 0.0])
     vertices = np.concatenate([layer1_vertices, layer2_vertices, layer3_vertices], axis=0)
     layer_sizes = [
         layer1_rows * layer1_cols,
@@ -210,12 +212,15 @@ def create_dash_template_app(map_plot=None):
                                 clearable=False,
                             ),
                             html.Br(),
-                            html.Label("Grid palette"),
-                            dcc.Dropdown(
-                                id="map-grid-palette",
-                                options=PALETTE_OPTIONS,
-                                value="Turbo",
-                                clearable=False,
+                            html.Label("Layer"),
+                            dcc.Slider(
+                                id="map-layer-slider",
+                                min=1,
+                                max=max(1, n_layers),
+                                step=1,
+                                marks=layer_marks,
+                                value=1,
+                                disabled=n_layers == 1,
                             ),
                             html.Br(),
                             html.Label("Day"),
@@ -228,23 +233,12 @@ def create_dash_template_app(map_plot=None):
                                 value=0,
                             ),
                             html.Br(),
-                            html.Label("Connection palette"),
+                            html.Label("Grid palette"),
                             dcc.Dropdown(
-                                id="map-connection-palette",
+                                id="map-grid-palette",
                                 options=PALETTE_OPTIONS,
-                                value="Plasma",
+                                value="Turbo",
                                 clearable=False,
-                            ),
-                            html.Br(),
-                            html.Label("Layer"),
-                            dcc.Slider(
-                                id="map-layer-slider",
-                                min=1,
-                                max=max(1, n_layers),
-                                step=1,
-                                marks=layer_marks,
-                                value=1,
-                                disabled=n_layers == 1,
                             ),
                             html.Br(),
                             dcc.Checklist(
@@ -257,6 +251,14 @@ def create_dash_template_app(map_plot=None):
                                 value=[],
                             ),
                             html.Br(),
+                            html.Label("Connection palette"),
+                            dcc.Dropdown(
+                                id="map-connection-palette",
+                                options=PALETTE_OPTIONS,
+                                value="Plasma",
+                                clearable=False,
+                            ),
+                            html.Br(),
                             html.Label("Connection line width"),
                             dcc.Slider(
                                 id="map-connection-width",
@@ -267,7 +269,7 @@ def create_dash_template_app(map_plot=None):
                                 disabled=not has_connections,
                             ),
                             html.Br(),
-                            html.Label("Connection gradient segments"),
+                            html.Label("Gradient segments"),
                             dcc.Slider(
                                 id="map-connection-segments",
                                 min=3,
@@ -289,7 +291,11 @@ def create_dash_template_app(map_plot=None):
                                     layer=1,
                                     add_connections=False,
                                 ),
-                                config={"displaylogo": False},
+                                config={
+                                    "displaylogo": False,
+                                    "modeBarButtonsToRemove": ["select2d", "lasso2d"],
+                                    "scrollZoom": True,
+                                },
                             )
                         ],
                         style={"width": "75%", "display": "inline-block"},

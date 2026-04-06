@@ -51,13 +51,16 @@ class TestDashAppTemplate(unittest.TestCase):
     def test_demo_figure_has_global_bounds_and_connections(self):
         obj = build_step_2_2_demo_map_plot()
         fig = obj.create_map_figure(property_index=0, day_index=0, layer=2, add_connections=True)
-        self.assertIsNotNone(fig.layout.xaxis.range)
-        self.assertIsNotNone(fig.layout.yaxis.range)
-        self.assertGreater(float(fig.layout.xaxis.range[1]), 5.0)
-        self.assertGreater(float(fig.layout.yaxis.range[1]), 4.0)
+        # Figure uses autorange for zoom persistence (no explicit range set)
+        self.assertIsNotNone(fig.layout)
+        # Verify polygon data is present (at least one cell polygon for layer 2)
+        polygon_traces = [tr for tr in fig.data if "cell-polygon" in (tr.name or "")]
+        self.assertGreater(len(polygon_traces), 0)
+        # Verify both connection triangle types are present
         names = [tr.name for tr in fig.data]
         self.assertIn("connection-triangle-up", names)
         self.assertIn("connection-triangle-down", names)
+        # Verify zoom persistence is enabled
         self.assertEqual(fig.layout.uirevision, "dash-map-view")
 
     def test_create_step_2_2_working_example_app(self):
