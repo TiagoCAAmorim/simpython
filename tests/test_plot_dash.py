@@ -123,9 +123,11 @@ class TestPlotDashFoundation(unittest.TestCase):
         polygon_hover_traces = [tr for tr in fig.data if tr.name == "cell-polygon-hover"]
         self.assertEqual(len(polygon_traces), 30)
         self.assertEqual(len(polygon_hover_traces), 30)
-        self.assertIn("Cell Name: (1,1)", polygon_hover_traces[0].hovertemplate)
-        self.assertIn("Cell Name: (5,6)", polygon_hover_traces[-1].hovertemplate)
-        self.assertEqual(polygon_hover_traces[0].hoveron, "fills")
+        self.assertIn("Cell Name: (1,1)", polygon_hover_traces[0].text[0])
+        self.assertIn("Cell Name: (5,6)", polygon_hover_traces[-1].text[0])
+        self.assertEqual(polygon_hover_traces[0].hovertemplate, "%{text}<extra></extra>")
+        self.assertEqual(polygon_hover_traces[0].mode, "markers")
+        self.assertEqual(len(polygon_hover_traces[0].x), 9)
         self.assertEqual(polygon_traces[0].hoverinfo, "skip")
         self.assertEqual(obj.property_names, ["Cell Index"])
 
@@ -179,6 +181,7 @@ class TestPlotDashFoundation(unittest.TestCase):
         self.assertIn("connection-line", names_l1)
         self.assertIn("connection-line-hover", names_l1)
         self.assertIn("connection-triangle-down", names_l1)
+        self.assertIn("connection-triangle-hover", names_l1)
         self.assertIn("connection-colorbar", names_l1)
 
         first_hover_trace = [tr for tr in fig_l1.data if tr.name == "connection-line-hover"][0]

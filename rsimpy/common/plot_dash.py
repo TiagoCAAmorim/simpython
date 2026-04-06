@@ -105,6 +105,38 @@ def _sample_line_points(p0, p1, n_points=20):
     return xs, ys
 
 
+def _sample_quad_interior_points(poly_xy, n_per_side=3, inset=0.2):
+    """Sample interior points of a quadrilateral for robust hover hit testing."""
+    arr = np.asarray(poly_xy, dtype=float)
+    if arr.shape[0] != 4 or arr.shape[1] != 2:
+        raise ValueError("poly_xy must have shape (4, 2).")
+
+    # Bilinear interpolation using vertex order [0, 1, 2, 3].
+    p00 = arr[0]
+    p10 = arr[1]
+    p11 = arr[2]
+    p01 = arr[3]
+
+    n_per_side = max(int(n_per_side), 1)
+    inset = float(min(max(inset, 0.0), 0.49))
+    us = np.linspace(inset, 1.0 - inset, n_per_side)
+    vs = np.linspace(inset, 1.0 - inset, n_per_side)
+
+    points = []
+    for u in us:
+        for v in vs:
+            p = (
+                (1.0 - u) * (1.0 - v) * p00
+                + u * (1.0 - v) * p10
+                + u * v * p11
+                + (1.0 - u) * v * p01
+            )
+            points.append(p)
+
+    points = np.asarray(points, dtype=float)
+    return points[:, 0], points[:, 1]
+
+
 def _compute_polygon_bounds(vertices):
     """Compute x/y bounds from all polygon vertices."""
     arr = np.asarray(vertices, dtype=float)
@@ -258,7 +290,7 @@ def add_triangle_trace(
             line={"color": line_color, "width": 1.0},
             fillcolor=fill_color,
             name=name,
-            hovertemplate=(hover_text + "<extra></extra>") if hover_text else None,
+            hoverinfo="skip",
             showlegend=False,
         )
     )
@@ -488,18 +520,19 @@ class DashMapPlot(BaseDashPlot):
                 )
             )
 
-            # Invisible fill trace dedicated to hover on polygon area.
+            # Add sparse interior hit points (3x3 = 9) for robust polygon hover.
+            hover_x, hover_y = _sample_quad_interior_points(
+                poly[:, :2], n_per_side=3, inset=0.2
+            )
             fig.add_trace(
                 go.Scatter(
-                    x=x_closed,
-                    y=y_closed,
-                    mode="lines",
-                    hoveron="fills",
-                    fill="toself",
-                    fillcolor="rgba(0,0,0,0)",
-                    line={"color": "rgba(0,0,0,0)", "width": 0.0},
+                    x=hover_x,
+                    y=hover_y,
+                    mode="markers",
+                    marker={"size": 9, "color": "rgba(0,0,0,0.001)"},
+                    text=[hover_text] * len(hover_x),
                     name="cell-polygon-hover",
-                    hovertemplate=hover_text + "<extra></extra>",
+                    hovertemplate="%{text}<extra></extra>",
                     showlegend=False,
                 )
             )
@@ -534,6 +567,7 @@ class DashMapPlot(BaseDashPlot):
             title=self.title,
             width=self.width,
             height=self.height,
+            dragmode="pan",
             xaxis_title="X",
             yaxis_title="Y",
             xaxis={"tickformat": ".2f"},
@@ -673,6 +707,11 @@ class DashMapPlot(BaseDashPlot):
                 else:
                     triangle_center_x = float(cx + offset)
                     triangle_center_y = float(cy - offset)
+                triangle_hover_text = (
+                    f"Connection: Cell {selected_cell}<br>"
+                    f"Direction: {direction}<br>"
+                    f"Aggregated Value: {agg_value:.6g}"
+                )
                 add_triangle_trace(
                     fig=fig,
                     center_x=triangle_center_x,
@@ -682,11 +721,20 @@ class DashMapPlot(BaseDashPlot):
                     line_color=connection_line_color,
                     fill_color=triangle_color if connection_triangle_color is None else connection_triangle_color,
                     name=f"connection-triangle-{direction}",
-                    hover_text=(
-                        f"Connection: Cell {selected_cell}<br>"
-                        f"Direction: {direction}<br>"
-                        f"Aggregated Value: {agg_value:.6g}"
-                    ),
+                    hover_text=triangle_hover_text,
+                )
+                # Single center hit point improves triangle hover reliability.
+                fig.add_trace(
+                    go.Scatter(
+                        x=[triangle_center_x],
+                        y=[triangle_center_y],
+                        mode="markers",
+                        marker={"size": 12, "color": "rgba(0,0,0,0.001)"},
+                        text=[triangle_hover_text],
+                        hovertemplate="%{text}<extra></extra>",
+                        name="connection-triangle-hover",
+                        showlegend=False,
+                    )
                 )
 
             conn_finite_current_day = conn_values[np.isfinite(conn_values)]
