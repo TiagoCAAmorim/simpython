@@ -279,6 +279,54 @@ class PlotHandlerDash:
         )
         return np.asarray(sim_data[property_name].sel(element=element).values, dtype=float)
 
+    @staticmethod
+    def _parse_secondary_flag(value):
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, np.integer)):
+            return bool(value)
+        if isinstance(value, str):
+            token = value.strip().lower()
+            if token in {"y2", "right", "secondary", "2", "true", "yes", "on"}:
+                return True
+            if token in {"y1", "left", "primary", "1", "false", "no", "off"}:
+                return False
+        raise ValueError(
+            "Series secondary-axis flag must be bool/int or one of: "
+            "'y1'|'y2', 'left'|'right', 'primary'|'secondary'."
+        )
+
+    @staticmethod
+    def _normalize_secondary_y_selection(secondary_y, labels, n_series):
+        if secondary_y is None:
+            return set()
+
+        label_to_idx = {name: idx for idx, name in enumerate(labels)}
+        normalized = set()
+
+        for item in secondary_y:
+            if isinstance(item, str):
+                key = item.strip()
+                if key in label_to_idx:
+                    normalized.add(label_to_idx[key])
+                    continue
+                if key.isdigit():
+                    idx = int(key)
+                else:
+                    raise ValueError(
+                        f"Unknown secondary_y label '{item}'. Available labels: {labels}."
+                    )
+            else:
+                idx = int(item)
+
+            if idx < 0 or idx >= n_series:
+                raise ValueError(
+                    f"secondary_y index {idx} out of range [0, {n_series-1}]."
+                )
+            normalized.add(idx)
+
+        return normalized
+
     def make_line(
         self,
         series=None,
@@ -295,6 +343,13 @@ class PlotHandlerDash:
         `series` can be:
         - dict: {"Label": ("well", "P11", "NP")}
         - list: [("well", "P11", "NP"), ...]
+
+        For SR3-backed `series`, each descriptor can also include a fourth item
+        to flag secondary axis placement:
+        - ("well", "P11", "NP", True)
+
+        `secondary_y` can be a list of series indices (all modes) and, when
+        `series` is a dict, it can also include label names.
         """
         if data is not None:
             if x_values is None:
@@ -336,22 +391,38 @@ class PlotHandlerDash:
             raise ValueError("Line series expects time-series descriptors, not grid descriptors.")
 
         days = self._normalize_days(days, element_type=element_type)
+        x_dates = pd.to_datetime(self._sr3.dates.day2date(days)).to_numpy(dtype="datetime64[ns]")
         y_values = []
-        for desc in descriptors:
-            if not isinstance(desc, tuple) or len(desc) != 3:
+        descriptor_secondary = set()
+        for idx, desc in enumerate(descriptors):
+            if not isinstance(desc, tuple) or len(desc) not in (3, 4):
                 raise ValueError(
                     "Each line descriptor must be a tuple: "
-                    "(element_type, element_name, property_name)."
+                    "(element_type, element_name, property_name[, secondary_axis])."
                 )
+
+            use_secondary = False
+            if len(desc) == 4:
+                use_secondary = self._parse_secondary_flag(desc[3])
+            if use_secondary:
+                descriptor_secondary.add(idx)
+
             etype, elem, prop = str(desc[0]).lower(), str(desc[1]), str(desc[2]).upper()
             values = self._read_timeseries(etype, elem, prop, days)
             y_values.append(values)
 
+        user_secondary = self._normalize_secondary_y_selection(
+            secondary_y=secondary_y,
+            labels=labels,
+            n_series=len(descriptors),
+        )
+        secondary_idx = sorted(descriptor_secondary.union(user_secondary))
+
         return DashLinePlot(
-            x_values=np.asarray(days, dtype=float),
+            x_values=x_dates,
             y_values=np.asarray(y_values, dtype=float),
             property_names=labels,
-            secondary_y=secondary_y,
+            secondary_y=secondary_idx,
             width=width,
             height=height,
             title=title,

@@ -6,7 +6,7 @@ import unittest
 import numpy as np
 
 from rsimpy.cmg.sr3reader import Sr3Reader
-from rsimpy.common.plot_dash import DashMapPlot, DashScatterPlot
+from rsimpy.common.plot_dash import DashLinePlot, DashMapPlot, DashScatterPlot
 
 
 class TestSr3PlotDash(unittest.TestCase):
@@ -63,6 +63,28 @@ class TestSr3PlotDash(unittest.TestCase):
         self.assertIsInstance(scatter_obj, DashScatterPlot)
         self.assertIn("Np x WCut", scatter_obj.scatter_data)
         self.assertEqual(scatter_obj.scatter_data["Np x WCut"].shape[1], 2)
+
+    def test_make_line_uses_dates_as_x_values(self):
+        """Line wrapper should convert SR3 days to datetime x-axis values."""
+        line_obj = self.sr3.plots.make_line(
+            series={"NP": ("well", "P11", "NP")},
+        )
+
+        self.assertIsInstance(line_obj, DashLinePlot)
+        self.assertTrue(np.issubdtype(np.asarray(line_obj.x_values).dtype, np.datetime64))
+
+    def test_make_line_secondary_axis_from_descriptor_and_labels(self):
+        """Line wrapper should support descriptor and label/index based secondary axis."""
+        line_obj = self.sr3.plots.make_line(
+            series={
+                "NP": ("well", "P11", "NP"),
+                "QO": ("well", "P11", "QO", True),
+                "QW": ("well", "P11", "QW"),
+            },
+            secondary_y=["QW", 0],
+        )
+
+        self.assertEqual(line_obj.secondary_y, {0, 1, 2})
 
     def test_dashboard_wrapper_returns_runnable_panel(self):
         """Dashboard wrapper should return an object with app + run method."""

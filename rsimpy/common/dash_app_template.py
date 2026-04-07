@@ -916,10 +916,12 @@ def create_sr3_working_example_app():
         days=days[:10],
         title="Map B",
     )
+
+    days = sr3.dates.get_days("well")
     line_obj = sr3.plots.make_line(
         series={
             "P11 Qo": ("well", "P11", "QO"),
-            "P11 BHP": ("well", "P11", "BHP"),
+            "P11 BHP": ("well", "P11", "BHP", True),
         },
         days=days,
         title="Line A",
@@ -987,5 +989,6 @@ def _parse_cli_args():
 
 if __name__ == "__main__":
     args = _parse_cli_args()
+    args.example = 'sr3'
     demo_app = create_working_example_app(example=args.example)
     demo_app.run(debug=bool(args.debug))
