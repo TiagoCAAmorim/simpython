@@ -1,3 +1,4 @@
+# pylint: disable=too-many-lines
 """
 Dash/Plotly plotting utilities for rsimpy.
 
@@ -10,6 +11,14 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 
 import numpy as np
+
+try:
+    import plotly.graph_objects as go
+    from plotly.colors import sample_colorscale
+except ImportError as exc:
+    raise ImportError(
+        "plotly is required for Dash plotting. Install plotly>=5.24.0"
+    ) from exc
 
 
 def validate_grid_data(grid_data):
@@ -77,7 +86,10 @@ def validate_connection_indices(connection_indices, n_cells):
 
 
 def validate_connection_data(connection_data, n_days, n_connections):
-    """Validate connection data tensor shape (n_conn_properties, n_days, n_connections)."""
+    """Validate connection data tensor shape.
+
+    Expected shape: (n_conn_properties, n_days, n_connections).
+    """
     arr = np.asarray(connection_data)
     if arr.ndim != 3:
         raise ValueError(
@@ -88,7 +100,8 @@ def validate_connection_data(connection_data, n_days, n_connections):
         raise ValueError("connection_data must have at least one property.")
     if arr.shape[1] != int(n_days):
         raise ValueError(
-            f"connection_data n_days ({arr.shape[1]}) must match grid n_days ({n_days})."
+            f"connection_data n_days ({arr.shape[1]}) "
+            f"must match grid n_days ({n_days})."
         )
     if arr.shape[2] != int(n_connections):
         raise ValueError(
@@ -191,9 +204,9 @@ def _circle_polygon(center_x, center_y, radius, n_points=48):
 def _interpolate_edge_contour(p1, p2, z1, z2, contour_value):
     """Find where a contour level crosses an edge between two points."""
     if z1 == z2:
-        if np.isclose(z1, contour_value):
-            return np.asarray([0.5 * (p1[0] + p2[0]), 0.5 * (p1[1] + p2[1])], dtype=float)
-        return None
+        mid_x = 0.5 * (p1[0] + p2[0])
+        mid_y = 0.5 * (p1[1] + p2[1])
+        return np.asarray([mid_x, mid_y], dtype=float)
 
     if (z1 <= contour_value <= z2) or (z2 <= contour_value <= z1):
         t = (contour_value - z1) / (z2 - z1)
@@ -287,7 +300,9 @@ def _compute_contour_lines_for_polygon(polygon, contour_values):
     for tri_idx, triangle in enumerate(triangles):
         tri_z_vals = _get_z_values_for_triangle(z_vals, tri_idx, n_vertices)
         for contour_value in contour_values:
-            segments = _get_contour_segments_triangle(triangle, tri_z_vals, contour_value)
+            segments = _get_contour_segments_triangle(
+                triangle, tri_z_vals, contour_value
+            )
             contour_segments[float(contour_value)].extend(segments)
 
     return contour_segments
@@ -364,13 +379,6 @@ def _add_gradient_connection_line(
     alpha_end=1.0,
 ):
     """Draw a directional line with linear color gradient from p0 to p1."""
-    try:
-        import plotly.graph_objects as go
-    except ImportError as exc:
-        raise ImportError(
-            "plotly is required for gradient connection rendering."
-        ) from exc
-
     n_segments = max(int(n_segments), 2)
     xs = np.linspace(p0[0], p1[0], n_segments + 1)
     ys = np.linspace(p0[1], p1[1], n_segments + 1)
@@ -423,12 +431,13 @@ def create_triangle_vertices(center_x, center_y, size, direction="up"):
     half_w = size / 2.0
     height = size * 0.8660254037844386  # sqrt(3)/2
 
+    h2 = height / 2.0
     if direction == "up":
         xs = [center_x, center_x - half_w, center_x + half_w, center_x]
-        ys = [center_y + height / 2.0, center_y - height / 2.0, center_y - height / 2.0, center_y + height / 2.0]
+        ys = [center_y + h2, center_y - h2, center_y - h2, center_y + h2]
     else:
         xs = [center_x, center_x - half_w, center_x + half_w, center_x]
-        ys = [center_y - height / 2.0, center_y + height / 2.0, center_y + height / 2.0, center_y - height / 2.0]
+        ys = [center_y - h2, center_y + h2, center_y + h2, center_y - h2]
 
     return xs, ys
 
@@ -444,13 +453,6 @@ def add_triangle_trace(
     name="connection",
 ):
     """Add a filled triangle as a Scatter trace to a Plotly figure."""
-    try:
-        import plotly.graph_objects as go
-    except ImportError as exc:
-        raise ImportError(
-            "plotly is required for triangle rendering. Install plotly>=5.24.0"
-        ) from exc
-
     if fig is None:
         fig = go.Figure()
 
@@ -515,7 +517,9 @@ class DashMapPlot(BaseDashPlot):
         self.vertices = validate_vertices(vertices, n_cells=n_cells_from_vertices)
 
         if grid_data is None:
-            self.grid_data = np.arange(n_cells_from_vertices, dtype=float).reshape(1, 1, -1)
+            self.grid_data = np.arange(
+                n_cells_from_vertices, dtype=float
+            ).reshape(1, 1, -1)
             self.property_names = ["Cell Index"]
         else:
             self.grid_data = validate_grid_data(grid_data)
@@ -525,7 +529,9 @@ class DashMapPlot(BaseDashPlot):
                     f"Got {self.grid_data.shape[2]} vs {n_cells_from_vertices}."
                 )
             if property_names is None:
-                self.property_names = [f"Property {i+1}" for i in range(self.grid_data.shape[0])]
+                self.property_names = [
+                    f"Property {i+1}" for i in range(self.grid_data.shape[0])
+                ]
             else:
                 if len(property_names) != self.grid_data.shape[0]:
                     raise ValueError(
@@ -624,18 +630,11 @@ class DashMapPlot(BaseDashPlot):
         well_line_width=2.0,
     ):
         """Create a basic polygon map for one property/day/layer selection."""
-        try:
-            import plotly.graph_objects as go
-            from plotly.colors import sample_colorscale
-        except ImportError as exc:
-            raise ImportError(
-                "plotly is required for Dash map plotting. Install plotly>=5.24.0"
-            ) from exc
-
         n_properties, n_days, _ = self.grid_data.shape
         if property_index < 0 or property_index >= n_properties:
             raise ValueError(
-                f"property_index {property_index} is out of range [0, {n_properties-1}]."
+                f"property_index {property_index} is out of range "
+                f"[0, {n_properties-1}]."
             )
         if day_index < 0 or day_index >= n_days:
             raise ValueError(
@@ -646,12 +645,17 @@ class DashMapPlot(BaseDashPlot):
                 f"layer {layer} is out of range [1, {len(self.layer_sizes)}]."
             )
         if add_connections and not self.has_connections():
-            raise ValueError("add_connections=True but no connection data was provided.")
+            raise ValueError(
+                "add_connections=True but no connection data provided."
+            )
         if add_wells and not self.has_wells():
             raise ValueError("add_wells=True but no wells data was provided.")
         if self.has_connections():
             n_conn_props = self.connection_data.shape[0]
-            if connection_property_index < 0 or connection_property_index >= n_conn_props:
+            if (
+                connection_property_index < 0
+                or connection_property_index >= n_conn_props
+            ):
                 raise ValueError(
                     "connection_property_index is out of range "
                     f"[0, {n_conn_props-1}]."
@@ -666,7 +670,11 @@ class DashMapPlot(BaseDashPlot):
             """Build readable log-scale ticks using 1-2-5 steps in original units."""
             log_min = float(log_min)
             log_max = float(log_max)
-            if not np.isfinite(log_min) or not np.isfinite(log_max) or log_max <= log_min:
+            if (
+                not np.isfinite(log_min)
+                or not np.isfinite(log_max)
+                or log_max <= log_min
+            ):
                 vals = np.array([log_min, log_max], dtype=float)
                 text = [f"{10.0 ** v:.6g}" for v in vals]
                 return vals, text
@@ -687,7 +695,9 @@ class DashMapPlot(BaseDashPlot):
                     if lower <= value <= upper:
                         candidates.append(value)
 
-            unique_vals = np.array(sorted(set(float(v) for v in candidates)), dtype=float)
+            unique_vals = np.array(
+                sorted(set(float(v) for v in candidates)), dtype=float
+            )
 
             if unique_vals.size > target_n:
                 idx = np.linspace(0, unique_vals.size - 1, target_n)
@@ -723,7 +733,9 @@ class DashMapPlot(BaseDashPlot):
                         vmax = vmin + 1.0
             else:
                 if len(color_limits) != 2:
-                    raise ValueError("color_limits must be a tuple/list with two values.")
+                    raise ValueError(
+                        "color_limits must be a tuple/list with two values."
+                    )
                 vmin, vmax = float(color_limits[0]), float(color_limits[1])
                 if vmax <= vmin:
                     raise ValueError("color_limits must satisfy max > min.")
@@ -747,7 +759,9 @@ class DashMapPlot(BaseDashPlot):
                         vmax = vmin + 1.0
             else:
                 if len(color_limits) != 2:
-                    raise ValueError("color_limits must be a tuple/list with two values.")
+                    raise ValueError(
+                        "color_limits must be a tuple/list with two values."
+                    )
                 vmin, vmax = float(color_limits[0]), float(color_limits[1])
                 if vmax <= vmin:
                     raise ValueError("color_limits must satisfy max > min.")
@@ -815,10 +829,18 @@ class DashMapPlot(BaseDashPlot):
                 finite_values_current_layer = layer_values[
                     np.isfinite(layer_values) & (layer_values > 0.0)
                 ]
-                colorbar_values = np.log10(finite_values_current_layer) if finite_values_current_layer.size > 0 else np.array([vmin, vmax], dtype=float)
+                colorbar_values = (
+                    np.log10(finite_values_current_layer)
+                    if finite_values_current_layer.size > 0
+                    else np.array([vmin, vmax], dtype=float)
+                )
             else:
                 finite_values_current_layer = layer_values[np.isfinite(layer_values)]
-                colorbar_values = finite_values_current_layer if finite_values_current_layer.size > 0 else np.array([vmin, vmax], dtype=float)
+                colorbar_values = (
+                    finite_values_current_layer
+                    if finite_values_current_layer.size > 0
+                    else np.array([vmin, vmax], dtype=float)
+                )
 
             grid_colorbar = {"title": prop_name, "x": 1.02, "y": 0.5, "len": 0.9}
             if grid_log_scale:
@@ -960,12 +982,15 @@ class DashMapPlot(BaseDashPlot):
                 else:
                     if len(connection_color_limits) != 2:
                         raise ValueError(
-                            "connection_color_limits must be a tuple/list with two values."
+                            "connection_color_limits must be a tuple/list "
+                            "with two values."
                         )
                     conn_vmin = float(connection_color_limits[0])
                     conn_vmax = float(connection_color_limits[1])
                     if conn_vmax <= conn_vmin:
-                        raise ValueError("connection_color_limits must satisfy max > min.")
+                        raise ValueError(
+                            "connection_color_limits must satisfy max > min."
+                        )
 
                 def _connection_value_to_color(value):
                     if not np.isfinite(value) or float(value) <= 0.0:
@@ -987,12 +1012,15 @@ class DashMapPlot(BaseDashPlot):
                 else:
                     if len(connection_color_limits) != 2:
                         raise ValueError(
-                            "connection_color_limits must be a tuple/list with two values."
+                            "connection_color_limits must be a tuple/list "
+                            "with two values."
                         )
                     conn_vmin = float(connection_color_limits[0])
                     conn_vmax = float(connection_color_limits[1])
                     if conn_vmax <= conn_vmin:
-                        raise ValueError("connection_color_limits must satisfy max > min.")
+                        raise ValueError(
+                            "connection_color_limits must satisfy max > min."
+                        )
 
                 def _connection_value_to_color(value):
                     if not np.isfinite(value):
@@ -1010,7 +1038,7 @@ class DashMapPlot(BaseDashPlot):
                 directional_values[(c0, c1)] = float(conn_values[conn_idx])
 
             pair_set = set()
-            for (c0, c1) in directional_values.keys():
+            for (c0, c1) in directional_values:
                 if c0 == c1:
                     continue
                 pair_set.add(tuple(sorted((c0, c1))))
@@ -1106,6 +1134,11 @@ class DashMapPlot(BaseDashPlot):
                 triangle_hover_text = (
                     f"{selected_cell}{arrow}={agg_value:.6g}"
                 )
+                tri_fill_color = (
+                    triangle_color
+                    if connection_triangle_color is None
+                    else connection_triangle_color
+                )
                 add_triangle_trace(
                     fig=fig,
                     center_x=triangle_center_x,
@@ -1113,7 +1146,7 @@ class DashMapPlot(BaseDashPlot):
                     size=float(connection_triangle_size),
                     direction=direction,
                     line_color=connection_line_color,
-                    fill_color=triangle_color if connection_triangle_color is None else connection_triangle_color,
+                    fill_color=tri_fill_color,
                     name=f"connection-triangle-{direction}",
                 )
                 # Single center hit point improves triangle hover reliability.
@@ -1212,7 +1245,9 @@ class DashMapPlot(BaseDashPlot):
                 well_type = well_type.strip().lower()
                 well_color = type_colors.get(well_type, "black")
 
-                cells_in_well = [int(c) for c in np.asarray(well_cells, dtype=int).ravel()]
+                cells_in_well = [
+                    int(c) for c in np.asarray(well_cells, dtype=int).ravel()
+                ]
                 if len(cells_in_well) == 0:
                     continue
 
@@ -1222,7 +1257,8 @@ class DashMapPlot(BaseDashPlot):
                         p1 = self.centers_xy[int(c1)]
                         k0 = int(self.layer_per_cell[int(c0)])
                         k1 = int(self.layer_per_cell[int(c1)])
-                        line_dash = "solid" if (k0 == active_layer and k1 == active_layer) else "dash"
+                        same_layer = k0 == active_layer and k1 == active_layer
+                        line_dash = "solid" if same_layer else "dash"
                         fig.add_trace(
                             go.Scatter(
                                 x=[float(p0[0]), float(p1[0])],
@@ -1247,9 +1283,12 @@ class DashMapPlot(BaseDashPlot):
                     cy = float(self.centers_xy[int(c)][1])
                     hover_x.append(cx)
                     hover_y.append(cy)
-                    hover_t.append(
-                        f"{well_name} ({well_type})<br>#{int(c)} (k={int(self.layer_per_cell[int(c)])})"
+                    layer_idx = int(self.layer_per_cell[int(c)])
+                    hover_text = (
+                        f"{well_name} ({well_type})<br>"
+                        f"#{int(c)} (k={layer_idx})"
                     )
+                    hover_t.append(hover_text)
 
                 # Draw non-active circles first, then active circles on top.
                 circle_order = sorted(
@@ -1261,8 +1300,13 @@ class DashMapPlot(BaseDashPlot):
                     cy = float(self.centers_xy[int(c)][1])
                     circle_layer = int(self.layer_per_cell[int(c)])
                     is_active_layer = circle_layer == active_layer
-                    local_radius = circle_radius if is_active_layer else (0.5 * circle_radius)
-                    circle_x, circle_y = _circle_polygon(cx, cy, local_radius, n_points=48)
+                    if is_active_layer:
+                        local_radius = circle_radius
+                    else:
+                        local_radius = 0.5 * circle_radius
+                    circle_x, circle_y = _circle_polygon(
+                        cx, cy, local_radius, n_points=48
+                    )
                     fig.add_trace(
                         go.Scatter(
                             x=circle_x,
@@ -1270,7 +1314,11 @@ class DashMapPlot(BaseDashPlot):
                             mode="lines",
                             fill="toself",
                             line={"color": "black", "width": 0.8},
-                            fillcolor=(well_color if is_active_layer else "rgba(0,0,0,0)"),
+                            fillcolor=(
+                                well_color
+                                if is_active_layer
+                                else "rgba(0,0,0,0)"
+                            ),
                             name="well-circle",
                             hoverinfo="skip",
                             showlegend=False,

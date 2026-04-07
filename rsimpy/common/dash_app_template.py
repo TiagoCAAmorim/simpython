@@ -80,17 +80,22 @@ def build_step_2_2_demo_map_plot(n_rows=10, n_cols=20, n_days=5):
 
     # Create grid vertices and shift origin to (1000, 10000) for demo
     origin_x, origin_y = 1000.0, 10000.0
-    layer1_vertices = _make_regular_grid_vertices(layer1_rows, layer1_cols) + np.array([origin_x, origin_y, 0.0])
-    layer2_vertices = _make_regular_grid_vertices(layer2_rows, layer2_cols) + np.array([origin_x, origin_y, 0.0])
-    layer3_vertices = _make_regular_grid_vertices(layer3_rows, layer3_cols) + np.array([origin_x, origin_y, 0.0])
+    offset = np.array([origin_x, origin_y, 0.0])
+    layer1_vertices = _make_regular_grid_vertices(layer1_rows, layer1_cols) + offset
+    layer2_vertices = _make_regular_grid_vertices(layer2_rows, layer2_cols) + offset
+    layer3_vertices = _make_regular_grid_vertices(layer3_rows, layer3_cols) + offset
 
     # Add synthetic z variation for contour rendering in Step 2.4.
-    for layer_idx, layer_vertices in enumerate([layer1_vertices, layer2_vertices, layer3_vertices], start=1):
+    layer_list = [layer1_vertices, layer2_vertices, layer3_vertices]
+    for layer_idx, layer_vertices in enumerate(layer_list, start=1):
         local_x = layer_vertices[:, :, 0] - origin_x
         local_y = layer_vertices[:, :, 1] - origin_y
-        layer_vertices[:, :, 2] = (2.0 * local_x + 1.0 * local_y**2) + 10.0 * float(layer_idx)
+        z_offset = 2.0 * local_x + 1.0 * local_y**2
+        layer_vertices[:, :, 2] = z_offset + 10.0 * float(layer_idx)
 
-    vertices = np.concatenate([layer1_vertices, layer2_vertices, layer3_vertices], axis=0)
+    vertices = np.concatenate(
+        [layer1_vertices, layer2_vertices, layer3_vertices], axis=0
+    )
     layer_sizes = [
         layer1_rows * layer1_cols,
         layer2_rows * layer2_cols,
@@ -100,14 +105,32 @@ def build_step_2_2_demo_map_plot(n_rows=10, n_cols=20, n_days=5):
 
     base_index = np.arange(n_cells, dtype=float)
     row_values = np.concatenate([
-        np.array([row + 1 for row in range(layer1_rows) for _ in range(layer1_cols)], dtype=float),
-        np.array([row + 1 for row in range(layer2_rows) for _ in range(layer2_cols)], dtype=float),
-        np.array([row + 1 for row in range(layer3_rows) for _ in range(layer3_cols)], dtype=float),
+        np.array(
+            [row + 1 for row in range(layer1_rows) for _ in range(layer1_cols)],
+            dtype=float,
+        ),
+        np.array(
+            [row + 1 for row in range(layer2_rows) for _ in range(layer2_cols)],
+            dtype=float,
+        ),
+        np.array(
+            [row + 1 for row in range(layer3_rows) for _ in range(layer3_cols)],
+            dtype=float,
+        ),
     ])
     col_values = np.concatenate([
-        np.array([col + 1 for _ in range(layer1_rows) for col in range(layer1_cols)], dtype=float),
-        np.array([col + 1 for _ in range(layer2_rows) for col in range(layer2_cols)], dtype=float),
-        np.array([col + 1 for _ in range(layer3_rows) for col in range(layer3_cols)], dtype=float),
+        np.array(
+            [col + 1 for _ in range(layer1_rows) for col in range(layer1_cols)],
+            dtype=float,
+        ),
+        np.array(
+            [col + 1 for _ in range(layer2_rows) for col in range(layer2_cols)],
+            dtype=float,
+        ),
+        np.array(
+            [col + 1 for _ in range(layer3_rows) for col in range(layer3_cols)],
+            dtype=float,
+        ),
     ])
 
     grid_data = np.zeros((4, n_days, n_cells), dtype=float)
@@ -118,7 +141,9 @@ def build_step_2_2_demo_map_plot(n_rows=10, n_cols=20, n_days=5):
         grid_data[3, day, :] = base_index + 30.0 * float(day)
 
     mean_z_values = np.mean(vertices[:, :, 2], axis=1)
-    grid_data = np.concatenate([grid_data, np.zeros((1, n_days, n_cells), dtype=float)], axis=0)
+    grid_data = np.concatenate(
+        [grid_data, np.zeros((1, n_days, n_cells), dtype=float)], axis=0
+    )
     for day in range(n_days):
         grid_data[4, day, :] = mean_z_values
 
@@ -179,7 +204,10 @@ def build_step_2_2_demo_map_plot(n_rows=10, n_cols=20, n_days=5):
     wells = {
         "WELL-A,prod": np.asarray([0, layer2_offset + 1, layer3_offset + 2], dtype=int),
         "WELL-B,injw": np.asarray([5, layer2_offset + 6, layer3_offset + 7], dtype=int),
-        "WELL-C,inj": np.asarray([10, layer2_offset + n_cols + 10, layer3_offset + 2*n_cols + 10], dtype=int),
+        "WELL-C,inj": np.asarray(
+            [10, layer2_offset + n_cols + 10, layer3_offset + 2*n_cols + 10],
+            dtype=int,
+        ),
         "WELL-E,injg": np.asarray([16, layer3_offset + 15], dtype=int),
         "WELL-D,closed": np.asarray([24], dtype=int),
     }
@@ -303,7 +331,10 @@ def create_dash_template_app(map_plot=None):
                                     dcc.Dropdown(
                                         id="map-property-dropdown",
                                         options=[
-                                            {"label": map_plot.property_names[i], "value": i}
+                                            {
+                                                "label": map_plot.property_names[i],
+                                                "value": i,
+                                            }
                                             for i in range(n_properties)
                                         ],
                                         value=0,
@@ -553,7 +584,12 @@ def create_dash_template_app(map_plot=None):
         Input("map-show-wells", "value"),
         prevent_initial_call=True,
     )
-    def _sync_options_toggles(_show_grid_values, _show_connections_values, _show_contours_values, _show_wells_values):
+    def _sync_options_toggles(
+        _show_grid_values,
+        _show_connections_values,
+        _show_contours_values,
+        _show_wells_values,
+    ):
         # Reset only the options toggle that corresponds to the changed show toggle.
         trigger = ctx.triggered_id
         grid_value = [] if trigger == "map-show-grid" else no_update
@@ -625,19 +661,33 @@ def create_dash_template_app(map_plot=None):
         )
         show_wells = map_plot.has_wells() and "show" in (show_wells_values or [])
         show_grid_options = show_grid and "show" in (grid_options_values or [])
-        show_connection_options = show_connections and "show" in (connection_options_values or [])
-        show_contour_options = show_contours and "show" in (contour_options_values or [])
+        show_connection_options = (
+            show_connections and "show" in (connection_options_values or [])
+        )
+        show_contour_options = (
+            show_contours and "show" in (contour_options_values or [])
+        )
         show_well_options = show_wells and "show" in (well_options_values or [])
         grid_log_scale = show_grid and "on" in (grid_log_scale_values or [])
-        connection_log_scale = show_connections and "on" in (connection_log_scale_values or [])
+        connection_log_scale = (
+            show_connections and "on" in (connection_log_scale_values or [])
+        )
         property_style = {"display": "block" if show_grid else "none"}
         grid_style = {"display": "block" if show_grid_options else "none"}
         connection_style = {"display": "block" if show_connection_options else "none"}
         contour_style = {"display": "block" if show_contour_options else "none"}
         well_style = {"display": "block" if show_well_options else "none"}
         grid_log_options = [{"label": "Log", "value": "on", "disabled": not show_grid}]
-        connection_log_options = [{"label": "Log", "value": "on", "disabled": (not has_connections) or (not show_connections)}]
-        grid_options = [{"label": "Options", "value": "show", "disabled": not show_grid}]
+        connection_log_options = [{
+            "label": "Log",
+            "value": "on",
+            "disabled": (not has_connections) or (not show_connections),
+        }]
+        grid_options = [{
+            "label": "Options",
+            "value": "show",
+            "disabled": not show_grid,
+        }]
         connection_options = [{
             "label": "Options",
             "value": "show",

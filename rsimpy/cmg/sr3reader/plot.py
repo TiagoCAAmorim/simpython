@@ -276,7 +276,7 @@ class PlotHandler:
 
         return panel
 
-    def _get_wells(self, layers, n_dates, well_property_name):
+    def _get_wells(self, layers, n_dates, well_property_name): # pylint: disable=unused-argument
         """Get well locations and add to kwargs.
 
         Parameters

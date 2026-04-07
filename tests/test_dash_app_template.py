@@ -1,4 +1,13 @@
-"""Tests for Dash app template scaffolding."""
+"""Tests for Dash app template scaffolding.
+
+This module validates the Dash application template structure and component integration
+for the Step 2.2 interactive map visualization system. Tests cover:
+- Triangle demo figure generation
+- Dash app layout and control presence
+- Demo map plot creation and data structure validation
+- Control responsiveness and grid visibility behavior
+- Working example app structure
+"""
 
 import unittest
 
@@ -11,18 +20,39 @@ from rsimpy.common.dash_app_template import (
 
 
 class TestDashAppTemplate(unittest.TestCase):
-    """Validate minimal Dash template structure for Step 1.2."""
+    """Validate minimal Dash template structure for Step 1.2.
+
+    Tests cover:
+    - Triangle demo helper function
+    - Layout structure and required control IDs
+    - Demo map plot dataset generation (30-cell 3-layer grid)
+    - Grid visibility toggle behavior
+    - Cross-layer connection rendering
+    - Working example app integration
+    """
 
     def test_build_triangle_demo_figure_with_triangle(self):
+        """Test triangle demo figure renders a single triangle trace when show_triangle=True."""
         fig = build_triangle_demo_figure(direction="up", size=0.2, show_triangle=True)
         self.assertEqual(len(fig.data), 1)
         self.assertEqual(fig.data[0].fill, "toself")
 
     def test_build_triangle_demo_figure_hidden_triangle(self):
+        """Test triangle demo figure returns empty figure when show_triangle=False."""
         fig = build_triangle_demo_figure(direction="down", size=0.2, show_triangle=False)
         self.assertEqual(len(fig.data), 0)
 
     def test_create_dash_template_app_layout(self):
+        """Test Dash template app layout contains all required control component IDs.
+
+        Verifies presence of:
+        - Grid controls (show, options, palette, log scale)
+        - Connection controls (show, options, palette, width, segments, log scale)
+        - Contour controls (show, options, count)
+        - Well controls (show, options, size)
+        - Property and day sliders
+        - Layer slider and graph component
+        """
         app = create_dash_template_app()
         self.assertIsNotNone(app.layout)
         layout_string = str(app.layout)
@@ -53,6 +83,15 @@ class TestDashAppTemplate(unittest.TestCase):
         self.assertIn("map-graph", layout_string)
 
     def test_build_step_2_2_demo_map_plot(self):
+        """Test demo map plot creation generates correct 3-layer dataset structure.
+
+        Validates:
+        - Grid data shape: (5 properties, 5 days, ~300 cells across 3 layers)
+        - Property names list (Cell Index, Column, Row, computed formula, Mean Z)
+        - Cell names generation
+        - Connection property names
+        - Layer size array consistency
+        """
         n_rows, n_cols =10, 10
         n_cells = n_rows * n_cols + (n_rows - 1) * (n_cols - 1) + (n_rows - 2) * (n_cols - 2)
         obj = build_step_2_2_demo_map_plot(n_rows=n_rows, n_cols=n_cols, n_days=5)
@@ -71,6 +110,7 @@ class TestDashAppTemplate(unittest.TestCase):
         )
 
     def test_default_map_hides_grid_when_disabled(self):
+        """Test map figure does not render grid polygons or colorbar when add_grid=False."""
         obj = build_step_2_2_demo_map_plot()
         fig = obj.create_map_figure(property_index=0, day_index=0, layer=1, add_grid=False)
         names = [tr.name for tr in fig.data]
@@ -79,6 +119,14 @@ class TestDashAppTemplate(unittest.TestCase):
         self.assertNotIn("colorbar", names)
 
     def test_demo_figure_has_global_bounds_and_connections(self):
+        """Test map figure on layer 2 includes both up and down connection triangles.
+
+        Verifies:
+        - Layout is initialized
+        - Polygon traces exist for layer 2
+        - Both up and down triangle traces are present
+        - UI revision is set for zoom persistence
+        """
         obj = build_step_2_2_demo_map_plot()
         fig = obj.create_map_figure(property_index=0, day_index=0, layer=2, add_connections=True)
         # Figure uses autorange for zoom persistence (no explicit range set)
@@ -94,6 +142,7 @@ class TestDashAppTemplate(unittest.TestCase):
         self.assertEqual(fig.layout.uirevision, "dash-map-view")
 
     def test_create_step_2_2_working_example_app(self):
+        """Test working example app initializes with Step 2.3 title in layout."""
         app = create_step_2_2_working_example_app()
         self.assertIsNotNone(app.layout)
         self.assertIn("Step 2.3", str(app.layout))

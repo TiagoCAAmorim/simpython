@@ -1,8 +1,26 @@
-"""Tests for Dash plotting foundation utilities."""
+"""Tests for Dash plotting foundation utilities.
+
+This module validates the core plotting components and rendering
+logic for the Dash-based map visualization system. Tests cover:
+- Layer management and validation utilities
+- Contour level and segment computation
+- Triangle geometry generation and rendering
+- DashMapPlot class initialization and figure generation
+- Grid polygon rendering with hover interaction
+- Connection visualization (lines and triangles)
+- Colorbar configuration and log-scale display
+- Well visualization with cross-layer styling
+"""
 
 import unittest
 
 import numpy as np
+
+try:
+    import plotly.graph_objects as go
+    HAS_PLOTLY = True
+except ImportError:
+    HAS_PLOTLY = False
 
 from rsimpy.common.plot_dash import (
     DashMapPlot,
@@ -36,17 +54,27 @@ def _make_regular_grid_vertices(n_rows, n_cols, dx=1.0, dy=1.0):
 
 
 class TestPlotDashFoundation(unittest.TestCase):
-    """Validate early Dash plotting building blocks."""
+    """Validate early Dash plotting building blocks.
+
+    Tests cover validation functions, geometry helpers, and core
+    DashMapPlot functionality including layer management, contour
+    generation, polygon rendering, connection visualization, and
+    colorbar configuration.
+    """
 
     def test_validate_layer_sizes(self):
+        """Test validate_layer_sizes returns correct layer size array matching input."""
         sizes = validate_layer_sizes([2, 3, 1], n_cells=6)
         np.testing.assert_array_equal(sizes, np.array([2, 3, 1]))
 
     def test_build_layer_per_cell(self):
+        """Test build_layer_per_cell converts layer sizes to per-cell
+        1-indexed layer assignments."""
         layer_per_cell = build_layer_per_cell([2, 3])
         np.testing.assert_array_equal(layer_per_cell, np.array([1, 1, 2, 2, 2]))
 
     def test_determine_contour_levels_uses_global_range(self):
+        """Test contour level generation uses global z-range across all vertices."""
         vertices = np.zeros((2, 4, 3), dtype=float)
         vertices[0, :, 2] = [0.0, 10.0, 10.0, 0.0]
         vertices[1, :, 2] = [100.0, 110.0, 110.0, 100.0]
@@ -55,6 +83,8 @@ class TestPlotDashFoundation(unittest.TestCase):
         np.testing.assert_allclose(levels, np.array([0.0, 50.0, 100.0]))
 
     def test_contour_segments_flat_edge_crosses_midpoint(self):
+        """Test contour segments properly handle flat edges that
+        cross the contour value."""
         triangle = np.asarray([
             [0.0, 0.0],
             [2.0, 0.0],
@@ -68,6 +98,7 @@ class TestPlotDashFoundation(unittest.TestCase):
         self.assertTrue(np.allclose(p0, [1.0, 0.0]) or np.allclose(p1, [1.0, 0.0]))
 
     def test_create_triangle_vertices_up(self):
+        """Test upward-pointing triangle vertices have apex at top (max y)."""
         xs, ys = create_triangle_vertices(10.0, 20.0, size=2.0, direction="up")
         self.assertEqual(len(xs), 4)
         self.assertEqual(len(ys), 4)
@@ -75,6 +106,7 @@ class TestPlotDashFoundation(unittest.TestCase):
         self.assertGreater(ys[0], ys[2])
 
     def test_create_triangle_vertices_down(self):
+        """Test downward-pointing triangle vertices have apex at bottom (min y)."""
         xs, ys = create_triangle_vertices(10.0, 20.0, size=2.0, direction="down")
         self.assertEqual(len(xs), 4)
         self.assertEqual(len(ys), 4)
@@ -82,9 +114,9 @@ class TestPlotDashFoundation(unittest.TestCase):
         self.assertLess(ys[0], ys[2])
 
     def test_add_triangle_trace(self):
-        try:
-            import plotly.graph_objects as go
-        except ImportError:
+        """Test add_triangle_trace adds a single polygon trace to the
+        figure with correct properties."""
+        if not HAS_PLOTLY:
             self.skipTest("plotly not installed")
 
         fig = go.Figure()
@@ -102,12 +134,15 @@ class TestPlotDashFoundation(unittest.TestCase):
         self.assertEqual(fig.data[0].mode, "lines")
 
     def test_dash_map_plot_default_cell_index(self):
+        """Test DashMapPlot auto-generates Cell Index property when
+        grid_data is None."""
         vertices = np.zeros((6, 4, 3), dtype=float)
         obj = DashMapPlot(vertices=vertices, layer_sizes=[2, 2, 2])
         self.assertEqual(obj.grid_data.shape, (1, 1, 6))
         self.assertEqual(obj.property_names, ["Cell Index"])
 
     def test_dash_map_plot_renders_only_selected_layer(self):
+        """Test DashMapPlot renders only polygons from the selected layer."""
         vertices = _make_regular_grid_vertices(2, 6)
         # 2 properties, 2 days, 12 cells
         grid_data = np.zeros((2, 2, 12), dtype=float)
@@ -126,7 +161,16 @@ class TestPlotDashFoundation(unittest.TestCase):
         self.assertEqual(len(polygon_traces), 6)
 
     def test_step_2_1_manual_5x6_single_layer_case(self):
-        """Manual smoke case requested in plan: 30 cells, single layer, cell index property."""
+        """Manual smoke test: 30-cell single layer with cell names and
+        auto Cell Index property.
+
+        This is a manually requested test case validating:
+        - 5x6 regular grid with 30 polygons
+        - Auto-generated Cell Index property
+        - Cell names in (row, col) format
+        - Sparse interior hover points (9 per cell)
+        - Hover text includes cell name and property value
+        """
         n_rows, n_cols = 5, 6
         n_cells = n_rows * n_cols
         vertices = _make_regular_grid_vertices(n_rows, n_cols)
@@ -142,19 +186,30 @@ class TestPlotDashFoundation(unittest.TestCase):
 
         fig = obj.create_map_figure(property_index=0, day_index=0, layer=1)
         polygon_traces = [tr for tr in fig.data if tr.name == "cell-polygon"]
-        polygon_hover_traces = [tr for tr in fig.data if tr.name == "cell-polygon-hover"]
+        polygon_hover_traces = [
+            tr for tr in fig.data if tr.name == "cell-polygon-hover"
+        ]
         self.assertEqual(len(polygon_traces), 30)
         self.assertEqual(len(polygon_hover_traces), 30)
         self.assertIn("(1,1)", polygon_hover_traces[0].text[0])
         self.assertIn("(5,6)", polygon_hover_traces[-1].text[0])
         self.assertIn("Cell Index", polygon_hover_traces[0].text[0])
-        self.assertEqual(polygon_hover_traces[0].hovertemplate, "%{text}<extra></extra>")
+        self.assertEqual(
+            polygon_hover_traces[0].hovertemplate, "%{text}<extra></extra>"
+        )
         self.assertEqual(polygon_hover_traces[0].mode, "markers")
         self.assertEqual(len(polygon_hover_traces[0].x), 9)
         self.assertEqual(polygon_traces[0].hoverinfo, "skip")
         self.assertEqual(obj.property_names, ["Cell Index"])
 
     def test_map_figure_renders_contours_with_count(self):
+        """Test map figure renders contour lines based on specified contour count.
+
+        Verifies:
+        - Multiple contour traces generated
+        - Matching hover traces for each contour
+        - Contour line width >= 3.0 (thick lines)
+        """
         vertices = _make_regular_grid_vertices(1, 2)
         vertices[:, :, 2] = np.asarray([
             [0.0, 10.0, 10.0, 0.0],
@@ -162,18 +217,39 @@ class TestPlotDashFoundation(unittest.TestCase):
         ], dtype=float)
         grid_data = np.arange(2, dtype=float).reshape(1, 1, 2)
 
-        obj = DashMapPlot(vertices=vertices, layer_sizes=[2], grid_data=grid_data, property_names=["P1"])
-        fig = obj.create_map_figure(property_index=0, day_index=0, layer=1, add_contours=True, contour_count=3)
-        contour_traces = [tr for tr in fig.data if tr.name == "contour-line"]
-        contour_hover_traces = [tr for tr in fig.data if tr.name == "contour-line-hover"]
+        obj = DashMapPlot(
+            vertices=vertices,
+            layer_sizes=[2],
+            grid_data=grid_data,
+            property_names=["P1"],
+        )
+        fig = obj.create_map_figure(
+            property_index=0, day_index=0, layer=1,
+            add_contours=True, contour_count=3,
+        )
+        contour_traces = [
+            tr for tr in fig.data if tr.name == "contour-line"
+        ]
+        contour_hover_traces = [
+            tr for tr in fig.data if tr.name == "contour-line-hover"
+        ]
         self.assertGreaterEqual(len(contour_traces), 1)
         self.assertEqual(len(contour_traces), len(contour_hover_traces))
         self.assertGreaterEqual(float(contour_traces[0].line.width), 3.0)
 
     def test_map_figure_default_axes_use_global_polygon_bounds(self):
+        """Test map figure axes are set to global polygon bounds with padding.
+
+        Verifies x and y ranges encompass all polygon vertices with 5% padding.
+        """
         vertices = _make_regular_grid_vertices(2, 2)
         grid_data = np.arange(4, dtype=float).reshape(1, 1, 4)
-        obj = DashMapPlot(vertices=vertices, layer_sizes=[2, 2], grid_data=grid_data, property_names=["P1"])
+        obj = DashMapPlot(
+            vertices=vertices,
+            layer_sizes=[2, 2],
+            grid_data=grid_data,
+            property_names=["P1"],
+        )
 
         fig = obj.create_map_figure(property_index=0, day_index=0, layer=2)
         x_range = list(fig.layout.xaxis.range)
@@ -184,6 +260,12 @@ class TestPlotDashFoundation(unittest.TestCase):
         self.assertGreaterEqual(y_range[1], 2.0)
 
     def test_global_color_scale_uses_all_days_for_property(self):
+        """Test grid colorbar uses min/max values across all days,
+        not just current day.
+
+        Colorscale range [0, 202] spans all 3 days even when viewing
+        day 1 with range [100, 102].
+        """
         vertices = _make_regular_grid_vertices(1, 3)
         # property value range across all days: [0, 202]
         grid_data = np.zeros((1, 3, 3), dtype=float)
@@ -203,6 +285,12 @@ class TestPlotDashFoundation(unittest.TestCase):
         self.assertEqual(float(colorbar.marker.cmax), 202.0)
 
     def test_grid_log_scale_non_positive_is_dark_gray(self):
+        """Test log-scale grid colors render non-positive values as dark gray (#4d4d4d).
+
+        Also verifies:
+        - Colorbar title remains original property name (no log10 wrapper)
+        - Colorbar tick text shows original (non-log) values
+        """
         vertices = _make_regular_grid_vertices(1, 2)
         grid_data = np.asarray([[[ -5.0, 10.0 ]]], dtype=float)
 
@@ -223,9 +311,23 @@ class TestPlotDashFoundation(unittest.TestCase):
         grid_colorbar = [tr for tr in fig.data if tr.name == "colorbar"][0]
         self.assertEqual(str(grid_colorbar.marker.colorbar.title.text), "P1")
         self.assertIsNotNone(grid_colorbar.marker.colorbar.ticktext)
-        self.assertTrue(all("e" not in str(v).lower() or "-" not in str(v) for v in grid_colorbar.marker.colorbar.ticktext))
+        self.assertTrue(
+            all(
+                "e" not in str(v).lower() or "-" not in str(v)
+                for v in grid_colorbar.marker.colorbar.ticktext
+            )
+        )
 
     def test_dash_map_plot_connections_lines_and_triangles(self):
+        """Test connection rendering for both same-layer lines and
+        cross-layer triangles.
+
+        Validates:
+        - Same-layer connections render as lines with hover text
+        - Cross-layer connections render as up/down triangles
+        - Connection colorbar is separate and offset from grid colorbar
+        - Direction markers (↑↓) appear in triangle hover text
+        """
         vertices = _make_regular_grid_vertices(2, 2)
         # 2 layers of 2 cells each -> 4 total cells
         grid_data = np.arange(4, dtype=float).reshape(1, 1, 4)
@@ -259,13 +361,20 @@ class TestPlotDashFoundation(unittest.TestCase):
         self.assertIn("connection-triangle-hover", names_l1)
         self.assertIn("connection-colorbar", names_l1)
 
-        first_hover_trace = [tr for tr in fig_l1.data if tr.name == "connection-line-hover"][0]
+        first_hover_trace = [
+            tr for tr in fig_l1.data if tr.name == "connection-line-hover"
+        ][0]
         self.assertNotIn("Connection:", first_hover_trace.text[0])
         self.assertIn("0->1", first_hover_trace.text[0])
 
         grid_colorbar = [tr for tr in fig_l1.data if tr.name == "colorbar"][0]
-        conn_colorbar = [tr for tr in fig_l1.data if tr.name == "connection-colorbar"][0]
-        self.assertLess(float(grid_colorbar.marker.colorbar.x), float(conn_colorbar.marker.colorbar.x))
+        conn_colorbar = [
+            tr for tr in fig_l1.data if tr.name == "connection-colorbar"
+        ][0]
+        self.assertLess(
+            float(grid_colorbar.marker.colorbar.x),
+            float(conn_colorbar.marker.colorbar.x),
+        )
 
         fig_l2 = obj.create_map_figure(
             property_index=0,
@@ -278,6 +387,11 @@ class TestPlotDashFoundation(unittest.TestCase):
         self.assertIn("connection-triangle-up", names_l2)
 
     def test_missing_reverse_connection_fades_visibility(self):
+        """Test unidirectional connections show with fading gradient
+        (alpha start vs end).
+
+        Line colors use rgba format to achieve directional fade effect.
+        """
         vertices = _make_regular_grid_vertices(1, 2)
         grid_data = np.arange(2, dtype=float).reshape(1, 1, 2)
         connection_indices = np.asarray([[0], [1]], dtype=int)
@@ -305,6 +419,10 @@ class TestPlotDashFoundation(unittest.TestCase):
         self.assertTrue(any(str(c).startswith("rgba(") for c in line_colors))
 
     def test_default_connection_colorscale_differs_from_grid(self):
+        """Test connection colorbar uses a different colorscale than grid colorbar.
+
+        Defaults: Grid=Turbo, Connections=Plasma (or other non-matching palette).
+        """
         vertices = _make_regular_grid_vertices(1, 2)
         grid_data = np.arange(2, dtype=float).reshape(1, 1, 2)
         connection_indices = np.asarray([[0], [1]], dtype=int)
@@ -328,9 +446,19 @@ class TestPlotDashFoundation(unittest.TestCase):
         )
         grid_colorbar = [tr for tr in fig.data if tr.name == "colorbar"][0]
         conn_colorbar = [tr for tr in fig.data if tr.name == "connection-colorbar"][0]
-        self.assertNotEqual(grid_colorbar.marker.colorscale, conn_colorbar.marker.colorscale)
+        self.assertNotEqual(
+            grid_colorbar.marker.colorscale,
+            conn_colorbar.marker.colorscale,
+        )
 
     def test_connection_log_scale_non_positive_is_dark_gray(self):
+        """Test log-scale connection colors render non-positive values as
+        dark gray (rgb 119, 119, 119).
+
+        Also verifies:
+        - Colorbar title is 'Connection' (original name)
+        - Colorbar tick text shows original (non-log) values
+        """
         vertices = _make_regular_grid_vertices(1, 2)
         grid_data = np.arange(2, dtype=float).reshape(1, 1, 2)
         connection_indices = np.asarray([[0], [1]], dtype=int)
@@ -353,13 +481,21 @@ class TestPlotDashFoundation(unittest.TestCase):
             add_connections=True,
             connection_log_scale=True,
         )
-        line_colors = [str(tr.line.color) for tr in fig.data if tr.name == "connection-line"]
+        line_colors = [
+            str(tr.line.color) for tr in fig.data if tr.name == "connection-line"
+        ]
         self.assertTrue(any("77, 77, 77" in color for color in line_colors))
         conn_colorbar = [tr for tr in fig.data if tr.name == "connection-colorbar"][0]
         self.assertEqual(str(conn_colorbar.marker.colorbar.title.text), "Connection")
         self.assertIsNotNone(conn_colorbar.marker.colorbar.ticktext)
 
     def test_connection_line_segments_respected(self):
+        """Test connection lines are subdivided into specified number of
+        gradient segments.
+
+        For connection_line_segments=7, generates 7 separate line traces
+        to show gradient.
+        """
         vertices = _make_regular_grid_vertices(1, 2)
         grid_data = np.arange(2, dtype=float).reshape(1, 1, 2)
         connection_indices = np.asarray([[0, 1], [1, 0]], dtype=int)
@@ -386,6 +522,15 @@ class TestPlotDashFoundation(unittest.TestCase):
         self.assertEqual(len(line_traces), 7)
 
     def test_wells_render_lines_and_markers(self):
+        """Test wells render as colored circles with connecting lines
+        between consecutive cells.
+
+        Verifies:
+        - Well line traces between consecutive well cells
+        - Well circle markers with color based on well type
+          (prod/injw/injg/inj)
+        - Well hover info includes well name and type
+        """
         vertices = _make_regular_grid_vertices(1, 4)
         grid_data = np.arange(4, dtype=float).reshape(1, 1, 4)
         wells = {
@@ -419,6 +564,14 @@ class TestPlotDashFoundation(unittest.TestCase):
         self.assertIn("prod", hover_traces[0].text[0])
 
     def test_well_lines_and_faded_cross_layer_circles(self):
+        """Test cross-layer well connections show hollow circles and
+        dashed lines to off-layer cells.
+
+        Validates:
+        - Same-layer segments: solid black lines with filled circles
+        - Cross-layer segments: dashed black lines with hollow
+          (rgba(0,0,0,0)) circles
+        """
         vertices = _make_regular_grid_vertices(1, 3)
         vertices_l2 = _make_regular_grid_vertices(1, 1) + np.array([3.0, 0.0, 0.0])
         vertices = np.concatenate([vertices, vertices_l2], axis=0)
@@ -458,13 +611,21 @@ class TestPlotDashFoundation(unittest.TestCase):
         self.assertTrue(any(color != "rgba(0,0,0,0)" for color in fill_colors))
 
     def test_map_figure_uses_default_uirevision(self):
+        """Test map figure sets uirevision='dash-map-view' for zoom persistence."""
         vertices = _make_regular_grid_vertices(1, 2)
         grid_data = np.arange(2, dtype=float).reshape(1, 1, 2)
-        obj = DashMapPlot(vertices=vertices, layer_sizes=[2], grid_data=grid_data, property_names=["P1"])
+        obj = DashMapPlot(
+            vertices=vertices,
+            layer_sizes=[2],
+            grid_data=grid_data,
+            property_names=["P1"],
+        )
         fig = obj.create_map_figure(property_index=0, day_index=0, layer=1)
         self.assertEqual(fig.layout.uirevision, "dash-map-view")
 
     def test_dash_map_plot_connection_validation(self):
+        """Test DashMapPlot raises ValueError for invalid connection indices
+        (out of bounds)."""
         vertices = _make_regular_grid_vertices(1, 2)
         grid_data = np.arange(2, dtype=float).reshape(1, 1, 2)
 
