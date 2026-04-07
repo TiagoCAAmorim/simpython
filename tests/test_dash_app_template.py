@@ -19,6 +19,7 @@ from rsimpy.common.dash_app_template import (
     build_triangle_demo_figure,
     create_dash_template_app,
     create_step_4_generic_wrapper_working_example_app,
+    create_sr3_working_example_app,
     create_working_example_app,
 )
 
@@ -196,6 +197,21 @@ class TestDashAppTemplate(unittest.TestCase):
         app = create_working_example_app(example="step4generic")
         self.assertIsNotNone(app.layout)
         self.assertIn("Step 4 Generic Wrapper Example", str(app.layout))
+
+    def test_create_sr3_working_example_app(self):
+        """Test SR3 working example app contains grouped dashboard tabs."""
+        app = create_sr3_working_example_app()
+        self.assertIsNotNone(app.layout)
+        layout_string = str(app.layout)
+        self.assertIn("SR3 Dash Working Example", layout_string)
+        self.assertIn("Maps", layout_string)
+        self.assertIn("Line Plots", layout_string)
+        self.assertIn("Scatter Plots", layout_string)
+        self.assertIn("Tables", layout_string)
+        self.assertIn("Map A", layout_string)
+        self.assertIn("Line A", layout_string)
+        self.assertIn("Scatter A", layout_string)
+        self.assertIn("Table A", layout_string)
 
     def test_create_working_example_app_rejects_deprecated_examples(self):
         """Test deprecated example names are rejected by the selector."""

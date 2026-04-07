@@ -1137,7 +1137,8 @@ class DashMultiPanelDashboard:
         for idx, table_plot in enumerate(self.table_plots.values()):
             prefix = f"mp-table-{idx}"
 
-            self._register_table_callback_factory(app=app, prefix=prefix, table_plot=table_plot, idx=idx)
+            self._register_table_callback_factory(
+                app=app, prefix=prefix, table_plot=table_plot, idx=idx)
 
     def _register_table_callback_factory(self, app, prefix, table_plot, idx):
         @app.callback(

@@ -12,6 +12,7 @@ from .data import DataHandler
 from .connections import ConnectionsHandler
 from .krel import KrelHandler
 from .plot import PlotHandler
+from .plot_dash import PlotHandlerDash
 
 class Sr3Reader:
     """
@@ -83,6 +84,7 @@ class Sr3Reader:
         self.data = DataHandler(self)
         self.connections = ConnectionsHandler(self)
         self.plot = PlotHandler(self)
+        self.plots = PlotHandlerDash(self)
 
         if usual_units and auto_read:
             self.set_usual_units()

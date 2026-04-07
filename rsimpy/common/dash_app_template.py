@@ -7,11 +7,14 @@ expanded in later steps to host map, line, scatter, and table components.
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 
 import numpy as np
 from dash import Dash, Input, Output, ctx, dcc, html, no_update
 import plotly.graph_objects as go
 import pandas as pd
+
+from rsimpy.cmg.sr3reader import Sr3Reader
 
 from rsimpy.common.plot_dash import (
     DashLinePlot,
@@ -895,19 +898,72 @@ def create_step_4_generic_wrapper_working_example_app():
     return wrapper.create_app()
 
 
+def create_sr3_working_example_app():
+    """Create a runnable SR3-backed dashboard example app."""
+    sr3_file = Path("tests/sr3/base_case_3a.sr3")
+    if not sr3_file.exists():
+        raise FileNotFoundError(f"SR3 example file not found: {sr3_file}")
+
+    sr3 = Sr3Reader(str(sr3_file))
+    days = sr3.dates.get_days("grid")
+    map_obj_1 = sr3.plots.make_map(
+        properties=[("matrix", "BLOCKDEPTH"), ("matrix", "POR")],
+        days=days[:3],
+        title="Map A",
+    )
+    map_obj_2 = sr3.plots.make_map(
+        properties=[("matrix", "PRES")],
+        days=days[:10],
+        title="Map B",
+    )
+    line_obj = sr3.plots.make_line(
+        series={
+            "P11 Qo": ("well", "P11", "QO"),
+            "P11 BHP": ("well", "P11", "BHP"),
+        },
+        days=days,
+        title="Line A",
+    )
+    scatter_obj = sr3.plots.make_scatter(
+        data={
+            "Qo vs BHP": ("well", "P11", "QO", "BHP"),
+        },
+        days=days,
+        title="Scatter A",
+    )
+    table_obj = sr3.plots.make_table(
+        series=[
+            ("well", "P11", "NP"),
+            ("well", "P11", "BHP"),
+        ],
+        days=days,
+        title="Table A",
+    )
+
+    panel = sr3.plots.dashboard(
+        maps={"Map A": map_obj_1, "Map B": map_obj_2},
+        lines={"Line A": line_obj},
+        scatter={"Scatter A": scatter_obj},
+        table={"Table A": table_obj},
+        title="SR3 Dash Working Example",
+    )
+    return panel.app
+
+
 def create_working_example_app(example="step4generic"):
     """Create a named working example app.
 
     Parameters
     ----------
     example : str
-        Supported value is "step4generic" (dict-based nested-tab wrapper
-        dashboard).
+        Supported values are "step4generic" and "sr3".
     """
     choice = str(example).strip().lower()
     if choice == "step4generic":
         return create_step_4_generic_wrapper_working_example_app()
-    raise ValueError("example must be 'step4generic'.")
+    if choice == "sr3":
+        return create_sr3_working_example_app()
+    raise ValueError("example must be 'step4generic' or 'sr3'.")
 
 
 def _parse_cli_args():
@@ -917,8 +973,8 @@ def _parse_cli_args():
     )
     parser.add_argument(
         "--example",
-        choices=["step4generic"],
-        default="step4generic",
+        choices=["step4generic", "sr3"],
+        default="sr3",
         help="Select which demo app to run.",
     )
     parser.add_argument(
