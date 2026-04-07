@@ -59,19 +59,6 @@ class PlotHandlerDash:
         )
 
     def _read_grid_property(self, element, property_name, days, active_only):
-        prop_info = self._sr3.grid.get_property(property_name)
-        if prop_info["is_internal"] or len(prop_info["timesteps"]) == 1:
-            first_day = float(self._sr3.dates.get_days("grid")[0])
-            sim_data = self._sr3.data.get(
-                element_type="grid",
-                properties=[property_name],
-                elements=[element],
-                days=[first_day],
-                active_only=active_only,
-            )
-            values = sim_data[property_name].values
-            return np.repeat(values, len(days), axis=1)
-
         sim_data = self._sr3.data.get(
             element_type="grid",
             properties=[property_name],
@@ -83,29 +70,18 @@ class PlotHandlerDash:
 
     def _build_map_connections(self, selected_complete, days, connection_values=None):
         all_connections = self._sr3.connections.get_connections(as_active=False)
-        con_cells = all_connections[:, :2]
 
-        selected_set = set(int(c) for c in np.asarray(selected_complete, dtype=int))
-        keep_mask = np.array(
-            [(int(a) in selected_set and int(b) in selected_set) for a, b in con_cells],
-            dtype=bool,
-        )
-        if np.sum(keep_mask) == 0:
+        keep_mask = np.isin(all_connections[:, :2], selected_complete).all(axis=1)
+        if not keep_mask.any():
             return None, None
-
         filtered = all_connections[keep_mask]
-        complete_to_local = {
-            int(cell): idx for idx, cell in enumerate(np.asarray(selected_complete, dtype=int))
-        }
-        local_a = [complete_to_local[int(c)] for c in filtered[:, 0]]
-        local_b = [complete_to_local[int(c)] for c in filtered[:, 1]]
-        connection_indices = np.asarray([local_a, local_b], dtype=int)
 
+        connection_indices = np.searchsorted(selected_complete, filtered[:, :2]).T.astype(int) + 1
         n_conn = connection_indices.shape[1]
         n_days = len(days)
         if connection_values is None:
             vals = self._sr3.connections.get_transmissibilities(filtered)
-            vals = np.asarray(vals, dtype=float).reshape(-1, 1)
+            vals = vals.reshape(-1, 1)
             vals = np.repeat(vals, n_days, axis=1)
         else:
             vals = np.asarray(connection_values, dtype=float)
@@ -127,49 +103,44 @@ class PlotHandlerDash:
         connection_data = vals.T.reshape(1, n_days, n_conn)
         return connection_indices, connection_data
 
-    def _build_map_wells(self, selected_complete, days):
-        cells = self._sr3.elements.get_layer_data("cell")
-        parents = self._sr3.elements.get_layer_data("parent")
-        n_days = len(days)
+    def _build_map_wells(self, selected_complete):
+        all_wells = self._sr3.elements.get("well")
+        last_day = self._sr3.dates.get_days("well")[-1:]
+        well_data = self._sr3.data.get(
+            element_type="well",
+            properties=["NP", "GP", "WP"],
+            elements=all_wells.keys(),
+            days=last_day,
+        )
 
-        selected_complete = np.asarray(selected_complete, dtype=int)
-        complete_to_local = {int(c): i for i, c in enumerate(selected_complete)}
-
-        wells = {}
-        for layer_name, cell in cells.items():
-            parent = parents[layer_name]
-            c = int(cell)
-            if c not in complete_to_local:
-                continue
-
-            well_type = "prod"
-            try:
-                days_ = [float(days[-1])] if len(days) > 0 else [0.0]
-                rate_data = self._sr3.data.get(
-                    element_type="well",
-                    properties=["QL"],
-                    elements=[parent],
-                    days=days_,
-                )
-                rate = float(rate_data["QL"].sel(element=parent).values[-1])
-                if rate < 0:
-                    well_type = "injw"
-            except Exception:  # pylint: disable=broad-except
+        well_types = {}
+        for w in all_wells:
+            oil = float(well_data["NP"].sel(element=w).values[-1])
+            gas = float(well_data["GP"].sel(element=w).values[-1])
+            water = float(well_data["WP"].sel(element=w).values[-1])
+            if oil > 1.0:
                 well_type = "prod"
-
-            key = f"{parent},{well_type}"
-            if key not in wells:
-                wells[key] = []
-            wells[key].append(int(complete_to_local[c]))
-
-        for key, values in list(wells.items()):
-            values = sorted(set(values))
-            if len(values) == 0:
-                del wells[key]
+            elif gas > 1.0 and water > 1.0:
+                well_type = "inj"
+            elif gas > 1.0:
+                well_type = "injg"
+            elif water > 1.0:
+                well_type = "injw"
             else:
-                wells[key] = np.asarray(values, dtype=int)
+                well_type = "closed"
+            well_types[w] = well_type
 
-        _ = n_days
+        cells = self._sr3.elements.get_layer_data("cell")
+        wells = {}
+        for well in all_wells:
+            well_con = self._sr3.elements.get_children("layer",well)
+            well_con = np.array([cells[wc] for wc in well_con if cells[wc] in selected_complete])
+            if len(well_con) == 0:
+                continue
+            well_con = np.searchsorted(selected_complete, well_con).astype(int) + 1
+            well_name = f"{well},{well_types[well]}"
+            wells[well_name] = well_con
+
         return wells
 
     def make_map(
@@ -179,7 +150,7 @@ class PlotHandlerDash:
         title="Map",
         grid_values=None,
         connection_values=None,
-        add_connections=True,
+        add_connections=False,
         add_wells=True,
         width=1000,
         height=700,
@@ -254,17 +225,12 @@ class PlotHandlerDash:
         vertices = all_vertices[selected_complete - 1]
 
         ijk = self._sr3.grid.n2ijk(selected_complete)
-        layer_ids = np.asarray(ijk[:, 2], dtype=int)
-        unique_layers = np.unique(layer_ids)
-        layer_sizes = np.asarray(
-            [np.sum(layer_ids == layer) for layer in unique_layers],
-            dtype=int,
-        )
+        _, layer_sizes = np.unique(ijk[:, -1], return_counts=True)
 
-        cell_names = [
-            f"({int(i)},{int(j)})"
-            for i, j, _k, *_ in np.asarray(ijk, dtype=float)
-        ]
+        ijk_int = np.asarray(ijk[:, (0, 1, -1)], dtype=int)
+        cell_names = list(
+            map(r"({},{},{})".format, ijk_int[:, 0], ijk_int[:, 1], ijk_int[:, 2])
+        )
 
         con_idx = None
         con_data = None
@@ -277,7 +243,7 @@ class PlotHandlerDash:
 
         wells = None
         if add_wells:
-            wells = self._build_map_wells(selected_complete=selected_complete, days=days)
+            wells = self._build_map_wells(selected_complete=selected_complete)
 
         return DashMapPlot(
             vertices=vertices,
