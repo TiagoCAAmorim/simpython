@@ -18,8 +18,10 @@ from rsimpy.common.dash_app_template import (
     build_step_2_2_demo_map_plot,
     build_triangle_demo_figure,
     create_dash_template_app,
+    create_step_4_1_working_example_app,
     create_step_3_working_example_app,
     create_step_2_2_working_example_app,
+    create_working_example_app,
 )
 
 
@@ -191,6 +193,30 @@ class TestDashAppTemplate(unittest.TestCase):
         self.assertIn("step3-table-page-size", layout_string)
         self.assertIn("step3-table-download-btn", layout_string)
         self.assertIn("step3-table-download", layout_string)
+
+    def test_create_step_4_1_working_example_app(self):
+        """Test Step 4.1 working example app contains combined dashboard panels."""
+        app = create_step_4_1_working_example_app()
+        self.assertIsNotNone(app.layout)
+        layout_string = str(app.layout)
+        self.assertIn("Step 4.1 Dashboard Example", layout_string)
+        self.assertIn("dashboard-map-graph", layout_string)
+        self.assertIn("dashboard-line-graph", layout_string)
+        self.assertIn("dashboard-scatter-graph", layout_string)
+        self.assertIn("dashboard-table", layout_string)
+        self.assertIn("step4-map-property", layout_string)
+        self.assertIn("step4-map-day", layout_string)
+        self.assertIn("step4-map-layer", layout_string)
+        self.assertIn("step4-line-log-y", layout_string)
+        self.assertIn("step4-scatter-log-x", layout_string)
+        self.assertIn("step4-table-page-size", layout_string)
+        self.assertIn("step4-table-download-btn", layout_string)
+
+    def test_create_working_example_app_step4(self):
+        """Test selector can create Step 4 dashboard app."""
+        app = create_working_example_app(example="step4")
+        self.assertIsNotNone(app.layout)
+        self.assertIn("Step 4.1 Dashboard Example", str(app.layout))
 
 
 if __name__ == "__main__":

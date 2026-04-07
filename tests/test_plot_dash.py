@@ -40,6 +40,7 @@ from rsimpy.common.plot_dash import (
     _get_contour_segments_triangle,
     validate_layer_sizes,
 )
+from rsimpy.common.plot_dashboard import DashDashboard
 
 
 def _make_regular_grid_vertices(n_rows, n_cols, dx=1.0, dy=1.0):
@@ -717,6 +718,64 @@ class TestPlotDashFoundation(unittest.TestCase):
         self.assertEqual(props["page_size"], 2)
         self.assertEqual(len(props["columns"]), 2)
         self.assertEqual(len(props["data"]), 3)
+
+    def test_dash_dashboard_requires_at_least_one_component(self):
+        """Test dashboard constructor rejects empty component composition."""
+        with self.assertRaises(ValueError):
+            DashDashboard()
+
+    def test_dash_dashboard_layout_contains_all_component_panels(self):
+        """Test dashboard layout includes graph/table IDs for provided components."""
+        vertices = _make_regular_grid_vertices(1, 2)
+        grid_data = np.arange(2, dtype=float).reshape(1, 1, 2)
+        map_plot = DashMapPlot(
+            vertices=vertices,
+            layer_sizes=[2],
+            grid_data=grid_data,
+            property_names=["P1"],
+        )
+
+        line_plot = DashLinePlot(
+            x_values=np.asarray(["2026-01-01", "2026-01-02"], dtype="datetime64[D]"),
+            y_values=np.asarray([[1.0, 2.0]], dtype=float),
+            property_names=["L1"],
+        )
+
+        scatter_plot = DashScatterPlot(
+            scatter_data={"S1": np.asarray([[1.0, 2.0], [2.0, 3.0]], dtype=float)}
+        )
+
+        if not HAS_PANDAS:
+            self.skipTest("pandas not installed")
+        table_plot = DashTable(table_data=pd.DataFrame({"A": [1, 2], "B": [3, 4]}))
+
+        dashboard = DashDashboard(
+            map_plot=map_plot,
+            line_plot=line_plot,
+            scatter_plot=scatter_plot,
+            table_plot=table_plot,
+            title="Combined",
+        )
+        layout = dashboard.create_layout(
+            map_kwargs={"property_index": 0, "day_index": 0, "layer": 1}
+        )
+
+        layout_string = str(layout)
+        self.assertIn("dashboard-map-graph", layout_string)
+        self.assertIn("dashboard-line-graph", layout_string)
+        self.assertIn("dashboard-scatter-graph", layout_string)
+        self.assertIn("dashboard-table", layout_string)
+        self.assertIn("Combined", layout_string)
+
+    def test_dash_dashboard_create_app(self):
+        """Test dashboard creates Dash app with non-empty layout."""
+        scatter_plot = DashScatterPlot(
+            scatter_data={"S1": np.asarray([[0.0, 1.0], [1.0, 2.0]], dtype=float)}
+        )
+        dashboard = DashDashboard(scatter_plot=scatter_plot, title="Scatter Only")
+        app = dashboard.create_app()
+        self.assertIsNotNone(app.layout)
+        self.assertIn("Scatter Only", str(app.layout))
 
 
 if __name__ == "__main__":

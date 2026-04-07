@@ -1113,20 +1113,407 @@ def create_step_3_working_example_app():
     return app
 
 
+def create_step_4_1_working_example_app():
+    """Create a ready-to-run Step 4.1 dashboard composition example app."""
+    map_plot = build_step_2_2_demo_map_plot(n_rows=8, n_cols=12, n_days=4)
+    line_plot = build_step_3_demo_line_plot(n_days=14)
+    scatter_plot = build_step_3_demo_scatter_plot(n_points=100, seed=11)
+    table_plot = build_step_3_demo_table(n_rows=24)
+
+    n_properties, n_days, _ = map_plot.grid_data.shape
+    n_layers = len(map_plot.layer_sizes)
+    has_secondary_y = len(line_plot.secondary_y) > 0
+    initial_map_fig = map_plot.create_map_figure(
+        property_index=0,
+        day_index=0,
+        layer=1,
+        add_connections=True,
+        add_wells=True,
+    )
+    initial_line_fig = line_plot.create_line_figure(
+        log_scale=False,
+        log_scale_secondary=False,
+        marker_mode=True,
+    )
+    initial_scatter_fig = scatter_plot.create_scatter_figure(log_x=False, log_y=False)
+    for fig in (initial_map_fig, initial_line_fig, initial_scatter_fig):
+        fig.update_layout(autosize=True, width=None, height=None)
+
+    table_props = table_plot.create_dash_table_props(page_size=10)
+
+    app = Dash(__name__)
+    app.layout = html.Div(
+        [
+            html.H3(
+                "rsimpy Dash - Step 4.1 Dashboard Example",
+                style={"margin": "0 0 8px 0"},
+            ),
+            dcc.Tabs(
+                [
+                    dcc.Tab(
+                        label="Map",
+                        children=[
+                            html.Div(
+                                [
+                                    html.Div(
+                                        [
+                                            html.Label("Property"),
+                                            dcc.Dropdown(
+                                                id="step4-map-property",
+                                                options=[
+                                                    {
+                                                        "label": map_plot.property_names[i],
+                                                        "value": i,
+                                                    }
+                                                    for i in range(n_properties)
+                                                ],
+                                                value=0,
+                                                clearable=False,
+                                            ),
+                                            html.Br(),
+                                            html.Label("Day"),
+                                            dcc.Slider(
+                                                id="step4-map-day",
+                                                min=0,
+                                                max=max(0, n_days - 1),
+                                                step=1,
+                                                value=0,
+                                                marks={i: str(i) for i in range(n_days)},
+                                            ),
+                                            html.Br(),
+                                            html.Label("Layer"),
+                                            dcc.Slider(
+                                                id="step4-map-layer",
+                                                min=1,
+                                                max=max(1, n_layers),
+                                                step=1,
+                                                value=1,
+                                                marks={
+                                                    i: str(i)
+                                                    for i in range(1, n_layers + 1)
+                                                },
+                                            ),
+                                            html.Br(),
+                                            dcc.Checklist(
+                                                id="step4-map-show-connections",
+                                                options=[
+                                                    {
+                                                        "label": "Connections",
+                                                        "value": "on",
+                                                    }
+                                                ],
+                                                value=["on"],
+                                            ),
+                                            dcc.Checklist(
+                                                id="step4-map-show-wells",
+                                                options=[
+                                                    {"label": "Wells", "value": "on"}
+                                                ],
+                                                value=["on"],
+                                            ),
+                                        ],
+                                        style={
+                                            "flex": "0 0 260px",
+                                            "paddingRight": "12px",
+                                            "overflowY": "auto",
+                                        },
+                                    ),
+                                    html.Div(
+                                        [
+                                            dcc.Graph(
+                                                id="dashboard-map-graph",
+                                                figure=initial_map_fig,
+                                                responsive=True,
+                                                style={
+                                                    "height": "100%",
+                                                    "width": "100%",
+                                                },
+                                                config={
+                                                    "displaylogo": False,
+                                                    "scrollZoom": True,
+                                                    "modeBarButtonsToRemove": [
+                                                        "select2d",
+                                                        "lasso2d",
+                                                    ],
+                                                },
+                                            )
+                                        ],
+                                        style={"flex": "1 1 auto", "height": "100%"},
+                                    ),
+                                ],
+                                style={"display": "flex", "height": "100%", "minHeight": "0"},
+                            )
+                        ],
+                        style={"padding": "6px 12px"},
+                        selected_style={"padding": "6px 12px", "fontWeight": "600"},
+                    ),
+                    dcc.Tab(
+                        label="Line",
+                        children=[
+                            html.Div(
+                                [
+                                    html.Div(
+                                        [
+                                            dcc.Checklist(
+                                                id="step4-line-log-y",
+                                                options=[
+                                                    {"label": "Log-Y", "value": "on"}
+                                                ],
+                                                value=[],
+                                            ),
+                                            dcc.Checklist(
+                                                id="step4-line-log-y2",
+                                                options=[
+                                                    {"label": "Log-Y2", "value": "on"}
+                                                ],
+                                                value=[],
+                                                style={
+                                                    "display": (
+                                                        "block"
+                                                        if has_secondary_y
+                                                        else "none"
+                                                    )
+                                                },
+                                            ),
+                                        ],
+                                        style={"flex": "0 0 200px", "paddingRight": "12px"},
+                                    ),
+                                    html.Div(
+                                        [
+                                            dcc.Graph(
+                                                id="dashboard-line-graph",
+                                                figure=initial_line_fig,
+                                                responsive=True,
+                                                style={
+                                                    "height": "100%",
+                                                    "width": "100%",
+                                                },
+                                                config={
+                                                    "displaylogo": False,
+                                                    "scrollZoom": True,
+                                                    "modeBarButtonsToRemove": [
+                                                        "select2d",
+                                                        "lasso2d",
+                                                    ],
+                                                },
+                                            )
+                                        ],
+                                        style={"flex": "1 1 auto", "height": "100%"},
+                                    ),
+                                ],
+                                style={"display": "flex", "height": "100%", "minHeight": "0"},
+                            )
+                        ],
+                        style={"padding": "6px 12px"},
+                        selected_style={"padding": "6px 12px", "fontWeight": "600"},
+                    ),
+                    dcc.Tab(
+                        label="Scatter",
+                        children=[
+                            html.Div(
+                                [
+                                    html.Div(
+                                        [
+                                            dcc.Checklist(
+                                                id="step4-scatter-log-x",
+                                                options=[
+                                                    {"label": "Log-X", "value": "on"}
+                                                ],
+                                                value=[],
+                                            ),
+                                            dcc.Checklist(
+                                                id="step4-scatter-log-y",
+                                                options=[
+                                                    {"label": "Log-Y", "value": "on"}
+                                                ],
+                                                value=[],
+                                            ),
+                                        ],
+                                        style={"flex": "0 0 200px", "paddingRight": "12px"},
+                                    ),
+                                    html.Div(
+                                        [
+                                            dcc.Graph(
+                                                id="dashboard-scatter-graph",
+                                                figure=initial_scatter_fig,
+                                                responsive=True,
+                                                style={
+                                                    "height": "100%",
+                                                    "width": "100%",
+                                                },
+                                                config={
+                                                    "displaylogo": False,
+                                                    "scrollZoom": True,
+                                                    "modeBarButtonsToRemove": [
+                                                        "select2d",
+                                                        "lasso2d",
+                                                    ],
+                                                },
+                                            )
+                                        ],
+                                        style={"flex": "1 1 auto", "height": "100%"},
+                                    ),
+                                ],
+                                style={"display": "flex", "height": "100%", "minHeight": "0"},
+                            )
+                        ],
+                        style={"padding": "6px 12px"},
+                        selected_style={"padding": "6px 12px", "fontWeight": "600"},
+                    ),
+                    dcc.Tab(
+                        label="Table",
+                        children=[
+                            html.Div(
+                                [
+                                    html.Div(
+                                        [
+                                            html.Label("Visible lines"),
+                                            dcc.Dropdown(
+                                                id="step4-table-page-size",
+                                                options=[
+                                                    {"label": "10", "value": 10},
+                                                    {"label": "20", "value": 20},
+                                                    {"label": "50", "value": 50},
+                                                ],
+                                                value=10,
+                                                clearable=False,
+                                                style={"width": "120px"},
+                                            ),
+                                            html.Br(),
+                                            html.Button(
+                                                "Download CSV",
+                                                id="step4-table-download-btn",
+                                                n_clicks=0,
+                                            ),
+                                            dcc.Download(id="step4-table-download"),
+                                        ],
+                                        style={"flex": "0 0 200px", "paddingRight": "12px"},
+                                    ),
+                                    html.Div(
+                                        [
+                                            dash_table.DataTable(
+                                                id="dashboard-table",
+                                                **table_props,
+                                                style_table={"overflowX": "auto"},
+                                                style_cell={
+                                                    "textAlign": "left",
+                                                    "padding": "6px",
+                                                },
+                                                style_header={"fontWeight": "bold"},
+                                            )
+                                        ],
+                                        style={"flex": "1 1 auto", "height": "100%"},
+                                    ),
+                                ],
+                                style={"display": "flex", "height": "100%", "minHeight": "0"},
+                            )
+                        ],
+                        style={"padding": "6px 12px"},
+                        selected_style={"padding": "6px 12px", "fontWeight": "600"},
+                    ),
+                ],
+                style={"flex": "1 1 auto", "minHeight": "0"},
+                content_style={"height": "calc(100vh - 140px)", "padding": "6px 0 0 0"},
+            ),
+        ],
+        style={
+            "height": "100vh",
+            "width": "100vw",
+            "padding": "12px",
+            "boxSizing": "border-box",
+            "overflow": "hidden",
+            "display": "flex",
+            "flexDirection": "column",
+        },
+    )
+
+    @app.callback(
+        Output("dashboard-map-graph", "figure"),
+        Input("step4-map-property", "value"),
+        Input("step4-map-day", "value"),
+        Input("step4-map-layer", "value"),
+        Input("step4-map-show-connections", "value"),
+        Input("step4-map-show-wells", "value"),
+    )
+    def _update_step4_map_figure(property_index, day_index, layer, show_conn, show_wells):
+        fig = map_plot.create_map_figure(
+            property_index=int(property_index),
+            day_index=int(day_index),
+            layer=int(layer),
+            add_connections="on" in (show_conn or []),
+            add_wells="on" in (show_wells or []),
+        )
+        fig.update_layout(autosize=True, width=None, height=None)
+        return fig
+
+    @app.callback(
+        Output("dashboard-line-graph", "figure"),
+        Input("step4-line-log-y", "value"),
+        Input("step4-line-log-y2", "value"),
+    )
+    def _update_step4_line_figure(log_y_values, log_y2_values):
+        fig = line_plot.create_line_figure(
+            log_scale="on" in (log_y_values or []),
+            log_scale_secondary="on" in (log_y2_values or []),
+            marker_mode=True,
+        )
+        fig.update_layout(autosize=True, width=None, height=None)
+        return fig
+
+    @app.callback(
+        Output("dashboard-scatter-graph", "figure"),
+        Input("step4-scatter-log-x", "value"),
+        Input("step4-scatter-log-y", "value"),
+    )
+    def _update_step4_scatter_figure(log_x_values, log_y_values):
+        fig = scatter_plot.create_scatter_figure(
+            log_x="on" in (log_x_values or []),
+            log_y="on" in (log_y_values or []),
+        )
+        fig.update_layout(autosize=True, width=None, height=None)
+        return fig
+
+    @app.callback(
+        Output("dashboard-table", "page_size"),
+        Input("step4-table-page-size", "value"),
+    )
+    def _update_step4_table_page_size(page_size):
+        return int(page_size)
+
+    @app.callback(
+        Output("step4-table-download", "data"),
+        Input("step4-table-download-btn", "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def _download_step4_table_csv(n_clicks):
+        if not n_clicks:
+            return no_update
+        return dcc.send_data_frame(
+            table_plot.table_data.to_csv,
+            "step4_dashboard_table.csv",
+            index=False,
+        )
+
+    return app
+
+
 def create_working_example_app(example="step2"):
     """Create a named working example app.
 
     Parameters
     ----------
     example : str
-        Supported values are "step2" (map demo) and "step3" (line/scatter/table).
+        Supported values are "step2" (map demo), "step3" (line/scatter/table),
+        and "step4" (combined dashboard).
     """
     choice = str(example).strip().lower()
     if choice == "step2":
         return create_step_2_2_working_example_app()
     if choice == "step3":
         return create_step_3_working_example_app()
-    raise ValueError("example must be 'step2' or 'step3'.")
+    if choice == "step4":
+        return create_step_4_1_working_example_app()
+    raise ValueError("example must be 'step2', 'step3', or 'step4'.")
 
 
 def _parse_cli_args():
@@ -1136,7 +1523,7 @@ def _parse_cli_args():
     )
     parser.add_argument(
         "--example",
-        choices=["step2", "step3"],
+        choices=["step2", "step3", "step4"],
         default="step2",
         help="Select which demo app to run.",
     )
