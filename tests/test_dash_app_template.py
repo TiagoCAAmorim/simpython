@@ -18,11 +18,7 @@ from rsimpy.common.dash_app_template import (
     build_step_2_2_demo_map_plot,
     build_triangle_demo_figure,
     create_dash_template_app,
-    create_step_4_1_working_example_app,
-    create_step_4_multi_map_working_example_app,
     create_step_4_generic_wrapper_working_example_app,
-    create_step_3_working_example_app,
-    create_step_2_2_working_example_app,
     create_working_example_app,
 )
 
@@ -149,12 +145,6 @@ class TestDashAppTemplate(unittest.TestCase):
         # Verify zoom persistence is enabled
         self.assertEqual(fig.layout.uirevision, "dash-map-view")
 
-    def test_create_step_2_2_working_example_app(self):
-        """Test working example app initializes with Step 2.3 title in layout."""
-        app = create_step_2_2_working_example_app()
-        self.assertIsNotNone(app.layout)
-        self.assertIn("Step 2.3", str(app.layout))
-
     def test_build_step_3_demo_line_plot(self):
         """Test Step 3 line example builds a valid multi-trace figure."""
         obj = build_step_3_demo_line_plot(n_days=10)
@@ -177,76 +167,6 @@ class TestDashAppTemplate(unittest.TestCase):
         self.assertEqual(props["page_size"], 5)
         self.assertEqual(len(props["data"]), 12)
         self.assertEqual(len(props["columns"]), 5)
-
-    def test_create_step_3_working_example_app(self):
-        """Test Step 3 working example app contains all demo components."""
-        app = create_step_3_working_example_app()
-        self.assertIsNotNone(app.layout)
-        layout_string = str(app.layout)
-        self.assertIn("Step 3 Working Examples", layout_string)
-        self.assertIn("step3-line-graph", layout_string)
-        self.assertIn("step3-line-log-y1", layout_string)
-        self.assertIn("step3-line-log-y2", layout_string)
-        self.assertIn("step3-line-y2-controls", layout_string)
-        self.assertIn("step3-scatter-graph", layout_string)
-        self.assertIn("step3-scatter-log-x", layout_string)
-        self.assertIn("step3-scatter-log-y", layout_string)
-        self.assertIn("step3-table", layout_string)
-        self.assertIn("step3-table-page-size", layout_string)
-        self.assertIn("step3-table-download-btn", layout_string)
-        self.assertIn("step3-table-download", layout_string)
-
-    def test_create_step_4_1_working_example_app(self):
-        """Test Step 4.1 working example app contains combined dashboard panels."""
-        app = create_step_4_1_working_example_app()
-        self.assertIsNotNone(app.layout)
-        layout_string = str(app.layout)
-        self.assertIn("Step 4.1 Dashboard Example", layout_string)
-        self.assertIn("dashboard-map-graph", layout_string)
-        self.assertIn("dashboard-line-graph", layout_string)
-        self.assertIn("dashboard-scatter-graph", layout_string)
-        self.assertIn("dashboard-table", layout_string)
-        self.assertIn("step4-map-property", layout_string)
-        self.assertIn("step4-map-day", layout_string)
-        self.assertIn("step4-map-layer", layout_string)
-        self.assertIn("step4-line-log-y", layout_string)
-        self.assertIn("step4-scatter-log-x", layout_string)
-        self.assertIn("step4-table-page-size", layout_string)
-        self.assertIn("step4-table-download-btn", layout_string)
-
-    def test_create_working_example_app_step4(self):
-        """Test selector can create Step 4 dashboard app."""
-        app = create_working_example_app(example="step4")
-        self.assertIsNotNone(app.layout)
-        self.assertIn("Step 4.1 Dashboard Example", str(app.layout))
-
-    def test_create_step_4_multi_map_working_example_app(self):
-        """Test multi-map example app contains two independent map panels."""
-        app = create_step_4_multi_map_working_example_app()
-        self.assertIsNotNone(app.layout)
-        layout_string = str(app.layout)
-        self.assertIn("Step 4 Multi-Map Example", layout_string)
-        self.assertIn("step4m1-graph", layout_string)
-        self.assertIn("step4m2-graph", layout_string)
-        self.assertIn("step4m1-property", layout_string)
-        self.assertIn("step4m2-property", layout_string)
-        self.assertIn("step4m1-grid-options-toggle", layout_string)
-        self.assertIn("step4m2-grid-options-toggle", layout_string)
-        self.assertIn("step4m1-connection-controls-group", layout_string)
-        self.assertIn("step4m2-connection-controls-group", layout_string)
-        self.assertIn("step4m1-contour-controls-group", layout_string)
-        self.assertIn("step4m2-contour-controls-group", layout_string)
-        self.assertIn("step4m1-well-controls-group", layout_string)
-        self.assertIn("step4m2-well-controls-group", layout_string)
-        self.assertIn("step4l1-graph", layout_string)
-        self.assertIn("step4l2-graph", layout_string)
-        self.assertIn("step4l3-graph", layout_string)
-
-    def test_create_working_example_app_step4multi(self):
-        """Test selector can create Step 4 multi-map app."""
-        app = create_working_example_app(example="step4multi")
-        self.assertIsNotNone(app.layout)
-        self.assertIn("Step 4 Multi-Map Example", str(app.layout))
 
     def test_create_step_4_generic_wrapper_working_example_app(self):
         """Test generic wrapper example app contains nested grouped tabs."""
@@ -276,6 +196,17 @@ class TestDashAppTemplate(unittest.TestCase):
         app = create_working_example_app(example="step4generic")
         self.assertIsNotNone(app.layout)
         self.assertIn("Step 4 Generic Wrapper Example", str(app.layout))
+
+    def test_create_working_example_app_rejects_deprecated_examples(self):
+        """Test deprecated example names are rejected by the selector."""
+        with self.assertRaises(ValueError):
+            create_working_example_app(example="step2")
+        with self.assertRaises(ValueError):
+            create_working_example_app(example="step3")
+        with self.assertRaises(ValueError):
+            create_working_example_app(example="step4")
+        with self.assertRaises(ValueError):
+            create_working_example_app(example="step4multi")
 
 
 if __name__ == "__main__":
