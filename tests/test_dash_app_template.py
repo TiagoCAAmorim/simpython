@@ -19,6 +19,7 @@ from rsimpy.common.dash_app_template import (
     build_triangle_demo_figure,
     create_dash_template_app,
     create_step_4_1_working_example_app,
+    create_step_4_multi_map_working_example_app,
     create_step_3_working_example_app,
     create_step_2_2_working_example_app,
     create_working_example_app,
@@ -217,6 +218,34 @@ class TestDashAppTemplate(unittest.TestCase):
         app = create_working_example_app(example="step4")
         self.assertIsNotNone(app.layout)
         self.assertIn("Step 4.1 Dashboard Example", str(app.layout))
+
+    def test_create_step_4_multi_map_working_example_app(self):
+        """Test multi-map example app contains two independent map panels."""
+        app = create_step_4_multi_map_working_example_app()
+        self.assertIsNotNone(app.layout)
+        layout_string = str(app.layout)
+        self.assertIn("Step 4 Multi-Map Example", layout_string)
+        self.assertIn("step4m1-graph", layout_string)
+        self.assertIn("step4m2-graph", layout_string)
+        self.assertIn("step4m1-property", layout_string)
+        self.assertIn("step4m2-property", layout_string)
+        self.assertIn("step4m1-grid-options-toggle", layout_string)
+        self.assertIn("step4m2-grid-options-toggle", layout_string)
+        self.assertIn("step4m1-connection-controls-group", layout_string)
+        self.assertIn("step4m2-connection-controls-group", layout_string)
+        self.assertIn("step4m1-contour-controls-group", layout_string)
+        self.assertIn("step4m2-contour-controls-group", layout_string)
+        self.assertIn("step4m1-well-controls-group", layout_string)
+        self.assertIn("step4m2-well-controls-group", layout_string)
+        self.assertIn("step4l1-graph", layout_string)
+        self.assertIn("step4l2-graph", layout_string)
+        self.assertIn("step4l3-graph", layout_string)
+
+    def test_create_working_example_app_step4multi(self):
+        """Test selector can create Step 4 multi-map app."""
+        app = create_working_example_app(example="step4multi")
+        self.assertIsNotNone(app.layout)
+        self.assertIn("Step 4 Multi-Map Example", str(app.layout))
 
 
 if __name__ == "__main__":

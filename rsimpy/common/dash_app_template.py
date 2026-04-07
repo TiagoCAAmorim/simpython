@@ -1859,6 +1859,567 @@ def create_step_4_1_working_example_app():
     return app
 
 
+def create_step_4_multi_map_working_example_app():
+    """Create a working example with two full-control maps and three line plots."""
+    map_plot_a = build_step_2_2_demo_map_plot(n_rows=8, n_cols=12, n_days=4)
+    map_plot_b = build_step_2_2_demo_map_plot(n_rows=7, n_cols=10, n_days=4)
+    line_plot_1 = build_step_3_demo_line_plot(n_days=14)
+
+    t = np.arange(14, dtype=float)
+    x_values = np.arange(np.datetime64("2026-02-01"), np.datetime64("2026-02-01") + 14)
+    line_plot_2 = DashLinePlot(
+        x_values=x_values,
+        y_values=np.vstack(
+            [
+                180.0 + 12.0 * np.cos(0.40 * t),
+                90.0 + 4.0 * t,
+                0.12 + 0.02 * np.sin(0.55 * t),
+            ]
+        ),
+        property_names=["Pressure B", "Liquid Rate B", "Water Cut B"],
+        secondary_y=[2],
+        title="Line B",
+        width=1000,
+        height=420,
+    )
+    line_plot_3 = DashLinePlot(
+        x_values=x_values,
+        y_values=np.vstack(
+            [
+                210.0 + 8.0 * np.sin(0.30 * t),
+                60.0 + 6.0 * np.sqrt(t + 1.0),
+                0.20 - 0.01 * np.sin(0.20 * t),
+            ]
+        ),
+        property_names=["Pressure C", "Gas Rate C", "Water Cut C"],
+        secondary_y=[2],
+        title="Line C",
+        width=1000,
+        height=420,
+    )
+
+    def _build_initial_map_fig(plot_obj):
+        fig = plot_obj.create_map_figure(
+            property_index=0,
+            day_index=0,
+            layer=1,
+            add_grid=True,
+            add_connections=False,
+            add_contours=False,
+            add_wells=False,
+        )
+        fig.update_layout(autosize=True, width=None, height=None)
+        return fig
+
+    initial_a = _build_initial_map_fig(map_plot_a)
+    initial_b = _build_initial_map_fig(map_plot_b)
+
+    def _build_initial_line_fig(plot_obj):
+        fig = plot_obj.create_line_figure(
+            log_scale=False,
+            log_scale_secondary=False,
+            marker_mode=True,
+        )
+        fig.update_layout(autosize=True, width=None, height=None)
+        return fig
+
+    initial_l1 = _build_initial_line_fig(line_plot_1)
+    initial_l2 = _build_initial_line_fig(line_plot_2)
+    initial_l3 = _build_initial_line_fig(line_plot_3)
+
+    def _build_map_tab(plot_obj, prefix, label, figure):
+        n_properties, n_days_local, _ = plot_obj.grid_data.shape
+        n_layers_local = len(plot_obj.layer_sizes)
+        has_connections_local = plot_obj.has_connections()
+        has_contours_local = plot_obj.has_contours()
+        has_wells_local = plot_obj.has_wells()
+
+        return dcc.Tab(
+            label=label,
+            children=[
+                html.Div(
+                    [
+                        html.Div(
+                            [
+                                html.Label("Property"),
+                                dcc.Dropdown(
+                                    id=f"{prefix}-property",
+                                    options=[
+                                        {"label": plot_obj.property_names[i], "value": i}
+                                        for i in range(n_properties)
+                                    ],
+                                    value=0,
+                                    clearable=False,
+                                ),
+                                html.Br(),
+                                html.Label("Layer"),
+                                dcc.Slider(
+                                    id=f"{prefix}-layer",
+                                    min=1,
+                                    max=max(1, n_layers_local),
+                                    step=1,
+                                    value=1,
+                                    marks={i: str(i) for i in range(1, n_layers_local + 1)},
+                                ),
+                                html.Br(),
+                                html.Label("Day"),
+                                dcc.Slider(
+                                    id=f"{prefix}-day",
+                                    min=0,
+                                    max=max(0, n_days_local - 1),
+                                    step=1,
+                                    value=0,
+                                    marks={i: str(i) for i in range(n_days_local)},
+                                ),
+                                html.Br(),
+                                html.Div(
+                                    [
+                                        dcc.Checklist(
+                                            id=f"{prefix}-show-grid",
+                                            options=[{"label": "Grid", "value": "show"}],
+                                            value=["show"],
+                                            style={"marginRight": "10px"},
+                                        ),
+                                        dcc.Checklist(
+                                            id=f"{prefix}-grid-log-scale",
+                                            options=[{"label": "Log", "value": "on", "disabled": False}],
+                                            value=[],
+                                            style={"marginRight": "10px"},
+                                        ),
+                                        dcc.Checklist(
+                                            id=f"{prefix}-grid-options-toggle",
+                                            options=[{"label": "Options", "value": "show", "disabled": False}],
+                                            value=[],
+                                        ),
+                                    ],
+                                    style={"display": "flex", "alignItems": "center"},
+                                ),
+                                html.Div(
+                                    [
+                                        html.Label("Grid palette"),
+                                        dcc.Dropdown(
+                                            id=f"{prefix}-grid-palette",
+                                            options=PALETTE_OPTIONS,
+                                            value="Turbo",
+                                            clearable=False,
+                                        ),
+                                    ],
+                                    id=f"{prefix}-grid-controls-group",
+                                    style={"display": "none"},
+                                ),
+                                html.Hr(style={"margin": "10px 0"}),
+                                html.Div(
+                                    [
+                                        dcc.Checklist(
+                                            id=f"{prefix}-show-connections",
+                                            options=[
+                                                {
+                                                    "label": "Connections",
+                                                    "value": "show",
+                                                    "disabled": not has_connections_local,
+                                                }
+                                            ],
+                                            value=[],
+                                            style={"marginRight": "10px"},
+                                        ),
+                                        dcc.Checklist(
+                                            id=f"{prefix}-connection-log-scale",
+                                            options=[{"label": "Log", "value": "on", "disabled": True}],
+                                            value=[],
+                                            style={"marginRight": "10px"},
+                                        ),
+                                        dcc.Checklist(
+                                            id=f"{prefix}-connection-options-toggle",
+                                            options=[{"label": "Options", "value": "show", "disabled": True}],
+                                            value=[],
+                                        ),
+                                    ],
+                                    style={"display": "flex", "alignItems": "center"},
+                                ),
+                                html.Div(
+                                    [
+                                        html.Label("Connection palette"),
+                                        dcc.Dropdown(
+                                            id=f"{prefix}-connection-palette",
+                                            options=PALETTE_OPTIONS,
+                                            value="Plasma",
+                                            clearable=False,
+                                        ),
+                                        html.Br(),
+                                        html.Label("Connection line width"),
+                                        dcc.Slider(
+                                            id=f"{prefix}-connection-width",
+                                            min=1.0,
+                                            max=10.0,
+                                            step=0.5,
+                                            value=5.0,
+                                            disabled=not has_connections_local,
+                                        ),
+                                        html.Br(),
+                                        html.Label("Gradient segments"),
+                                        dcc.Slider(
+                                            id=f"{prefix}-connection-segments",
+                                            min=3,
+                                            max=20,
+                                            step=1,
+                                            value=10,
+                                            disabled=not has_connections_local,
+                                        ),
+                                    ],
+                                    id=f"{prefix}-connection-controls-group",
+                                    style={"display": "none"},
+                                ),
+                                html.Hr(style={"margin": "10px 0"}),
+                                html.Div(
+                                    [
+                                        dcc.Checklist(
+                                            id=f"{prefix}-show-wells",
+                                            options=[
+                                                {
+                                                    "label": "Wells",
+                                                    "value": "show",
+                                                    "disabled": not has_wells_local,
+                                                }
+                                            ],
+                                            value=[],
+                                            style={"marginRight": "10px"},
+                                        ),
+                                        dcc.Checklist(
+                                            id=f"{prefix}-well-options-toggle",
+                                            options=[{"label": "Options", "value": "show", "disabled": True}],
+                                            value=[],
+                                        ),
+                                    ],
+                                    style={"display": "flex", "alignItems": "center"},
+                                ),
+                                html.Div(
+                                    [
+                                        html.Label("Well size (%)"),
+                                        dcc.Slider(
+                                            id=f"{prefix}-well-size",
+                                            min=5,
+                                            max=200,
+                                            step=5,
+                                            value=20,
+                                            disabled=not has_wells_local,
+                                        ),
+                                    ],
+                                    id=f"{prefix}-well-controls-group",
+                                    style={"display": "none"},
+                                ),
+                                html.Hr(style={"margin": "10px 0"}),
+                                html.Div(
+                                    [
+                                        dcc.Checklist(
+                                            id=f"{prefix}-show-contours",
+                                            options=[
+                                                {
+                                                    "label": "Contours",
+                                                    "value": "show",
+                                                    "disabled": not has_contours_local,
+                                                }
+                                            ],
+                                            value=[],
+                                            style={"marginRight": "10px"},
+                                        ),
+                                        dcc.Checklist(
+                                            id=f"{prefix}-contour-options-toggle",
+                                            options=[{"label": "Options", "value": "show", "disabled": True}],
+                                            value=[],
+                                        ),
+                                    ],
+                                    style={"display": "flex", "alignItems": "center"},
+                                ),
+                                html.Div(
+                                    [
+                                        html.Label("Contour count"),
+                                        dcc.Slider(
+                                            id=f"{prefix}-contour-count",
+                                            min=2,
+                                            max=15,
+                                            step=1,
+                                            value=7,
+                                            disabled=not has_contours_local,
+                                        ),
+                                    ],
+                                    id=f"{prefix}-contour-controls-group",
+                                    style={"display": "none"},
+                                ),
+                            ],
+                            style={"flex": "0 0 260px", "paddingRight": "12px"},
+                        ),
+                        html.Div(
+                            [
+                                dcc.Graph(
+                                    id=f"{prefix}-graph",
+                                    figure=figure,
+                                    responsive=True,
+                                    style={"height": "100%", "width": "100%"},
+                                    config={
+                                        "displaylogo": False,
+                                        "scrollZoom": True,
+                                        "modeBarButtonsToRemove": ["select2d", "lasso2d"],
+                                    },
+                                )
+                            ],
+                            style={"flex": "1 1 auto", "height": "100%"},
+                        ),
+                    ],
+                    style={"display": "flex", "height": "100%", "minHeight": "0"},
+                )
+            ],
+            style={"padding": "6px 12px"},
+            selected_style={"padding": "6px 12px", "fontWeight": "600"},
+        )
+
+    def _build_line_tab(plot_obj, prefix, label, figure):
+        has_secondary_local = len(plot_obj.secondary_y) > 0
+        return dcc.Tab(
+            label=label,
+            children=[
+                html.Div(
+                    [
+                        html.Div(
+                            [
+                                dcc.Checklist(
+                                    id=f"{prefix}-log-y",
+                                    options=[{"label": "Log-Y", "value": "on"}],
+                                    value=[],
+                                ),
+                                dcc.Checklist(
+                                    id=f"{prefix}-log-y2",
+                                    options=[{"label": "Log-Y2", "value": "on"}],
+                                    value=[],
+                                    style={"display": "block" if has_secondary_local else "none"},
+                                ),
+                            ],
+                            style={"flex": "0 0 220px", "paddingRight": "12px"},
+                        ),
+                        html.Div(
+                            [
+                                dcc.Graph(
+                                    id=f"{prefix}-graph",
+                                    figure=figure,
+                                    responsive=True,
+                                    style={"height": "100%", "width": "100%"},
+                                    config={
+                                        "displaylogo": False,
+                                        "scrollZoom": True,
+                                        "modeBarButtonsToRemove": ["select2d", "lasso2d"],
+                                    },
+                                )
+                            ],
+                            style={"flex": "1 1 auto", "height": "100%"},
+                        ),
+                    ],
+                    style={"display": "flex", "height": "100%", "minHeight": "0"},
+                )
+            ],
+            style={"padding": "6px 12px"},
+            selected_style={"padding": "6px 12px", "fontWeight": "600"},
+        )
+
+    app = Dash(__name__)
+    app.layout = html.Div(
+        [
+            html.H3("rsimpy Dash - Step 4 Multi-Map Example"),
+            dcc.Tabs(
+                [
+                    _build_map_tab(map_plot_a, "step4m1", "Map A", initial_a),
+                    _build_map_tab(map_plot_b, "step4m2", "Map B", initial_b),
+                    _build_line_tab(line_plot_1, "step4l1", "Line 1", initial_l1),
+                    _build_line_tab(line_plot_2, "step4l2", "Line 2", initial_l2),
+                    _build_line_tab(line_plot_3, "step4l3", "Line 3", initial_l3),
+                ],
+                style={"flex": "1 1 auto", "minHeight": "0"},
+                content_style={"height": "calc(100vh - 140px)", "padding": "6px 0 0 0"},
+            ),
+        ],
+        style={
+            "height": "100vh",
+            "width": "100vw",
+            "padding": "12px",
+            "boxSizing": "border-box",
+            "overflow": "hidden",
+            "display": "flex",
+            "flexDirection": "column",
+        },
+    )
+
+    def _register_map_callback(plot_obj, prefix):
+        has_connections_local = plot_obj.has_connections()
+        has_contours_local = plot_obj.has_contours()
+        has_wells_local = plot_obj.has_wells()
+
+        @app.callback(
+            Output(f"{prefix}-grid-options-toggle", "value"),
+            Output(f"{prefix}-connection-options-toggle", "value"),
+            Output(f"{prefix}-contour-options-toggle", "value"),
+            Output(f"{prefix}-well-options-toggle", "value"),
+            Input(f"{prefix}-show-grid", "value"),
+            Input(f"{prefix}-show-connections", "value"),
+            Input(f"{prefix}-show-contours", "value"),
+            Input(f"{prefix}-show-wells", "value"),
+            prevent_initial_call=True,
+        )
+        def _sync_options(_show_grid_values, _show_connections_values, _show_contours_values, _show_wells_values):
+            trigger = ctx.triggered_id
+            grid_value = [] if trigger == f"{prefix}-show-grid" else no_update
+            connection_value = [] if trigger == f"{prefix}-show-connections" else no_update
+            contour_value = [] if trigger == f"{prefix}-show-contours" else no_update
+            well_value = [] if trigger == f"{prefix}-show-wells" else no_update
+            return grid_value, connection_value, contour_value, well_value
+
+        @app.callback(
+            Output(f"{prefix}-graph", "figure"),
+            Output(f"{prefix}-grid-controls-group", "style"),
+            Output(f"{prefix}-connection-controls-group", "style"),
+            Output(f"{prefix}-contour-controls-group", "style"),
+            Output(f"{prefix}-well-controls-group", "style"),
+            Output(f"{prefix}-grid-log-scale", "options"),
+            Output(f"{prefix}-connection-log-scale", "options"),
+            Output(f"{prefix}-grid-options-toggle", "options"),
+            Output(f"{prefix}-connection-options-toggle", "options"),
+            Output(f"{prefix}-contour-options-toggle", "options"),
+            Output(f"{prefix}-well-options-toggle", "options"),
+            Input(f"{prefix}-property", "value"),
+            Input(f"{prefix}-day", "value"),
+            Input(f"{prefix}-layer", "value"),
+            Input(f"{prefix}-show-grid", "value"),
+            Input(f"{prefix}-grid-palette", "value"),
+            Input(f"{prefix}-grid-log-scale", "value"),
+            Input(f"{prefix}-show-connections", "value"),
+            Input(f"{prefix}-connection-options-toggle", "value"),
+            Input(f"{prefix}-show-contours", "value"),
+            Input(f"{prefix}-contour-options-toggle", "value"),
+            Input(f"{prefix}-grid-options-toggle", "value"),
+            Input(f"{prefix}-show-wells", "value"),
+            Input(f"{prefix}-well-options-toggle", "value"),
+            Input(f"{prefix}-contour-count", "value"),
+            Input(f"{prefix}-connection-palette", "value"),
+            Input(f"{prefix}-connection-width", "value"),
+            Input(f"{prefix}-connection-segments", "value"),
+            Input(f"{prefix}-connection-log-scale", "value"),
+            Input(f"{prefix}-well-size", "value"),
+        )
+        def _update_map(
+            property_index,
+            day_index,
+            layer,
+            show_grid_values,
+            grid_palette,
+            grid_log_scale_values,
+            show_conn_values,
+            connection_options_values,
+            show_contours_values,
+            contour_options_values,
+            grid_options_values,
+            show_wells_values,
+            well_options_values,
+            contour_count,
+            connection_palette,
+            connection_width,
+            connection_segments,
+            connection_log_scale_values,
+            well_size,
+        ):
+            show_grid = "show" in (show_grid_values or [])
+            show_connections = has_connections_local and "show" in (show_conn_values or [])
+            show_contours = has_contours_local and "show" in (show_contours_values or [])
+            show_wells = has_wells_local and "show" in (show_wells_values or [])
+
+            show_grid_options = show_grid and "show" in (grid_options_values or [])
+            show_connection_options = show_connections and "show" in (connection_options_values or [])
+            show_contour_options = show_contours and "show" in (contour_options_values or [])
+            show_well_options = show_wells and "show" in (well_options_values or [])
+
+            grid_log_scale = show_grid and "on" in (grid_log_scale_values or [])
+            connection_log_scale = show_connections and "on" in (connection_log_scale_values or [])
+
+            grid_style = {"display": "block" if show_grid_options else "none"}
+            connection_style = {"display": "block" if show_connection_options else "none"}
+            contour_style = {"display": "block" if show_contour_options else "none"}
+            well_style = {"display": "block" if show_well_options else "none"}
+
+            grid_log_options = [{"label": "Log", "value": "on", "disabled": not show_grid}]
+            connection_log_options = [{
+                "label": "Log",
+                "value": "on",
+                "disabled": (not has_connections_local) or (not show_connections),
+            }]
+            grid_options = [{"label": "Options", "value": "show", "disabled": not show_grid}]
+            connection_options = [{
+                "label": "Options",
+                "value": "show",
+                "disabled": (not has_connections_local) or (not show_connections),
+            }]
+            contour_options = [{
+                "label": "Options",
+                "value": "show",
+                "disabled": (not has_contours_local) or (not show_contours),
+            }]
+            well_options = [{
+                "label": "Options",
+                "value": "show",
+                "disabled": (not has_wells_local) or (not show_wells),
+            }]
+
+            fig = plot_obj.create_map_figure(
+                property_index=int(property_index),
+                day_index=int(day_index),
+                layer=int(layer),
+                palette=str(grid_palette),
+                grid_log_scale=grid_log_scale,
+                add_grid=show_grid,
+                add_connections=show_connections,
+                add_contours=show_contours,
+                add_wells=show_wells,
+                contour_count=int(contour_count),
+                connection_palette=str(connection_palette),
+                connection_log_scale=connection_log_scale,
+                connection_width=float(connection_width),
+                connection_line_segments=int(connection_segments),
+                well_size_percent=float(well_size),
+            )
+            fig.update_layout(autosize=True, width=None, height=None)
+            return (
+                fig,
+                grid_style,
+                connection_style,
+                contour_style,
+                well_style,
+                grid_log_options,
+                connection_log_options,
+                grid_options,
+                connection_options,
+                contour_options,
+                well_options,
+            )
+
+    def _register_line_callback(plot_obj, prefix):
+        @app.callback(
+            Output(f"{prefix}-graph", "figure"),
+            Input(f"{prefix}-log-y", "value"),
+            Input(f"{prefix}-log-y2", "value"),
+        )
+        def _update_line(log_y_values, log_y2_values):
+            fig = plot_obj.create_line_figure(
+                log_scale="on" in (log_y_values or []),
+                log_scale_secondary="on" in (log_y2_values or []),
+                marker_mode=True,
+            )
+            fig.update_layout(autosize=True, width=None, height=None)
+            return fig
+
+    _register_map_callback(map_plot_a, "step4m1")
+    _register_map_callback(map_plot_b, "step4m2")
+    _register_line_callback(line_plot_1, "step4l1")
+    _register_line_callback(line_plot_2, "step4l2")
+    _register_line_callback(line_plot_3, "step4l3")
+
+    return app
+
+
 def create_working_example_app(example="step2"):
     """Create a named working example app.
 
@@ -1866,7 +2427,7 @@ def create_working_example_app(example="step2"):
     ----------
     example : str
         Supported values are "step2" (map demo), "step3" (line/scatter/table),
-        and "step4" (combined dashboard).
+        "step4" (combined dashboard), and "step4multi" (two-map dashboard).
     """
     choice = str(example).strip().lower()
     if choice == "step2":
@@ -1875,7 +2436,9 @@ def create_working_example_app(example="step2"):
         return create_step_3_working_example_app()
     if choice == "step4":
         return create_step_4_1_working_example_app()
-    raise ValueError("example must be 'step2', 'step3', or 'step4'.")
+    if choice == "step4multi":
+        return create_step_4_multi_map_working_example_app()
+    raise ValueError("example must be 'step2', 'step3', 'step4', or 'step4multi'.")
 
 
 def _parse_cli_args():
@@ -1885,7 +2448,7 @@ def _parse_cli_args():
     )
     parser.add_argument(
         "--example",
-        choices=["step2", "step3", "step4"],
+        choices=["step2", "step3", "step4", "step4multi"],
         default="step2",
         help="Select which demo app to run.",
     )
