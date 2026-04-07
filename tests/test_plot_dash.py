@@ -41,6 +41,7 @@ from rsimpy.common.plot_dash import (
     validate_layer_sizes,
 )
 from rsimpy.common.plot_dashboard import DashDashboard
+from rsimpy.common.plot_dashboard import DashMultiPanelDashboard
 
 
 def _make_regular_grid_vertices(n_rows, n_cols, dx=1.0, dy=1.0):
@@ -776,6 +777,96 @@ class TestPlotDashFoundation(unittest.TestCase):
         app = dashboard.create_app()
         self.assertIsNotNone(app.layout)
         self.assertIn("Scatter Only", str(app.layout))
+
+    def test_multi_panel_dashboard_requires_at_least_one_panel(self):
+        """Test generic multi-panel dashboard rejects empty input dictionaries."""
+        with self.assertRaises(ValueError):
+            DashMultiPanelDashboard()
+
+    def test_multi_panel_dashboard_nested_tabs_for_available_types(self):
+        """Test nested tab structure uses type groups and panel-name tabs."""
+        vertices = _make_regular_grid_vertices(1, 2)
+        grid_data = np.arange(2, dtype=float).reshape(1, 1, 2)
+
+        map_plot_a = DashMapPlot(
+            vertices=vertices,
+            layer_sizes=[2],
+            grid_data=grid_data,
+            property_names=["P1"],
+        )
+        map_plot_b = DashMapPlot(
+            vertices=vertices,
+            layer_sizes=[2],
+            grid_data=grid_data,
+            property_names=["P2"],
+        )
+        line_plot = DashLinePlot(
+            x_values=np.asarray([0.0, 1.0]),
+            y_values=np.asarray([[1.0, 2.0]], dtype=float),
+            property_names=["L"],
+        )
+        scatter_plot = DashScatterPlot(
+            scatter_data={"S": np.asarray([[1.0, 2.0], [2.0, 3.0]], dtype=float)}
+        )
+
+        if not HAS_PANDAS:
+            self.skipTest("pandas not installed")
+        table_plot = DashTable(table_data=pd.DataFrame({"A": [1, 2], "B": [3, 4]}))
+
+        dashboard = DashMultiPanelDashboard(
+            map_plots={"Map A": map_plot_a, "Map B": map_plot_b},
+            line_plots={"Line A": line_plot},
+            scatter_plots={"Scatter A": scatter_plot},
+            table_plots={"Table A": table_plot},
+            title="Generic Wrapper",
+        )
+
+        layout_string = str(dashboard.create_layout())
+        self.assertIn("Generic Wrapper", layout_string)
+        self.assertIn("Maps", layout_string)
+        self.assertIn("Line Plots", layout_string)
+        self.assertIn("Scatter Plots", layout_string)
+        self.assertIn("Tables", layout_string)
+        self.assertIn("Map A", layout_string)
+        self.assertIn("Map B", layout_string)
+        self.assertIn("Line A", layout_string)
+        self.assertIn("Scatter A", layout_string)
+        self.assertIn("Table A", layout_string)
+        self.assertIn("mp-map-0-graph", layout_string)
+        self.assertIn("mp-map-1-graph", layout_string)
+        self.assertIn("mp-line-0-graph", layout_string)
+        self.assertIn("mp-scatter-0-graph", layout_string)
+        self.assertIn("mp-table-0-table", layout_string)
+
+    def test_multi_panel_dashboard_hides_empty_type_groups(self):
+        """Test missing panel types are not rendered as top-level tabs."""
+        line_plot = DashLinePlot(
+            x_values=np.asarray([0.0, 1.0]),
+            y_values=np.asarray([[1.0, 2.0]], dtype=float),
+            property_names=["L"],
+        )
+        dashboard = DashMultiPanelDashboard(
+            line_plots={"Line Only": line_plot},
+            title="Line Only Wrapper",
+        )
+        layout_string = str(dashboard.create_layout())
+        self.assertIn("Line Plots", layout_string)
+        self.assertNotIn("Maps", layout_string)
+        self.assertNotIn("Scatter Plots", layout_string)
+        self.assertNotIn("Tables", layout_string)
+
+    def test_multi_panel_dashboard_create_app(self):
+        """Test generic wrapper builds a Dash app with callbacks and layout."""
+        scatter_plot = DashScatterPlot(
+            scatter_data={"S1": np.asarray([[0.0, 1.0], [1.0, 2.0]], dtype=float)}
+        )
+        dashboard = DashMultiPanelDashboard(
+            scatter_plots={"Scatter Panel": scatter_plot},
+            title="Scatter Wrapper",
+        )
+        app = dashboard.create_app()
+        self.assertIsNotNone(app.layout)
+        self.assertIn("Scatter Wrapper", str(app.layout))
 
 
 if __name__ == "__main__":

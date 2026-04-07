@@ -20,6 +20,7 @@ from rsimpy.common.plot_dash import (
     DashTable,
     add_triangle_trace,
 )
+from rsimpy.common.plot_dashboard import DashMultiPanelDashboard
 
 
 PALETTE_OPTIONS = [
@@ -2420,6 +2421,87 @@ def create_step_4_multi_map_working_example_app():
     return app
 
 
+def create_step_4_generic_wrapper_working_example_app():
+    """Create a working example using the generic dict-based multi-panel wrapper."""
+    map_panels = {
+        "Map A": build_step_2_2_demo_map_plot(n_rows=8, n_cols=12, n_days=4),
+        "Map B": build_step_2_2_demo_map_plot(n_rows=7, n_cols=10, n_days=4),
+    }
+
+    line_panels = {
+        "Line A": build_step_3_demo_line_plot(n_days=14),
+        "Line B": DashLinePlot(
+            x_values=np.arange(
+                np.datetime64("2026-03-01"),
+                np.datetime64("2026-03-01") + 14,
+            ),
+            y_values=np.vstack(
+                [
+                    150.0 + 10.0 * np.sin(0.30 * np.arange(14, dtype=float)),
+                    100.0 + 4.0 * np.arange(14, dtype=float),
+                    0.16 + 0.02 * np.cos(0.50 * np.arange(14, dtype=float)),
+                ]
+            ),
+            property_names=["Pressure B", "Liquid Rate B", "Water Cut B"],
+            secondary_y=[2],
+            title="Line B",
+            width=1000,
+            height=420,
+        ),
+    }
+
+    scatter_panels = {
+        "Scatter A": build_step_3_demo_scatter_plot(n_points=100, seed=11),
+        "Scatter B": DashScatterPlot(
+            scatter_data={
+                "Productivity Index": np.column_stack(
+                    [
+                        np.linspace(0.5, 20.0, 80),
+                        4.0 + 0.8 * np.log(np.linspace(0.5, 20.0, 80)),
+                    ]
+                ),
+                "GOR vs Pressure": np.column_stack(
+                    [
+                        np.linspace(150.0, 450.0, 80),
+                        600.0 - 0.9 * np.linspace(150.0, 450.0, 80),
+                    ]
+                ),
+            },
+            title="Scatter B",
+            width=1000,
+            height=420,
+        ),
+    }
+
+    table_panels = {
+        "Table A": build_step_3_demo_table(n_rows=24),
+        "Table B": DashTable(
+            table_data=pd.DataFrame(
+                {
+                    "Well": [f"PX-{i+1:02d}" for i in range(18)],
+                    "Type": ["prod" if i % 2 == 0 else "injw" for i in range(18)],
+                    "Layer": [(i % 3) + 1 for i in range(18)],
+                    "CumGas": np.round(120.0 + 13.2 * np.arange(18), 2),
+                    "BHP": np.round(250.0 - 1.6 * np.arange(18), 2),
+                }
+            ),
+            title="Table B",
+            page_size=10,
+            width=1000,
+            height=420,
+        ),
+    }
+
+    wrapper = DashMultiPanelDashboard(
+        map_plots=map_panels,
+        line_plots=line_panels,
+        scatter_plots=scatter_panels,
+        table_plots=table_panels,
+        title="rsimpy Dash - Step 4 Generic Wrapper Example",
+    )
+    return wrapper.create_app()
+
+
 def create_working_example_app(example="step2"):
     """Create a named working example app.
 
@@ -2427,7 +2509,8 @@ def create_working_example_app(example="step2"):
     ----------
     example : str
         Supported values are "step2" (map demo), "step3" (line/scatter/table),
-        "step4" (combined dashboard), and "step4multi" (two-map dashboard).
+        "step4" (combined dashboard), "step4multi" (two-map dashboard), and
+        "step4generic" (dict-based nested-tab wrapper dashboard).
     """
     choice = str(example).strip().lower()
     if choice == "step2":
@@ -2438,7 +2521,11 @@ def create_working_example_app(example="step2"):
         return create_step_4_1_working_example_app()
     if choice == "step4multi":
         return create_step_4_multi_map_working_example_app()
-    raise ValueError("example must be 'step2', 'step3', 'step4', or 'step4multi'.")
+    if choice == "step4generic":
+        return create_step_4_generic_wrapper_working_example_app()
+    raise ValueError(
+        "example must be 'step2', 'step3', 'step4', 'step4multi', or 'step4generic'."
+    )
 
 
 def _parse_cli_args():
@@ -2448,7 +2535,7 @@ def _parse_cli_args():
     )
     parser.add_argument(
         "--example",
-        choices=["step2", "step3", "step4", "step4multi"],
+        choices=["step2", "step3", "step4", "step4multi", "step4generic"],
         default="step2",
         help="Select which demo app to run.",
     )

@@ -20,6 +20,7 @@ from rsimpy.common.dash_app_template import (
     create_dash_template_app,
     create_step_4_1_working_example_app,
     create_step_4_multi_map_working_example_app,
+    create_step_4_generic_wrapper_working_example_app,
     create_step_3_working_example_app,
     create_step_2_2_working_example_app,
     create_working_example_app,
@@ -246,6 +247,35 @@ class TestDashAppTemplate(unittest.TestCase):
         app = create_working_example_app(example="step4multi")
         self.assertIsNotNone(app.layout)
         self.assertIn("Step 4 Multi-Map Example", str(app.layout))
+
+    def test_create_step_4_generic_wrapper_working_example_app(self):
+        """Test generic wrapper example app contains nested grouped tabs."""
+        app = create_step_4_generic_wrapper_working_example_app()
+        self.assertIsNotNone(app.layout)
+        layout_string = str(app.layout)
+        self.assertIn("Step 4 Generic Wrapper Example", layout_string)
+        self.assertIn("Maps", layout_string)
+        self.assertIn("Line Plots", layout_string)
+        self.assertIn("Scatter Plots", layout_string)
+        self.assertIn("Tables", layout_string)
+        self.assertIn("Map A", layout_string)
+        self.assertIn("Map B", layout_string)
+        self.assertIn("Line A", layout_string)
+        self.assertIn("Line B", layout_string)
+        self.assertIn("Scatter A", layout_string)
+        self.assertIn("Scatter B", layout_string)
+        self.assertIn("Table A", layout_string)
+        self.assertIn("Table B", layout_string)
+        self.assertIn("mp-map-0-graph", layout_string)
+        self.assertIn("mp-line-0-graph", layout_string)
+        self.assertIn("mp-scatter-0-graph", layout_string)
+        self.assertIn("mp-table-0-table", layout_string)
+
+    def test_create_working_example_app_step4generic(self):
+        """Test selector can create Step 4 generic wrapper app."""
+        app = create_working_example_app(example="step4generic")
+        self.assertIsNotNone(app.layout)
+        self.assertIn("Step 4 Generic Wrapper Example", str(app.layout))
 
 
 if __name__ == "__main__":
