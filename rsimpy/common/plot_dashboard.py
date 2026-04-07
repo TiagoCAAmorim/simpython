@@ -764,9 +764,10 @@ class DashMultiPanelDashboard:
                     children=[
                         dcc.Tabs(
                             map_tabs,
-                            style={"flex": "1 1 auto", "minHeight": "0"},
+                            style={"flex": "1 1 auto", "minHeight": "0", "width": "100%"},
                             content_style={
                                 "height": "calc(100vh - 180px)",
+                                "width": "100%",
                                 "padding": "6px 0 0 0",
                             },
                         )
@@ -788,9 +789,10 @@ class DashMultiPanelDashboard:
                     children=[
                         dcc.Tabs(
                             line_tabs,
-                            style={"flex": "1 1 auto", "minHeight": "0"},
+                            style={"flex": "1 1 auto", "minHeight": "0", "width": "100%"},
                             content_style={
                                 "height": "calc(100vh - 180px)",
+                                "width": "100%",
                                 "padding": "6px 0 0 0",
                             },
                         )
@@ -816,9 +818,10 @@ class DashMultiPanelDashboard:
                     children=[
                         dcc.Tabs(
                             scatter_tabs,
-                            style={"flex": "1 1 auto", "minHeight": "0"},
+                            style={"flex": "1 1 auto", "minHeight": "0", "width": "100%"},
                             content_style={
                                 "height": "calc(100vh - 180px)",
+                                "width": "100%",
                                 "padding": "6px 0 0 0",
                             },
                         )
@@ -840,9 +843,10 @@ class DashMultiPanelDashboard:
                     children=[
                         dcc.Tabs(
                             table_tabs,
-                            style={"flex": "1 1 auto", "minHeight": "0"},
+                            style={"flex": "1 1 auto", "minHeight": "0", "width": "100%"},
                             content_style={
                                 "height": "calc(100vh - 180px)",
+                                "width": "100%",
                                 "padding": "6px 0 0 0",
                             },
                         )
@@ -855,16 +859,17 @@ class DashMultiPanelDashboard:
                 html.H3(self.title, style={"margin": "0 0 8px 0"}),
                 dcc.Tabs(
                     top_level_tabs,
-                    style={"flex": "1 1 auto", "minHeight": "0"},
+                    style={"flex": "1 1 auto", "minHeight": "0", "width": "100%"},
                     content_style={
                         "height": "calc(100vh - 120px)",
+                        "width": "100%",
                         "padding": "6px 0 0 0",
                     },
                 ),
             ],
             style={
-                "height": "100vh",
-                "width": "100vw",
+                "height": "calc(100vh - 36px)",
+                "width": "calc(100vw - 36px)",
                 "padding": "12px",
                 "boxSizing": "border-box",
                 "overflow": "hidden",

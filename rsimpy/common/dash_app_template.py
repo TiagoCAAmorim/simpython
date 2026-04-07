@@ -839,7 +839,7 @@ def create_step_4_generic_wrapper_working_example_app():
             secondary_y=[2],
             title="Line B",
             width=1000,
-            height=420,
+            height=380,
         ),
     }
 
@@ -862,7 +862,7 @@ def create_step_4_generic_wrapper_working_example_app():
             },
             title="Scatter B",
             width=1000,
-            height=420,
+            height=380,
         ),
     }
 
@@ -881,7 +881,7 @@ def create_step_4_generic_wrapper_working_example_app():
             title="Table B",
             page_size=10,
             width=1000,
-            height=420,
+            height=380,
         ),
     }
 

@@ -645,18 +645,18 @@ class DashLinePlot(BaseDashPlot):
         right_margin = 120 if len(self.secondary_y) > 0 else 80
 
         fig.update_layout(
-            title=self.title,
+            title={"text": self.title, "y": 0.99, "x": 0.0, "xanchor": "left"},
             width=self.width,
             height=self.height,
             template="plotly_white",
-            margin={"l": 50, "r": right_margin, "t": 70, "b": 50},
+            margin={"l": 50, "r": right_margin, "t": 120, "b": 50},
             hovermode="x unified",
             dragmode="pan",
             uirevision="dash-line-view",
             legend={
                 "orientation": "h",
                 "x": 0.0,
-                "y": 1.02,
+                "y": 1.07,
                 "xanchor": "left",
                 "yanchor": "bottom",
             },
@@ -738,19 +738,19 @@ class DashScatterPlot(BaseDashPlot):
             )
 
         fig.update_layout(
-            title=self.title,
+            title={"text": self.title, "y": 0.99, "x": 0.0, "xanchor": "left"},
             width=self.width,
             height=self.height,
             template="plotly_white",
-            margin={"l": 50, "r": 30, "t": 70, "b": 50},
+            margin={"l": 50, "r": 30, "t": 120, "b": 50},
             dragmode="pan",
             uirevision="dash-scatter-view",
             legend={
                 "orientation": "h",
                 "x": 0.0,
-                "y": 1.02,
+                "y": 1.07,
                 "xanchor": "left",
-                "yanchor": "bottom",
+                "yanchor": "top",
             },
             xaxis={
                 "title": "X",
