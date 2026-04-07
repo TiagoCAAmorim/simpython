@@ -442,7 +442,6 @@ def add_triangle_trace(
     line_color="black",
     fill_color="black",
     name="connection",
-    hover_text=None,
 ):
     """Add a filled triangle as a Scatter trace to a Plotly figure."""
     try:
@@ -1000,7 +999,6 @@ class DashMapPlot(BaseDashPlot):
                     line_color=connection_line_color,
                     fill_color=triangle_color if connection_triangle_color is None else connection_triangle_color,
                     name=f"connection-triangle-{direction}",
-                    hover_text=triangle_hover_text,
                 )
                 # Single center hit point improves triangle hover reliability.
                 fig.add_trace(
@@ -1113,7 +1111,7 @@ class DashMapPlot(BaseDashPlot):
                     hover_x.append(cx)
                     hover_y.append(cy)
                     hover_t.append(
-                        f"{well_name} ({well_type})<br>Cell={int(c)}<br>Layer={int(self.layer_per_cell[int(c)])}"
+                        f"{well_name} ({well_type})<br>#{int(c)} (k={int(self.layer_per_cell[int(c)])})"
                     )
 
                 # Draw non-active circles first, then active circles on top.

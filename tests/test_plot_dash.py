@@ -96,7 +96,6 @@ class TestPlotDashFoundation(unittest.TestCase):
             direction="up",
             line_color="black",
             fill_color="red",
-            hover_text="Triangle",
         )
         self.assertEqual(len(fig.data), 1)
         self.assertEqual(fig.data[0].fill, "toself")

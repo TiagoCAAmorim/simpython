@@ -47,7 +47,6 @@ def build_triangle_demo_figure(direction="up", size=0.3, show_triangle=True):
             line_color="black",
             fill_color="#cc2f2f",
             name="triangle",
-            hover_text=f"direction={direction}",
         )
 
     return fig
