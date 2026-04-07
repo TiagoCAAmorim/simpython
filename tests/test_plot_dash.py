@@ -9,6 +9,8 @@ from rsimpy.common.plot_dash import (
     add_triangle_trace,
     build_layer_per_cell,
     create_triangle_vertices,
+    _determine_contour_levels,
+    _get_contour_segments_triangle,
     validate_layer_sizes,
 )
 
@@ -43,6 +45,27 @@ class TestPlotDashFoundation(unittest.TestCase):
     def test_build_layer_per_cell(self):
         layer_per_cell = build_layer_per_cell([2, 3])
         np.testing.assert_array_equal(layer_per_cell, np.array([1, 1, 2, 2, 2]))
+
+    def test_determine_contour_levels_uses_global_range(self):
+        vertices = np.zeros((2, 4, 3), dtype=float)
+        vertices[0, :, 2] = [0.0, 10.0, 10.0, 0.0]
+        vertices[1, :, 2] = [100.0, 110.0, 110.0, 100.0]
+
+        levels = _determine_contour_levels(vertices, contour_count=3)
+        np.testing.assert_allclose(levels, np.array([0.0, 50.0, 100.0]))
+
+    def test_contour_segments_flat_edge_crosses_midpoint(self):
+        triangle = np.asarray([
+            [0.0, 0.0],
+            [2.0, 0.0],
+            [1.0, 2.0],
+        ], dtype=float)
+        z_vals = np.asarray([5.0, 5.0, 0.0], dtype=float)
+
+        segments = _get_contour_segments_triangle(triangle, z_vals, contour_value=5.0)
+        self.assertEqual(len(segments), 1)
+        p0, p1 = segments[0]
+        self.assertTrue(np.allclose(p0, [1.0, 0.0]) or np.allclose(p1, [1.0, 0.0]))
 
     def test_create_triangle_vertices_up(self):
         xs, ys = create_triangle_vertices(10.0, 20.0, size=2.0, direction="up")
@@ -123,13 +146,43 @@ class TestPlotDashFoundation(unittest.TestCase):
         polygon_hover_traces = [tr for tr in fig.data if tr.name == "cell-polygon-hover"]
         self.assertEqual(len(polygon_traces), 30)
         self.assertEqual(len(polygon_hover_traces), 30)
-        self.assertIn("Cell Name: (1,1)", polygon_hover_traces[0].text[0])
-        self.assertIn("Cell Name: (5,6)", polygon_hover_traces[-1].text[0])
+        self.assertIn("(1,1)", polygon_hover_traces[0].text[0])
+        self.assertIn("(5,6)", polygon_hover_traces[-1].text[0])
+        self.assertIn("Cell Index", polygon_hover_traces[0].text[0])
         self.assertEqual(polygon_hover_traces[0].hovertemplate, "%{text}<extra></extra>")
         self.assertEqual(polygon_hover_traces[0].mode, "markers")
         self.assertEqual(len(polygon_hover_traces[0].x), 9)
         self.assertEqual(polygon_traces[0].hoverinfo, "skip")
         self.assertEqual(obj.property_names, ["Cell Index"])
+
+    def test_map_figure_renders_contours_with_count(self):
+        vertices = _make_regular_grid_vertices(1, 2)
+        vertices[:, :, 2] = np.asarray([
+            [0.0, 10.0, 10.0, 0.0],
+            [100.0, 110.0, 110.0, 100.0],
+        ], dtype=float)
+        grid_data = np.arange(2, dtype=float).reshape(1, 1, 2)
+
+        obj = DashMapPlot(vertices=vertices, layer_sizes=[2], grid_data=grid_data, property_names=["P1"])
+        fig = obj.create_map_figure(property_index=0, day_index=0, layer=1, add_contours=True, contour_count=3)
+        contour_traces = [tr for tr in fig.data if tr.name == "contour-line"]
+        contour_hover_traces = [tr for tr in fig.data if tr.name == "contour-line-hover"]
+        self.assertGreaterEqual(len(contour_traces), 1)
+        self.assertEqual(len(contour_traces), len(contour_hover_traces))
+        self.assertGreaterEqual(float(contour_traces[0].line.width), 3.0)
+
+    def test_map_figure_default_axes_use_global_polygon_bounds(self):
+        vertices = _make_regular_grid_vertices(2, 2)
+        grid_data = np.arange(4, dtype=float).reshape(1, 1, 4)
+        obj = DashMapPlot(vertices=vertices, layer_sizes=[2, 2], grid_data=grid_data, property_names=["P1"])
+
+        fig = obj.create_map_figure(property_index=0, day_index=0, layer=2)
+        x_range = list(fig.layout.xaxis.range)
+        y_range = list(fig.layout.yaxis.range)
+        self.assertLessEqual(x_range[0], 0.0)
+        self.assertGreaterEqual(x_range[1], 2.0)
+        self.assertLessEqual(y_range[0], 0.0)
+        self.assertGreaterEqual(y_range[1], 2.0)
 
     def test_global_color_scale_uses_all_days_for_property(self):
         vertices = _make_regular_grid_vertices(1, 3)

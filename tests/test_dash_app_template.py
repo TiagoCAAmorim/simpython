@@ -29,19 +29,23 @@ class TestDashAppTemplate(unittest.TestCase):
         self.assertIn("map-property-dropdown", layout_string)
         self.assertIn("map-grid-palette", layout_string)
         self.assertIn("map-day-slider", layout_string)
+        self.assertIn("map-connection-controls-group", layout_string)
         self.assertIn("map-connection-palette", layout_string)
+        self.assertIn("map-contour-controls-group", layout_string)
         self.assertIn("map-layer-slider", layout_string)
         self.assertIn("map-show-connections", layout_string)
+        self.assertIn("map-show-contours", layout_string)
         self.assertIn("map-connection-width", layout_string)
         self.assertIn("map-connection-segments", layout_string)
+        self.assertIn("map-contour-count", layout_string)
         self.assertIn("map-graph", layout_string)
 
     def test_build_step_2_2_demo_map_plot(self):
         obj = build_step_2_2_demo_map_plot()
-        self.assertEqual(obj.grid_data.shape, (4, 5, 54))
+        self.assertEqual(obj.grid_data.shape, (5, 5, 54))
         self.assertEqual(
             obj.property_names,
-            ["Cell Index", "Column", "Row", "Index + 30*Day"],
+            ["Cell Index", "Column", "Row", "Index + 30*Day", "Mean Z"],
         )
         self.assertEqual(len(obj.cell_names), 54)
         self.assertEqual(obj.connection_property_names, ["Connectivity"])

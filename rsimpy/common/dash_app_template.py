@@ -84,6 +84,13 @@ def build_step_2_2_demo_map_plot(n_rows=5, n_cols=6, n_days=5):
     layer1_vertices = _make_regular_grid_vertices(layer1_rows, layer1_cols) + np.array([origin_x, origin_y, 0.0])
     layer2_vertices = _make_regular_grid_vertices(layer2_rows, layer2_cols) + np.array([origin_x, origin_y, 0.0])
     layer3_vertices = _make_regular_grid_vertices(layer3_rows, layer3_cols) + np.array([origin_x, origin_y, 0.0])
+
+    # Add synthetic z variation for contour rendering in Step 2.4.
+    for layer_idx, layer_vertices in enumerate([layer1_vertices, layer2_vertices, layer3_vertices], start=1):
+        local_x = layer_vertices[:, :, 0] - origin_x
+        local_y = layer_vertices[:, :, 1] - origin_y
+        layer_vertices[:, :, 2] = (2.0 * local_x + 3.0 * local_y) + 10.0 * float(layer_idx)
+
     vertices = np.concatenate([layer1_vertices, layer2_vertices, layer3_vertices], axis=0)
     layer_sizes = [
         layer1_rows * layer1_cols,
@@ -111,17 +118,22 @@ def build_step_2_2_demo_map_plot(n_rows=5, n_cols=6, n_days=5):
         grid_data[2, day, :] = row_values
         grid_data[3, day, :] = base_index + 30.0 * float(day)
 
-    property_names = ["Cell Index", "Column", "Row", "Index + 30*Day"]
+    mean_z_values = np.mean(vertices[:, :, 2], axis=1)
+    grid_data = np.concatenate([grid_data, np.zeros((1, n_days, n_cells), dtype=float)], axis=0)
+    for day in range(n_days):
+        grid_data[4, day, :] = mean_z_values
+
+    property_names = ["Cell Index", "Column", "Row", "Index + 30*Day", "Mean Z"]
     cell_names = [
-        f"L1({row+1},{col+1})"
+        f"({row+1},{col+1},1)"
         for row in range(layer1_rows)
         for col in range(layer1_cols)
     ] + [
-        f"L2({row+1},{col+1})"
+        f"({row+1},{col+1},2)"
         for row in range(layer2_rows)
         for col in range(layer2_cols)
     ] + [
-        f"L3({row+1},{col+1})"
+        f"({row+1},{col+1},3)"
         for row in range(layer3_rows)
         for col in range(layer3_cols)
     ]
@@ -188,6 +200,7 @@ def create_dash_template_app(map_plot=None):
     n_properties, n_days, _ = map_plot.grid_data.shape
     n_layers = len(map_plot.layer_sizes)
     has_connections = map_plot.has_connections()
+    has_contours = map_plot.has_contours()
 
     day_marks = {idx: str(idx) for idx in range(n_days)}
     layer_marks = {idx + 1: str(idx + 1) for idx in range(n_layers)}
@@ -201,6 +214,7 @@ def create_dash_template_app(map_plot=None):
                 [
                     html.Div(
                         [
+                            html.Div("Grid data", style={"fontWeight": "bold"}),
                             html.Label("Property"),
                             dcc.Dropdown(
                                 id="map-property-dropdown",
@@ -240,7 +254,7 @@ def create_dash_template_app(map_plot=None):
                                 value="Turbo",
                                 clearable=False,
                             ),
-                            html.Br(),
+                            html.Hr(style={"margin": "12px 0"}),
                             dcc.Checklist(
                                 id="map-show-connections",
                                 options=[{
@@ -250,33 +264,65 @@ def create_dash_template_app(map_plot=None):
                                 }],
                                 value=[],
                             ),
-                            html.Br(),
-                            html.Label("Connection palette"),
-                            dcc.Dropdown(
-                                id="map-connection-palette",
-                                options=PALETTE_OPTIONS,
-                                value="Plasma",
-                                clearable=False,
+                            html.Div(
+                                [
+                                    html.Div("Connections", style={"fontWeight": "bold"}),
+                                    html.Label("Connection palette"),
+                                    dcc.Dropdown(
+                                        id="map-connection-palette",
+                                        options=PALETTE_OPTIONS,
+                                        value="Plasma",
+                                        clearable=False,
+                                    ),
+                                    html.Br(),
+                                    html.Label("Connection line width"),
+                                    dcc.Slider(
+                                        id="map-connection-width",
+                                        min=1.0,
+                                        max=10.0,
+                                        step=0.5,
+                                        value=5.0,
+                                        disabled=not has_connections,
+                                    ),
+                                    html.Br(),
+                                    html.Label("Gradient segments"),
+                                    dcc.Slider(
+                                        id="map-connection-segments",
+                                        min=3,
+                                        max=20,
+                                        step=1,
+                                        value=10,
+                                        disabled=not has_connections,
+                                    ),
+                                ],
+                                id="map-connection-controls-group",
+                                style={"display": "none"},
                             ),
-                            html.Br(),
-                            html.Label("Connection line width"),
-                            dcc.Slider(
-                                id="map-connection-width",
-                                min=1.0,
-                                max=10.0,
-                                step=0.5,
-                                value=5.0,
-                                disabled=not has_connections,
+                            html.Hr(style={"margin": "12px 0"}),
+                            dcc.Checklist(
+                                id="map-show-contours",
+                                options=[{
+                                    "label": "Show contours",
+                                    "value": "show",
+                                    "disabled": not has_contours,
+                                }],
+                                value=[],
                             ),
-                            html.Br(),
-                            html.Label("Gradient segments"),
-                            dcc.Slider(
-                                id="map-connection-segments",
-                                min=3,
-                                max=20,
-                                step=1,
-                                value=10,
-                                disabled=not has_connections,
+                            html.Div(
+                                [
+                                    html.Div("Contours", style={"fontWeight": "bold"}),
+                                    html.Label("Contour count"),
+                                    dcc.Slider(
+                                        id="map-contour-count",
+                                        min=2,
+                                        max=15,
+                                        step=1,
+                                        value=7,
+                                        disabled=not has_contours,
+                                    ),
+                                ],
+                                id="map-contour-controls-group",
+                                style={"display": "none"},
                             ),
                         ],
                         style={"width": "24%", "display": "inline-block", "verticalAlign": "top"},
@@ -290,6 +336,8 @@ def create_dash_template_app(map_plot=None):
                                     day_index=0,
                                     layer=1,
                                     add_connections=False,
+                                    add_contours=False,
+                                    contour_count=7,
                                 ),
                                 config={
                                     "displaylogo": False,
@@ -308,11 +356,15 @@ def create_dash_template_app(map_plot=None):
 
     @app.callback(
         Output("map-graph", "figure"),
+        Output("map-connection-controls-group", "style"),
+        Output("map-contour-controls-group", "style"),
         Input("map-property-dropdown", "value"),
         Input("map-day-slider", "value"),
         Input("map-grid-palette", "value"),
         Input("map-layer-slider", "value"),
         Input("map-show-connections", "value"),
+        Input("map-show-contours", "value"),
+        Input("map-contour-count", "value"),
         Input("map-connection-palette", "value"),
         Input("map-connection-width", "value"),
         Input("map-connection-segments", "value"),
@@ -323,6 +375,8 @@ def create_dash_template_app(map_plot=None):
         grid_palette,
         layer,
         show_connections_values,
+        show_contours_values,
+        contour_count,
         connection_palette,
         connection_width,
         connection_segments,
@@ -330,15 +384,26 @@ def create_dash_template_app(map_plot=None):
         show_connections = (
             map_plot.has_connections() and "show" in (show_connections_values or [])
         )
-        return map_plot.create_map_figure(
+        show_contours = (
+            map_plot.has_contours() and "show" in (show_contours_values or [])
+        )
+        connection_style = {"display": "block" if show_connections else "none"}
+        contour_style = {"display": "block" if show_contours else "none"}
+        return (
+            map_plot.create_map_figure(
             property_index=int(property_index),
             day_index=int(day_index),
             layer=int(layer),
             palette=str(grid_palette),
             add_connections=show_connections,
+            add_contours=show_contours,
+            contour_count=int(contour_count),
             connection_palette=str(connection_palette),
             connection_width=float(connection_width),
             connection_line_segments=int(connection_segments),
+            ),
+            connection_style,
+            contour_style,
         )
 
     return app

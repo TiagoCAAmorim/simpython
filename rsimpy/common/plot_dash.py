@@ -147,6 +147,141 @@ def _compute_polygon_bounds(vertices):
     return x_min, x_max, y_min, y_max
 
 
+def _interpolate_edge_contour(p1, p2, z1, z2, contour_value):
+    """Find where a contour level crosses an edge between two points."""
+    if z1 == z2:
+        if np.isclose(z1, contour_value):
+            return np.asarray([0.5 * (p1[0] + p2[0]), 0.5 * (p1[1] + p2[1])], dtype=float)
+        return None
+
+    if (z1 <= contour_value <= z2) or (z2 <= contour_value <= z1):
+        t = (contour_value - z1) / (z2 - z1)
+        x = p1[0] + t * (p2[0] - p1[0])
+        y = p1[1] + t * (p2[1] - p1[1])
+        return np.array([x, y])
+
+    return None
+
+
+def _get_contour_segments_triangle(triangle, z_vals, contour_value):
+    """Compute contour segments for one triangle and one contour level."""
+    triangle_z_min = float(np.min(z_vals))
+    triangle_z_max = float(np.max(z_vals))
+    if contour_value < triangle_z_min or contour_value > triangle_z_max:
+        return []
+
+    crossings = []
+    for i in range(3):
+        j = (i + 1) % 3
+        point = _interpolate_edge_contour(
+            triangle[i], triangle[j], z_vals[i], z_vals[j], contour_value
+        )
+        if point is not None:
+            if not any(np.allclose(point, existing) for existing in crossings):
+                crossings.append(point)
+
+    if len(crossings) == 2:
+        return [(crossings[0], crossings[1])]
+
+    if len(crossings) > 2:
+        return [(crossings[0], crossings[1])]
+
+    return []
+
+
+def _nice_contour_step(raw_step):
+    """Round a contour step to a visually meaningful 1/2/5 * 10^n value."""
+    raw_step = float(raw_step)
+    if raw_step <= 0.0:
+        return 1.0
+
+    exponent = float(np.floor(np.log10(raw_step)))
+    fraction = raw_step / (10.0 ** exponent)
+    if fraction < 1.5:
+        nice_fraction = 1.0
+    elif fraction < 3.5:
+        nice_fraction = 2.0
+    elif fraction < 7.5:
+        nice_fraction = 5.0
+    else:
+        nice_fraction = 10.0
+    return nice_fraction * (10.0 ** exponent)
+
+
+def _triangulate_polygon(polygon):
+    """Triangulate a polygon by fan triangulation from its center."""
+    n_vertices = polygon.shape[0]
+    if n_vertices == 3:
+        return [polygon[:, :2]]
+
+    center_xy = np.mean(polygon[:, :2], axis=0)
+    triangles = []
+    for i in range(n_vertices):
+        j = (i + 1) % n_vertices
+        triangles.append(np.array([polygon[i, :2], polygon[j, :2], center_xy]))
+    return triangles
+
+
+def _get_z_values_for_triangle(polygon_z, triangle_idx, n_vertices):
+    """Get z-values for triangle vertices in fan triangulation."""
+    if n_vertices == 3:
+        return polygon_z
+
+    i = triangle_idx
+    j = (i + 1) % n_vertices
+    center_z = float(np.mean(polygon_z))
+    return np.array([polygon_z[i], polygon_z[j], center_z])
+
+
+def _compute_contour_lines_for_polygon(polygon, contour_values):
+    """Compute contour segments for a polygon with (x, y, z) vertices."""
+    if polygon.shape[1] != 3:
+        return {}
+
+    z_vals = polygon[:, 2]
+    n_vertices = polygon.shape[0]
+    triangles = _triangulate_polygon(polygon)
+
+    contour_segments = {float(cv): [] for cv in contour_values}
+    for tri_idx, triangle in enumerate(triangles):
+        tri_z_vals = _get_z_values_for_triangle(z_vals, tri_idx, n_vertices)
+        for contour_value in contour_values:
+            segments = _get_contour_segments_triangle(triangle, tri_z_vals, contour_value)
+            contour_segments[float(contour_value)].extend(segments)
+
+    return contour_segments
+
+
+def _determine_contour_levels(vertices, contour_count):
+    """Determine contour levels from the global z-value range."""
+    contour_count = int(contour_count)
+    if contour_count <= 0:
+        raise ValueError("contour_count must be > 0.")
+
+    z_vals = np.asarray(vertices[:, :, 2], dtype=float).ravel()
+    z_vals = z_vals[np.isfinite(z_vals)]
+    if z_vals.size == 0:
+        return None
+
+    if float(np.std(z_vals)) < 1.0e-2:
+        return None
+
+    z_min = float(np.min(z_vals))
+    z_max = float(np.max(z_vals))
+    if contour_count == 1 or np.isclose(z_min, z_max):
+        return np.asarray([0.5 * (z_min + z_max)], dtype=float)
+
+    raw_step = (z_max - z_min) / float(contour_count - 1)
+    step = _nice_contour_step(raw_step)
+    first_level = np.ceil(z_min / step) * step
+    last_level = np.floor(z_max / step) * step
+    if last_level < first_level:
+        return np.asarray([0.5 * (z_min + z_max)], dtype=float)
+
+    n_levels = int(np.floor((last_level - first_level) / step)) + 1
+    return first_level + step * np.arange(n_levels, dtype=float)
+
+
 def _color_with_alpha(color, alpha):
     """Convert a color string to rgba(...) with the requested alpha."""
     alpha = float(min(max(alpha, 0.0), 1.0))
@@ -400,6 +535,14 @@ class DashMapPlot(BaseDashPlot):
         """Return True when connection tensors are available."""
         return self.connection_indices is not None and self.connection_data is not None
 
+    def has_contours(self):
+        """Return True when z-variance supports contour rendering."""
+        z_vals = np.asarray(self.vertices[:, :, 2], dtype=float).ravel()
+        z_vals = z_vals[np.isfinite(z_vals)]
+        if z_vals.size == 0:
+            return False
+        return float(np.std(z_vals)) >= 1.0e-2
+
     def create_figure(self):
         """Backward-compatible wrapper that returns the default map view."""
         return self.create_map_figure()
@@ -424,6 +567,9 @@ class DashMapPlot(BaseDashPlot):
         connection_nan_inf_color="#bdbdbd",
         connection_line_segments=10,
         connection_triangle_size=0.225,
+        add_contours=False,
+        contour_count=7,
+        contour_line_width=3.0,
     ):
         """Create a basic polygon map for one property/day/layer selection."""
         try:
@@ -501,9 +647,9 @@ class DashMapPlot(BaseDashPlot):
             y_closed = np.append(y_poly, y_poly[0])
 
             hover_text = (
-                f"Cell Index: {idx}<br>"
-                f"Cell Name: {self.cell_names[idx]}<br>"
-                f"{prop_name}: {value:.6g}"
+                f"#{idx}: "
+                f"{self.cell_names[idx]}<br>"
+                f"{prop_name}={value:.6g}"
             )
 
             fig.add_trace(
@@ -563,6 +709,10 @@ class DashMapPlot(BaseDashPlot):
             )
         )
 
+        x_min, x_max, y_min, y_max = _compute_polygon_bounds(self.vertices)
+        x_pad = 0.05 * max(x_max - x_min, 1.0)
+        y_pad = 0.05 * max(y_max - y_min, 1.0)
+
         fig.update_layout(
             title=self.title,
             width=self.width,
@@ -570,13 +720,88 @@ class DashMapPlot(BaseDashPlot):
             dragmode="pan",
             xaxis_title="X",
             yaxis_title="Y",
-            xaxis={"tickformat": ".2f"},
-            yaxis={"tickformat": ".2f"},
+            xaxis={
+                "tickformat": ".2f",
+                "range": [x_min - x_pad, x_max + x_pad],
+                "autorange": False,
+            },
+            yaxis={
+                "tickformat": ".2f",
+                "range": [y_min - y_pad, y_max + y_pad],
+                "autorange": False,
+            },
             template="plotly_white",
             margin={"l": 40, "r": 190, "t": 60, "b": 40},
             uirevision="dash-map-view",
         )
         fig.update_yaxes(scaleanchor="x", scaleratio=1)
+
+        if add_contours:
+            contour_levels = _determine_contour_levels(self.vertices, contour_count)
+            if contour_levels is not None and len(contour_levels) > 0:
+                contour_levels = np.asarray(contour_levels, dtype=float)
+                cmin = float(np.min(contour_levels))
+                cmax = float(np.max(contour_levels))
+                if np.isclose(cmin, cmax):
+                    cmax = cmin + 1.0
+
+                def _contour_level_to_color(level):
+                    t = (float(level) - cmin) / (cmax - cmin)
+                    t = min(max(t, 0.0), 1.0)
+                    return sample_colorscale("Greys", [t])[0]
+
+                segments_by_level = {float(level): [] for level in contour_levels}
+                for idx in layer_indices:
+                    polygon = self.vertices[idx]
+                    poly_segments = _compute_contour_lines_for_polygon(
+                        polygon, contour_levels
+                    )
+                    for level, segments in poly_segments.items():
+                        segments_by_level[float(level)].extend(segments)
+
+                for level in contour_levels:
+                    segments = segments_by_level[float(level)]
+                    if len(segments) == 0:
+                        continue
+
+                    line_x = []
+                    line_y = []
+                    hover_x = []
+                    hover_y = []
+                    hover_t = []
+                    for p0, p1 in segments:
+                        line_x.extend([float(p0[0]), float(p1[0]), None])
+                        line_y.extend([float(p0[1]), float(p1[1]), None])
+                        hover_x.append(float(0.5 * (p0[0] + p1[0])))
+                        hover_y.append(float(0.5 * (p0[1] + p1[1])))
+                        hover_t.append(f"Z={float(level):.6g}")
+
+                    fig.add_trace(
+                        go.Scatter(
+                            x=line_x,
+                            y=line_y,
+                            mode="lines",
+                            line={
+                                "color": _contour_level_to_color(level),
+                                "width": float(contour_line_width),
+                            },
+                            name="contour-line",
+                            hoverinfo="skip",
+                            showlegend=False,
+                        )
+                    )
+                    fig.add_trace(
+                        go.Scatter(
+                            x=hover_x,
+                            y=hover_y,
+                            mode="markers",
+                            marker={"size": 8, "color": "rgba(0,0,0,0.001)"},
+                            text=hover_t,
+                            hovertemplate="%{text}<extra></extra>",
+                            name="contour-line-hover",
+                            showlegend=False,
+                        )
+                    )
 
         if add_connections and self.has_connections():
             conn_values = self.connection_data[connection_property_index, day_index, :]
@@ -653,12 +878,12 @@ class DashMapPlot(BaseDashPlot):
 
                 p0 = self.centers_xy[a]
                 p1 = self.centers_xy[b]
-                text_ab = f"{v_ab:.6g}" if has_ab else "missing"
-                text_ba = f"{v_ba:.6g}" if has_ba else "missing"
-                hover_text = (
-                    f"{a}->{b}: {text_ab}<br>"
-                    f"{b}->{a}: {text_ba}"
-                )
+                hover_text = []
+                if has_ab:
+                    hover_text.append(f"{a}->{b}={v_ab:.6g}")
+                if has_ba:
+                    hover_text.append(f"{b}->{a}={v_ba:.6g}")
+                hover_text = "<br>".join(hover_text)
                 _add_gradient_connection_line(
                     fig=fig,
                     p0=p0,
@@ -704,13 +929,13 @@ class DashMapPlot(BaseDashPlot):
                 if direction == "up":
                     triangle_center_x = float(cx - offset)
                     triangle_center_y = float(cy + offset)
+                    arrow = "↑"
                 else:
                     triangle_center_x = float(cx + offset)
                     triangle_center_y = float(cy - offset)
+                    arrow = "↓"
                 triangle_hover_text = (
-                    f"Connection: Cell {selected_cell}<br>"
-                    f"Direction: {direction}<br>"
-                    f"Aggregated Value: {agg_value:.6g}"
+                    f"{selected_cell}{arrow}={agg_value:.6g}"
                 )
                 add_triangle_trace(
                     fig=fig,
@@ -762,4 +987,5 @@ class DashMapPlot(BaseDashPlot):
                     name="connection-colorbar",
                 )
             )
+
         return fig
