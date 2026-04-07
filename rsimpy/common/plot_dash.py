@@ -599,6 +599,7 @@ class DashMapPlot(BaseDashPlot):
         day_index=0,
         layer=1,
         palette="Turbo",
+        grid_log_scale=False,
         color_limits=None,
         line_color="black",
         line_width=0.8,
@@ -610,6 +611,7 @@ class DashMapPlot(BaseDashPlot):
         connection_line_color="#1f1f1f",
         connection_triangle_color=None,
         connection_palette="Plasma",
+        connection_log_scale=False,
         connection_color_limits=None,
         connection_nan_inf_color="#bdbdbd",
         connection_line_segments=10,
@@ -660,34 +662,107 @@ class DashMapPlot(BaseDashPlot):
         layer_indices = np.where(layer_mask)[0]
         layer_values = values_all[layer_indices]
 
+        def _build_log_tick_labels(log_min, log_max, n_ticks=7):
+            """Build readable log-scale ticks using 1-2-5 steps in original units."""
+            log_min = float(log_min)
+            log_max = float(log_max)
+            if not np.isfinite(log_min) or not np.isfinite(log_max) or log_max <= log_min:
+                vals = np.array([log_min, log_max], dtype=float)
+                text = [f"{10.0 ** v:.6g}" for v in vals]
+                return vals, text
+
+            lower = 10.0 ** log_min
+            upper = 10.0 ** log_max
+            target_n = int(max(n_ticks, 2))
+
+            exp_lo = int(np.floor(np.log10(lower)))
+            exp_hi = int(np.ceil(np.log10(upper)))
+            bases = (1.0, 2.0, 5.0)
+
+            candidates = []
+            for exp in range(exp_lo - 1, exp_hi + 2):
+                scale = 10.0 ** exp
+                for base in bases:
+                    value = base * scale
+                    if lower <= value <= upper:
+                        candidates.append(value)
+
+            unique_vals = np.array(sorted(set(float(v) for v in candidates)), dtype=float)
+
+            if unique_vals.size > target_n:
+                idx = np.linspace(0, unique_vals.size - 1, target_n)
+                idx = np.unique(np.round(idx).astype(int))
+                unique_vals = unique_vals[idx]
+
+            def _format_original_value(v):
+                av = abs(v)
+                if av >= 1000:
+                    return f"{v:.0f}"
+                if av >= 1:
+                    return f"{v:.3f}".rstrip("0").rstrip(".")
+                if av >= 0.1:
+                    return f"{v:.4f}".rstrip("0").rstrip(".")
+                return f"{v:.6f}".rstrip("0").rstrip(".")
+
+            tick_vals = np.log10(unique_vals)
+            tick_text = [_format_original_value(v) for v in unique_vals]
+            return tick_vals, tick_text
+
         property_all_days = self.grid_data[property_index, :, :]
         finite_values_global = property_all_days[np.isfinite(property_all_days)]
+        positive_values_global = finite_values_global[finite_values_global > 0.0]
 
-        if color_limits is None:
-            if finite_values_global.size == 0:
-                vmin, vmax = 0.0, 1.0
+        if grid_log_scale:
+            if color_limits is None:
+                if positive_values_global.size == 0:
+                    vmin, vmax = 0.0, 1.0
+                else:
+                    vmin = float(np.log10(np.nanmin(positive_values_global)))
+                    vmax = float(np.log10(np.nanmax(positive_values_global)))
+                    if np.isclose(vmin, vmax):
+                        vmax = vmin + 1.0
             else:
-                vmin = float(np.nanmin(finite_values_global))
-                vmax = float(np.nanmax(finite_values_global))
-                if np.isclose(vmin, vmax):
-                    vmax = vmin + 1.0
-        else:
-            if len(color_limits) != 2:
-                raise ValueError("color_limits must be a tuple/list with two values.")
-            vmin, vmax = float(color_limits[0]), float(color_limits[1])
-            if vmax <= vmin:
-                raise ValueError("color_limits must satisfy max > min.")
+                if len(color_limits) != 2:
+                    raise ValueError("color_limits must be a tuple/list with two values.")
+                vmin, vmax = float(color_limits[0]), float(color_limits[1])
+                if vmax <= vmin:
+                    raise ValueError("color_limits must satisfy max > min.")
 
-        def _value_to_color(value):
-            if not np.isfinite(value):
-                return nan_inf_color
-            t = (float(value) - vmin) / (vmax - vmin)
-            t = min(max(t, 0.0), 1.0)
-            return sample_colorscale(palette, [t])[0]
+            def _value_to_color(value):
+                if not np.isfinite(value) or float(value) <= 0.0:
+                    return "#4d4d4d"
+                t = (float(np.log10(value)) - vmin) / (vmax - vmin)
+                t = min(max(t, 0.0), 1.0)
+                return sample_colorscale(palette, [t])[0]
+
+            prop_name = self.property_names[property_index]
+        else:
+            if color_limits is None:
+                if finite_values_global.size == 0:
+                    vmin, vmax = 0.0, 1.0
+                else:
+                    vmin = float(np.nanmin(finite_values_global))
+                    vmax = float(np.nanmax(finite_values_global))
+                    if np.isclose(vmin, vmax):
+                        vmax = vmin + 1.0
+            else:
+                if len(color_limits) != 2:
+                    raise ValueError("color_limits must be a tuple/list with two values.")
+                vmin, vmax = float(color_limits[0]), float(color_limits[1])
+                if vmax <= vmin:
+                    raise ValueError("color_limits must satisfy max > min.")
+
+            def _value_to_color(value):
+                if not np.isfinite(value):
+                    return nan_inf_color
+                t = (float(value) - vmin) / (vmax - vmin)
+                t = min(max(t, 0.0), 1.0)
+                return sample_colorscale(palette, [t])[0]
+
+            prop_name = self.property_names[property_index]
 
         fig = go.Figure()
 
-        prop_name = self.property_names[property_index]
         if add_grid:
             for idx in layer_indices:
                 poly = self.vertices[idx]
@@ -736,11 +811,21 @@ class DashMapPlot(BaseDashPlot):
                     )
                 )
 
-            finite_values_current_layer = layer_values[np.isfinite(layer_values)]
-            if finite_values_current_layer.size > 0:
-                colorbar_values = finite_values_current_layer
+            if grid_log_scale:
+                finite_values_current_layer = layer_values[
+                    np.isfinite(layer_values) & (layer_values > 0.0)
+                ]
+                colorbar_values = np.log10(finite_values_current_layer) if finite_values_current_layer.size > 0 else np.array([vmin, vmax], dtype=float)
             else:
-                colorbar_values = np.array([vmin, vmax], dtype=float)
+                finite_values_current_layer = layer_values[np.isfinite(layer_values)]
+                colorbar_values = finite_values_current_layer if finite_values_current_layer.size > 0 else np.array([vmin, vmax], dtype=float)
+
+            grid_colorbar = {"title": prop_name, "x": 1.02, "y": 0.5, "len": 0.9}
+            if grid_log_scale:
+                tick_vals, tick_text = _build_log_tick_labels(vmin, vmax)
+                grid_colorbar["tickmode"] = "array"
+                grid_colorbar["tickvals"] = tick_vals
+                grid_colorbar["ticktext"] = tick_text
 
             fig.add_trace(
                 go.Scatter(
@@ -754,7 +839,7 @@ class DashMapPlot(BaseDashPlot):
                         "cmin": vmin,
                         "cmax": vmax,
                         "showscale": True,
-                        "colorbar": {"title": prop_name, "x": 1.02, "y": 0.5, "len": 0.9},
+                        "colorbar": grid_colorbar,
                     },
                     hoverinfo="skip",
                     showlegend=False,
@@ -862,30 +947,61 @@ class DashMapPlot(BaseDashPlot):
 
             conn_all_days = self.connection_data[connection_property_index, :, :]
             conn_finite_global = conn_all_days[np.isfinite(conn_all_days)]
-            if connection_color_limits is None:
-                if conn_finite_global.size == 0:
-                    conn_vmin, conn_vmax = 0.0, 1.0
+            conn_positive_global = conn_finite_global[conn_finite_global > 0.0]
+            if connection_log_scale:
+                if connection_color_limits is None:
+                    if conn_positive_global.size == 0:
+                        conn_vmin, conn_vmax = 0.0, 1.0
+                    else:
+                        conn_vmin = float(np.log10(np.nanmin(conn_positive_global)))
+                        conn_vmax = float(np.log10(np.nanmax(conn_positive_global)))
+                        if np.isclose(conn_vmin, conn_vmax):
+                            conn_vmax = conn_vmin + 1.0
                 else:
-                    conn_vmin = float(np.nanmin(conn_finite_global))
-                    conn_vmax = float(np.nanmax(conn_finite_global))
-                    if np.isclose(conn_vmin, conn_vmax):
-                        conn_vmax = conn_vmin + 1.0
-            else:
-                if len(connection_color_limits) != 2:
-                    raise ValueError(
-                        "connection_color_limits must be a tuple/list with two values."
-                    )
-                conn_vmin = float(connection_color_limits[0])
-                conn_vmax = float(connection_color_limits[1])
-                if conn_vmax <= conn_vmin:
-                    raise ValueError("connection_color_limits must satisfy max > min.")
+                    if len(connection_color_limits) != 2:
+                        raise ValueError(
+                            "connection_color_limits must be a tuple/list with two values."
+                        )
+                    conn_vmin = float(connection_color_limits[0])
+                    conn_vmax = float(connection_color_limits[1])
+                    if conn_vmax <= conn_vmin:
+                        raise ValueError("connection_color_limits must satisfy max > min.")
 
-            def _connection_value_to_color(value):
-                if not np.isfinite(value):
-                    return connection_nan_inf_color
-                t = (float(value) - conn_vmin) / (conn_vmax - conn_vmin)
-                t = min(max(t, 0.0), 1.0)
-                return sample_colorscale(connection_palette, [t])[0]
+                def _connection_value_to_color(value):
+                    if not np.isfinite(value) or float(value) <= 0.0:
+                        return "#4d4d4d"
+                    t = (float(np.log10(value)) - conn_vmin) / (conn_vmax - conn_vmin)
+                    t = min(max(t, 0.0), 1.0)
+                    return sample_colorscale(connection_palette, [t])[0]
+
+                connection_colorbar_title = "Connection"
+            else:
+                if connection_color_limits is None:
+                    if conn_finite_global.size == 0:
+                        conn_vmin, conn_vmax = 0.0, 1.0
+                    else:
+                        conn_vmin = float(np.nanmin(conn_finite_global))
+                        conn_vmax = float(np.nanmax(conn_finite_global))
+                        if np.isclose(conn_vmin, conn_vmax):
+                            conn_vmax = conn_vmin + 1.0
+                else:
+                    if len(connection_color_limits) != 2:
+                        raise ValueError(
+                            "connection_color_limits must be a tuple/list with two values."
+                        )
+                    conn_vmin = float(connection_color_limits[0])
+                    conn_vmax = float(connection_color_limits[1])
+                    if conn_vmax <= conn_vmin:
+                        raise ValueError("connection_color_limits must satisfy max > min.")
+
+                def _connection_value_to_color(value):
+                    if not np.isfinite(value):
+                        return connection_nan_inf_color
+                    t = (float(value) - conn_vmin) / (conn_vmax - conn_vmin)
+                    t = min(max(t, 0.0), 1.0)
+                    return sample_colorscale(connection_palette, [t])[0]
+
+                connection_colorbar_title = "Connection"
 
             directional_values = {}
             for conn_idx in range(self.connection_indices.shape[1]):
@@ -1014,11 +1130,32 @@ class DashMapPlot(BaseDashPlot):
                     )
                 )
 
-            conn_finite_current_day = conn_values[np.isfinite(conn_values)]
-            if conn_finite_current_day.size == 0:
-                conn_colorbar_values = np.array([conn_vmin, conn_vmax], dtype=float)
+            if connection_log_scale:
+                conn_finite_current_day = conn_values[
+                    np.isfinite(conn_values) & (conn_values > 0.0)
+                ]
+                if conn_finite_current_day.size == 0:
+                    conn_colorbar_values = np.array([conn_vmin, conn_vmax], dtype=float)
+                else:
+                    conn_colorbar_values = np.log10(conn_finite_current_day)
             else:
-                conn_colorbar_values = conn_finite_current_day
+                conn_finite_current_day = conn_values[np.isfinite(conn_values)]
+                if conn_finite_current_day.size == 0:
+                    conn_colorbar_values = np.array([conn_vmin, conn_vmax], dtype=float)
+                else:
+                    conn_colorbar_values = conn_finite_current_day
+
+            connection_colorbar = {
+                "title": connection_colorbar_title,
+                "x": 1.14,
+                "y": 0.5,
+                "len": 0.9,
+            }
+            if connection_log_scale:
+                tick_vals, tick_text = _build_log_tick_labels(conn_vmin, conn_vmax)
+                connection_colorbar["tickmode"] = "array"
+                connection_colorbar["tickvals"] = tick_vals
+                connection_colorbar["ticktext"] = tick_text
 
             fig.add_trace(
                 go.Scatter(
@@ -1032,7 +1169,7 @@ class DashMapPlot(BaseDashPlot):
                         "cmin": conn_vmin,
                         "cmax": conn_vmax,
                         "showscale": True,
-                        "colorbar": {"title": "Connection", "x": 1.14, "y": 0.5, "len": 0.9},
+                        "colorbar": connection_colorbar,
                     },
                     hoverinfo="skip",
                     showlegend=False,

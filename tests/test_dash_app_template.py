@@ -31,6 +31,7 @@ class TestDashAppTemplate(unittest.TestCase):
         self.assertIn("map-property-dropdown", layout_string)
         self.assertIn("map-property-controls-group", layout_string)
         self.assertIn("map-grid-palette", layout_string)
+        self.assertIn("map-grid-log-scale", layout_string)
         self.assertIn("map-day-slider", layout_string)
         self.assertIn("map-grid-controls-group", layout_string)
         self.assertIn("map-connection-controls-group", layout_string)
@@ -47,6 +48,7 @@ class TestDashAppTemplate(unittest.TestCase):
         self.assertIn("map-well-size", layout_string)
         self.assertIn("map-connection-width", layout_string)
         self.assertIn("map-connection-segments", layout_string)
+        self.assertIn("map-connection-log-scale", layout_string)
         self.assertIn("map-contour-count", layout_string)
         self.assertIn("map-graph", layout_string)
 

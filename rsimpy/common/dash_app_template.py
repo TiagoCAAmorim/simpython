@@ -261,11 +261,22 @@ def create_dash_template_app(map_plot=None):
                                         id="map-show-grid",
                                         options=[
                                             {
-                                                "label": "Show grid",
+                                                "label": "Grid",
                                                 "value": "show",
                                             }
                                         ],
                                         value=["show"],
+                                        style={"marginRight": "12px"},
+                                    ),
+                                    dcc.Checklist(
+                                        id="map-grid-log-scale",
+                                        options=[
+                                            {
+                                                "label": "Log",
+                                                "value": "on",
+                                            }
+                                        ],
+                                        value=[],
                                         style={"marginRight": "12px"},
                                     ),
                                     dcc.Checklist(
@@ -322,8 +333,20 @@ def create_dash_template_app(map_plot=None):
                                         id="map-show-connections",
                                         options=[
                                             {
-                                                "label": "Show connections",
+                                                "label": "Connections",
                                                 "value": "show",
+                                                "disabled": not has_connections,
+                                            }
+                                        ],
+                                        value=[],
+                                        style={"marginRight": "12px"},
+                                    ),
+                                    dcc.Checklist(
+                                        id="map-connection-log-scale",
+                                        options=[
+                                            {
+                                                "label": "Log",
+                                                "value": "on",
                                                 "disabled": not has_connections,
                                             }
                                         ],
@@ -350,7 +373,6 @@ def create_dash_template_app(map_plot=None):
                             ),
                             html.Div(
                                 [
-                                    html.Div("Connections", style={"fontWeight": "bold"}),
                                     html.Label("Connection palette"),
                                     dcc.Dropdown(
                                         id="map-connection-palette",
@@ -375,7 +397,7 @@ def create_dash_template_app(map_plot=None):
                                         min=3,
                                         max=20,
                                         step=1,
-                                        value=10,
+                                        value=3,
                                         disabled=not has_connections,
                                     ),
                                 ],
@@ -389,7 +411,7 @@ def create_dash_template_app(map_plot=None):
                                         id="map-show-wells",
                                         options=[
                                             {
-                                                "label": "Show wells",
+                                                "label": "Wells",
                                                 "value": "show",
                                                 "disabled": not has_wells,
                                             }
@@ -417,7 +439,6 @@ def create_dash_template_app(map_plot=None):
                             ),
                             html.Div(
                                 [
-                                    html.Div("Wells", style={"fontWeight": "bold"}),
                                     html.Label("Well size (%)"),
                                     dcc.Slider(
                                         id="map-well-size",
@@ -438,7 +459,7 @@ def create_dash_template_app(map_plot=None):
                                         id="map-show-contours",
                                         options=[
                                             {
-                                                "label": "Show contours",
+                                                "label": "Contours",
                                                 "value": "show",
                                                 "disabled": not has_contours,
                                             }
@@ -466,7 +487,6 @@ def create_dash_template_app(map_plot=None):
                             ),
                             html.Div(
                                 [
-                                    html.Div("Contours", style={"fontWeight": "bold"}),
                                     html.Label("Contour count"),
                                     dcc.Slider(
                                         id="map-contour-count",
@@ -549,6 +569,8 @@ def create_dash_template_app(map_plot=None):
         Output("map-connection-controls-group", "style"),
         Output("map-contour-controls-group", "style"),
         Output("map-well-controls-group", "style"),
+        Output("map-grid-log-scale", "options"),
+        Output("map-connection-log-scale", "options"),
         Output("map-grid-options-toggle", "options"),
         Output("map-connection-options-toggle", "options"),
         Output("map-contour-options-toggle", "options"),
@@ -557,6 +579,7 @@ def create_dash_template_app(map_plot=None):
         Input("map-property-dropdown", "value"),
         Input("map-day-slider", "value"),
         Input("map-grid-palette", "value"),
+        Input("map-grid-log-scale", "value"),
         Input("map-layer-slider", "value"),
         Input("map-show-connections", "value"),
         Input("map-connection-options-toggle", "value"),
@@ -569,6 +592,7 @@ def create_dash_template_app(map_plot=None):
         Input("map-connection-palette", "value"),
         Input("map-connection-width", "value"),
         Input("map-connection-segments", "value"),
+        Input("map-connection-log-scale", "value"),
         Input("map-well-size", "value"),
     )
     def _update_map_figure(
@@ -576,6 +600,7 @@ def create_dash_template_app(map_plot=None):
         property_index,
         day_index,
         grid_palette,
+        grid_log_scale_values,
         layer,
         show_connections_values,
         connection_options_values,
@@ -588,6 +613,7 @@ def create_dash_template_app(map_plot=None):
         connection_palette,
         connection_width,
         connection_segments,
+        connection_log_scale_values,
         well_size,
     ):
         show_connections = (
@@ -602,11 +628,15 @@ def create_dash_template_app(map_plot=None):
         show_connection_options = show_connections and "show" in (connection_options_values or [])
         show_contour_options = show_contours and "show" in (contour_options_values or [])
         show_well_options = show_wells and "show" in (well_options_values or [])
+        grid_log_scale = show_grid and "on" in (grid_log_scale_values or [])
+        connection_log_scale = show_connections and "on" in (connection_log_scale_values or [])
         property_style = {"display": "block" if show_grid else "none"}
         grid_style = {"display": "block" if show_grid_options else "none"}
         connection_style = {"display": "block" if show_connection_options else "none"}
         contour_style = {"display": "block" if show_contour_options else "none"}
         well_style = {"display": "block" if show_well_options else "none"}
+        grid_log_options = [{"label": "Log", "value": "on", "disabled": not show_grid}]
+        connection_log_options = [{"label": "Log", "value": "on", "disabled": (not has_connections) or (not show_connections)}]
         grid_options = [{"label": "Options", "value": "show", "disabled": not show_grid}]
         connection_options = [{
             "label": "Options",
@@ -628,12 +658,14 @@ def create_dash_template_app(map_plot=None):
                 day_index=int(day_index),
                 layer=int(layer),
                 palette=str(grid_palette),
+                grid_log_scale=grid_log_scale,
                 add_grid=show_grid,
                 add_connections=show_connections,
                 add_contours=show_contours,
                 add_wells=show_wells,
                 contour_count=int(contour_count),
                 connection_palette=str(connection_palette),
+                connection_log_scale=connection_log_scale,
                 connection_width=float(connection_width),
                 connection_line_segments=int(connection_segments),
                 well_size_percent=float(well_size),
@@ -646,6 +678,8 @@ def create_dash_template_app(map_plot=None):
             connection_style,
             contour_style,
             well_style,
+            grid_log_options,
+            connection_log_options,
             grid_options,
             connection_options,
             contour_options,
