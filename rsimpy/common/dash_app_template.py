@@ -7,7 +7,7 @@ expanded in later steps to host map, line, scatter, and table components.
 from __future__ import annotations
 
 import numpy as np
-from dash import Dash, Input, Output, dcc, html
+from dash import Dash, Input, Output, ctx, dcc, html, no_update
 import plotly.graph_objects as go
 
 from rsimpy.common.plot_dash import DashMapPlot, add_triangle_trace
@@ -235,15 +235,36 @@ def create_dash_template_app(map_plot=None):
                                 value=0,
                             ),
                             html.Hr(style={"margin": "12px 0"}),
-                            dcc.Checklist(
-                                id="map-show-grid",
-                                options=[
-                                    {
-                                        "label": "Show grid",
-                                        "value": "show",
-                                    }
+                            html.Div(
+                                [
+                                    dcc.Checklist(
+                                        id="map-show-grid",
+                                        options=[
+                                            {
+                                                "label": "Show grid",
+                                                "value": "show",
+                                            }
+                                        ],
+                                        value=["show"],
+                                        style={"marginRight": "12px"},
+                                    ),
+                                    dcc.Checklist(
+                                        id="map-grid-options-toggle",
+                                        options=[
+                                            {
+                                                "label": "Options",
+                                                "value": "show",
+                                                "disabled": False,
+                                            }
+                                        ],
+                                        value=[],
+                                    ),
                                 ],
-                                value=["show"],
+                                style={
+                                    "display": "flex",
+                                    "alignItems": "center",
+                                    "columnGap": "12px",
+                                },
                             ),
                             html.Div(
                                 [
@@ -275,16 +296,37 @@ def create_dash_template_app(map_plot=None):
                                 style={"display": "block"},
                             ),
                             html.Hr(style={"margin": "12px 0"}),
-                            dcc.Checklist(
-                                id="map-show-connections",
-                                options=[
-                                    {
-                                        "label": "Show connections",
-                                        "value": "show",
-                                        "disabled": not has_connections,
-                                    }
+                            html.Div(
+                                [
+                                    dcc.Checklist(
+                                        id="map-show-connections",
+                                        options=[
+                                            {
+                                                "label": "Show connections",
+                                                "value": "show",
+                                                "disabled": not has_connections,
+                                            }
+                                        ],
+                                        value=[],
+                                        style={"marginRight": "12px"},
+                                    ),
+                                    dcc.Checklist(
+                                        id="map-connection-options-toggle",
+                                        options=[
+                                            {
+                                                "label": "Options",
+                                                "value": "show",
+                                                "disabled": not has_connections,
+                                            }
+                                        ],
+                                        value=[],
+                                    ),
                                 ],
-                                value=[],
+                                style={
+                                    "display": "flex",
+                                    "alignItems": "center",
+                                    "columnGap": "12px",
+                                },
                             ),
                             html.Div(
                                 [
@@ -321,16 +363,37 @@ def create_dash_template_app(map_plot=None):
                                 style={"display": "none"},
                             ),
                             html.Hr(style={"margin": "12px 0"}),
-                            dcc.Checklist(
-                                id="map-show-contours",
-                                options=[
-                                    {
-                                        "label": "Show contours",
-                                        "value": "show",
-                                        "disabled": not has_contours,
-                                    }
+                            html.Div(
+                                [
+                                    dcc.Checklist(
+                                        id="map-show-contours",
+                                        options=[
+                                            {
+                                                "label": "Show contours",
+                                                "value": "show",
+                                                "disabled": not has_contours,
+                                            }
+                                        ],
+                                        value=[],
+                                        style={"marginRight": "12px"},
+                                    ),
+                                    dcc.Checklist(
+                                        id="map-contour-options-toggle",
+                                        options=[
+                                            {
+                                                "label": "Options",
+                                                "value": "show",
+                                                "disabled": not has_contours,
+                                            }
+                                        ],
+                                        value=[],
+                                    ),
                                 ],
-                                value=[],
+                                style={
+                                    "display": "flex",
+                                    "alignItems": "center",
+                                    "columnGap": "12px",
+                                },
                             ),
                             html.Div(
                                 [
@@ -379,18 +442,41 @@ def create_dash_template_app(map_plot=None):
     )
 
     @app.callback(
+        Output("map-grid-options-toggle", "value"),
+        Output("map-connection-options-toggle", "value"),
+        Output("map-contour-options-toggle", "value"),
+        Input("map-show-grid", "value"),
+        Input("map-show-connections", "value"),
+        Input("map-show-contours", "value"),
+        prevent_initial_call=True,
+    )
+    def _sync_options_toggles(_show_grid_values, _show_connections_values, _show_contours_values):
+        # Reset only the options toggle that corresponds to the changed show toggle.
+        trigger = ctx.triggered_id
+        grid_value = [] if trigger == "map-show-grid" else no_update
+        connection_value = [] if trigger == "map-show-connections" else no_update
+        contour_value = [] if trigger == "map-show-contours" else no_update
+        return grid_value, connection_value, contour_value
+
+    @app.callback(
         Output("map-graph", "figure"),
         Output("map-property-controls-group", "style"),
         Output("map-grid-controls-group", "style"),
         Output("map-connection-controls-group", "style"),
         Output("map-contour-controls-group", "style"),
+        Output("map-grid-options-toggle", "options"),
+        Output("map-connection-options-toggle", "options"),
+        Output("map-contour-options-toggle", "options"),
         Input("map-show-grid", "value"),
         Input("map-property-dropdown", "value"),
         Input("map-day-slider", "value"),
         Input("map-grid-palette", "value"),
         Input("map-layer-slider", "value"),
         Input("map-show-connections", "value"),
+        Input("map-connection-options-toggle", "value"),
         Input("map-show-contours", "value"),
+        Input("map-contour-options-toggle", "value"),
+        Input("map-grid-options-toggle", "value"),
         Input("map-contour-count", "value"),
         Input("map-connection-palette", "value"),
         Input("map-connection-width", "value"),
@@ -403,7 +489,10 @@ def create_dash_template_app(map_plot=None):
         grid_palette,
         layer,
         show_connections_values,
+        connection_options_values,
         show_contours_values,
+        contour_options_values,
+        grid_options_values,
         contour_count,
         connection_palette,
         connection_width,
@@ -416,10 +505,24 @@ def create_dash_template_app(map_plot=None):
         show_contours = (
             map_plot.has_contours() and "show" in (show_contours_values or [])
         )
+        show_grid_options = show_grid and "show" in (grid_options_values or [])
+        show_connection_options = show_connections and "show" in (connection_options_values or [])
+        show_contour_options = show_contours and "show" in (contour_options_values or [])
         property_style = {"display": "block" if show_grid else "none"}
-        grid_style = {"display": "block" if show_grid else "none"}
-        connection_style = {"display": "block" if show_connections else "none"}
-        contour_style = {"display": "block" if show_contours else "none"}
+        grid_style = {"display": "block" if show_grid_options else "none"}
+        connection_style = {"display": "block" if show_connection_options else "none"}
+        contour_style = {"display": "block" if show_contour_options else "none"}
+        grid_options = [{"label": "Options", "value": "show", "disabled": not show_grid}]
+        connection_options = [{
+            "label": "Options",
+            "value": "show",
+            "disabled": (not has_connections) or (not show_connections),
+        }]
+        contour_options = [{
+            "label": "Options",
+            "value": "show",
+            "disabled": (not has_contours) or (not show_contours),
+        }]
         return (
             map_plot.create_map_figure(
                 property_index=int(property_index),
@@ -438,6 +541,9 @@ def create_dash_template_app(map_plot=None):
             grid_style,
             connection_style,
             contour_style,
+            grid_options,
+            connection_options,
+            contour_options,
         )
 
     return app
