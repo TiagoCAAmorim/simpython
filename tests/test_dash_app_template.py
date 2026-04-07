@@ -26,9 +26,12 @@ class TestDashAppTemplate(unittest.TestCase):
         app = create_dash_template_app()
         self.assertIsNotNone(app.layout)
         layout_string = str(app.layout)
+        self.assertIn("map-show-grid", layout_string)
         self.assertIn("map-property-dropdown", layout_string)
+        self.assertIn("map-property-controls-group", layout_string)
         self.assertIn("map-grid-palette", layout_string)
         self.assertIn("map-day-slider", layout_string)
+        self.assertIn("map-grid-controls-group", layout_string)
         self.assertIn("map-connection-controls-group", layout_string)
         self.assertIn("map-connection-palette", layout_string)
         self.assertIn("map-contour-controls-group", layout_string)
@@ -51,6 +54,14 @@ class TestDashAppTemplate(unittest.TestCase):
         self.assertEqual(obj.connection_property_names, ["Connectivity"])
         self.assertTrue(obj.has_connections())
         self.assertEqual(obj.layer_sizes.tolist(), [30, 12, 12])
+
+    def test_default_map_hides_grid_when_disabled(self):
+        obj = build_step_2_2_demo_map_plot()
+        fig = obj.create_map_figure(property_index=0, day_index=0, layer=1, add_grid=False)
+        names = [tr.name for tr in fig.data]
+        self.assertNotIn("cell-polygon", names)
+        self.assertNotIn("cell-polygon-hover", names)
+        self.assertNotIn("colorbar", names)
 
     def test_demo_figure_has_global_bounds_and_connections(self):
         obj = build_step_2_2_demo_map_plot()

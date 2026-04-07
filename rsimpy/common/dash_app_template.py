@@ -214,18 +214,6 @@ def create_dash_template_app(map_plot=None):
                 [
                     html.Div(
                         [
-                            html.Div("Grid data", style={"fontWeight": "bold"}),
-                            html.Label("Property"),
-                            dcc.Dropdown(
-                                id="map-property-dropdown",
-                                options=[
-                                    {"label": map_plot.property_names[i], "value": i}
-                                    for i in range(n_properties)
-                                ],
-                                value=0,
-                                clearable=False,
-                            ),
-                            html.Br(),
                             html.Label("Layer"),
                             dcc.Slider(
                                 id="map-layer-slider",
@@ -246,22 +234,56 @@ def create_dash_template_app(map_plot=None):
                                 marks=day_marks,
                                 value=0,
                             ),
-                            html.Br(),
-                            html.Label("Grid palette"),
-                            dcc.Dropdown(
-                                id="map-grid-palette",
-                                options=PALETTE_OPTIONS,
-                                value="Turbo",
-                                clearable=False,
+                            html.Hr(style={"margin": "12px 0"}),
+                            dcc.Checklist(
+                                id="map-show-grid",
+                                options=[
+                                    {
+                                        "label": "Show grid",
+                                        "value": "show",
+                                    }
+                                ],
+                                value=["show"],
+                            ),
+                            html.Div(
+                                [
+                                    html.Label("Property"),
+                                    dcc.Dropdown(
+                                        id="map-property-dropdown",
+                                        options=[
+                                            {"label": map_plot.property_names[i], "value": i}
+                                            for i in range(n_properties)
+                                        ],
+                                        value=0,
+                                        clearable=False,
+                                    ),
+                                ],
+                                id="map-property-controls-group",
+                                style={"display": "block"},
+                            ),
+                            html.Div(
+                                [
+                                    html.Label("Grid palette"),
+                                    dcc.Dropdown(
+                                        id="map-grid-palette",
+                                        options=PALETTE_OPTIONS,
+                                        value="Turbo",
+                                        clearable=False,
+                                    ),
+                                ],
+                                id="map-grid-controls-group",
+                                style={"display": "block"},
                             ),
                             html.Hr(style={"margin": "12px 0"}),
                             dcc.Checklist(
                                 id="map-show-connections",
-                                options=[{
-                                    "label": "Show connections",
-                                    "value": "show",
-                                    "disabled": not has_connections,
-                                }],
+                                options=[
+                                    {
+                                        "label": "Show connections",
+                                        "value": "show",
+                                        "disabled": not has_connections,
+                                    }
+                                ],
                                 value=[],
                             ),
                             html.Div(
@@ -301,11 +323,13 @@ def create_dash_template_app(map_plot=None):
                             html.Hr(style={"margin": "12px 0"}),
                             dcc.Checklist(
                                 id="map-show-contours",
-                                options=[{
-                                    "label": "Show contours",
-                                    "value": "show",
-                                    "disabled": not has_contours,
-                                }],
+                                options=[
+                                    {
+                                        "label": "Show contours",
+                                        "value": "show",
+                                        "disabled": not has_contours,
+                                    }
+                                ],
                                 value=[],
                             ),
                             html.Div(
@@ -356,8 +380,11 @@ def create_dash_template_app(map_plot=None):
 
     @app.callback(
         Output("map-graph", "figure"),
+        Output("map-property-controls-group", "style"),
+        Output("map-grid-controls-group", "style"),
         Output("map-connection-controls-group", "style"),
         Output("map-contour-controls-group", "style"),
+        Input("map-show-grid", "value"),
         Input("map-property-dropdown", "value"),
         Input("map-day-slider", "value"),
         Input("map-grid-palette", "value"),
@@ -370,6 +397,7 @@ def create_dash_template_app(map_plot=None):
         Input("map-connection-segments", "value"),
     )
     def _update_map_figure(
+        show_grid_values,
         property_index,
         day_index,
         grid_palette,
@@ -384,24 +412,30 @@ def create_dash_template_app(map_plot=None):
         show_connections = (
             map_plot.has_connections() and "show" in (show_connections_values or [])
         )
+        show_grid = "show" in (show_grid_values or [])
         show_contours = (
             map_plot.has_contours() and "show" in (show_contours_values or [])
         )
+        property_style = {"display": "block" if show_grid else "none"}
+        grid_style = {"display": "block" if show_grid else "none"}
         connection_style = {"display": "block" if show_connections else "none"}
         contour_style = {"display": "block" if show_contours else "none"}
         return (
             map_plot.create_map_figure(
-            property_index=int(property_index),
-            day_index=int(day_index),
-            layer=int(layer),
-            palette=str(grid_palette),
-            add_connections=show_connections,
-            add_contours=show_contours,
-            contour_count=int(contour_count),
-            connection_palette=str(connection_palette),
-            connection_width=float(connection_width),
-            connection_line_segments=int(connection_segments),
+                property_index=int(property_index),
+                day_index=int(day_index),
+                layer=int(layer),
+                palette=str(grid_palette),
+                add_grid=show_grid,
+                add_connections=show_connections,
+                add_contours=show_contours,
+                contour_count=int(contour_count),
+                connection_palette=str(connection_palette),
+                connection_width=float(connection_width),
+                connection_line_segments=int(connection_segments),
             ),
+            property_style,
+            grid_style,
             connection_style,
             contour_style,
         )

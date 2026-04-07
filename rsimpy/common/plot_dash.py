@@ -557,6 +557,7 @@ class DashMapPlot(BaseDashPlot):
         line_color="black",
         line_width=0.8,
         nan_inf_color="#bdbdbd",
+        add_grid=True,
         add_connections=False,
         connection_property_index=0,
         connection_width=5.0,
@@ -636,78 +637,79 @@ class DashMapPlot(BaseDashPlot):
         fig = go.Figure()
 
         prop_name = self.property_names[property_index]
-        for idx in layer_indices:
-            poly = self.vertices[idx]
-            x_poly = poly[:, 0]
-            y_poly = poly[:, 1]
-            value = values_all[idx]
-            fill_color = _value_to_color(value)
+        if add_grid:
+            for idx in layer_indices:
+                poly = self.vertices[idx]
+                x_poly = poly[:, 0]
+                y_poly = poly[:, 1]
+                value = values_all[idx]
+                fill_color = _value_to_color(value)
 
-            x_closed = np.append(x_poly, x_poly[0])
-            y_closed = np.append(y_poly, y_poly[0])
+                x_closed = np.append(x_poly, x_poly[0])
+                y_closed = np.append(y_poly, y_poly[0])
 
-            hover_text = (
-                f"#{idx}: "
-                f"{self.cell_names[idx]}<br>"
-                f"{prop_name}={value:.6g}"
-            )
+                hover_text = (
+                    f"#{idx}: "
+                    f"{self.cell_names[idx]}<br>"
+                    f"{prop_name}={value:.6g}"
+                )
+
+                fig.add_trace(
+                    go.Scatter(
+                        x=x_closed,
+                        y=y_closed,
+                        mode="lines",
+                        fill="toself",
+                        fillcolor=fill_color,
+                        line={"color": line_color, "width": float(line_width)},
+                        name="cell-polygon",
+                        hoverinfo="skip",
+                        showlegend=False,
+                    )
+                )
+
+                # Add sparse interior hit points (3x3 = 9) for robust polygon hover.
+                hover_x, hover_y = _sample_quad_interior_points(
+                    poly[:, :2], n_per_side=3, inset=0.2
+                )
+                fig.add_trace(
+                    go.Scatter(
+                        x=hover_x,
+                        y=hover_y,
+                        mode="markers",
+                        marker={"size": 9, "color": "rgba(0,0,0,0.001)"},
+                        text=[hover_text] * len(hover_x),
+                        name="cell-polygon-hover",
+                        hovertemplate="%{text}<extra></extra>",
+                        showlegend=False,
+                    )
+                )
+
+            finite_values_current_layer = layer_values[np.isfinite(layer_values)]
+            if finite_values_current_layer.size > 0:
+                colorbar_values = finite_values_current_layer
+            else:
+                colorbar_values = np.array([vmin, vmax], dtype=float)
 
             fig.add_trace(
                 go.Scatter(
-                    x=x_closed,
-                    y=y_closed,
-                    mode="lines",
-                    fill="toself",
-                    fillcolor=fill_color,
-                    line={"color": line_color, "width": float(line_width)},
-                    name="cell-polygon",
+                    x=[None] * len(colorbar_values),
+                    y=[None] * len(colorbar_values),
+                    mode="markers",
+                    marker={
+                        "size": 0.1,
+                        "color": colorbar_values,
+                        "colorscale": palette,
+                        "cmin": vmin,
+                        "cmax": vmax,
+                        "showscale": True,
+                        "colorbar": {"title": prop_name, "x": 1.02, "y": 0.5, "len": 0.9},
+                    },
                     hoverinfo="skip",
                     showlegend=False,
+                    name="colorbar",
                 )
             )
-
-            # Add sparse interior hit points (3x3 = 9) for robust polygon hover.
-            hover_x, hover_y = _sample_quad_interior_points(
-                poly[:, :2], n_per_side=3, inset=0.2
-            )
-            fig.add_trace(
-                go.Scatter(
-                    x=hover_x,
-                    y=hover_y,
-                    mode="markers",
-                    marker={"size": 9, "color": "rgba(0,0,0,0.001)"},
-                    text=[hover_text] * len(hover_x),
-                    name="cell-polygon-hover",
-                    hovertemplate="%{text}<extra></extra>",
-                    showlegend=False,
-                )
-            )
-
-        finite_values_current_layer = layer_values[np.isfinite(layer_values)]
-        if finite_values_current_layer.size > 0:
-            colorbar_values = finite_values_current_layer
-        else:
-            colorbar_values = np.array([vmin, vmax], dtype=float)
-
-        fig.add_trace(
-            go.Scatter(
-                x=[None] * len(colorbar_values),
-                y=[None] * len(colorbar_values),
-                mode="markers",
-                marker={
-                    "size": 0.1,
-                    "color": colorbar_values,
-                    "colorscale": palette,
-                    "cmin": vmin,
-                    "cmax": vmax,
-                    "showscale": True,
-                    "colorbar": {"title": prop_name, "x": 1.02, "y": 0.5, "len": 0.9},
-                },
-                hoverinfo="skip",
-                showlegend=False,
-                name="colorbar",
-            )
-        )
 
         x_min, x_max, y_min, y_max = _compute_polygon_bounds(self.vertices)
         x_pad = 0.05 * max(x_max - x_min, 1.0)
