@@ -51,17 +51,22 @@ class TestDashAppTemplate(unittest.TestCase):
         self.assertIn("map-graph", layout_string)
 
     def test_build_step_2_2_demo_map_plot(self):
-        obj = build_step_2_2_demo_map_plot()
-        self.assertEqual(obj.grid_data.shape, (5, 5, 54))
+        n_rows, n_cols =10, 10
+        n_cells = n_rows * n_cols + (n_rows - 1) * (n_cols - 1) + (n_rows - 2) * (n_cols - 2)
+        obj = build_step_2_2_demo_map_plot(n_rows=n_rows, n_cols=n_cols, n_days=5)
+        self.assertEqual(obj.grid_data.shape, (5, 5, n_cells))
         self.assertEqual(
             obj.property_names,
             ["Cell Index", "Column", "Row", "Index + 30*Day", "Mean Z"],
         )
-        self.assertEqual(len(obj.cell_names), 54)
+        self.assertEqual(len(obj.cell_names), n_cells)
         self.assertEqual(obj.connection_property_names, ["Connectivity"])
         self.assertTrue(obj.has_connections())
         self.assertTrue(obj.has_wells())
-        self.assertEqual(obj.layer_sizes.tolist(), [30, 12, 12])
+        self.assertEqual(
+            obj.layer_sizes.tolist(),
+            [n_rows * n_cols, (n_rows - 1) * (n_cols - 1), (n_rows - 2) * (n_cols - 2)]
+        )
 
     def test_default_map_hides_grid_when_disabled(self):
         obj = build_step_2_2_demo_map_plot()

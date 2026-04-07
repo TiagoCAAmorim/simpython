@@ -73,11 +73,11 @@ def _make_regular_grid_vertices(n_rows, n_cols, dx=1.0, dy=1.0):
     return np.asarray(vertices, dtype=float)
 
 
-def build_step_2_2_demo_map_plot(n_rows=5, n_cols=6, n_days=5):
+def build_step_2_2_demo_map_plot(n_rows=10, n_cols=20, n_days=5):
     """Build the working example with two layers and cross-layer triangles."""
     layer1_rows, layer1_cols = n_rows, n_cols
-    layer2_rows, layer2_cols = 3, 4
-    layer3_rows, layer3_cols = 3, 4
+    layer2_rows, layer2_cols = n_rows-1, n_cols-1
+    layer3_rows, layer3_cols = n_rows-2, n_cols-2
 
     # Create grid vertices and shift origin to (1000, 10000) for demo
     origin_x, origin_y = 1000.0, 10000.0
@@ -89,7 +89,7 @@ def build_step_2_2_demo_map_plot(n_rows=5, n_cols=6, n_days=5):
     for layer_idx, layer_vertices in enumerate([layer1_vertices, layer2_vertices, layer3_vertices], start=1):
         local_x = layer_vertices[:, :, 0] - origin_x
         local_y = layer_vertices[:, :, 1] - origin_y
-        layer_vertices[:, :, 2] = (2.0 * local_x + 3.0 * local_y) + 10.0 * float(layer_idx)
+        layer_vertices[:, :, 2] = (2.0 * local_x + 1.0 * local_y**2) + 10.0 * float(layer_idx)
 
     vertices = np.concatenate([layer1_vertices, layer2_vertices, layer3_vertices], axis=0)
     layer_sizes = [
@@ -178,11 +178,11 @@ def build_step_2_2_demo_map_plot(n_rows=5, n_cols=6, n_days=5):
         connection_data[0, day, :] = float(day + 1)
 
     wells = {
-        "WELL-A,prod": np.asarray([0, layer2_offset + 0, layer3_offset + 0], dtype=int),
-        "WELL-B,injw": np.asarray([5, layer2_offset + 5, layer3_offset + 5], dtype=int),
-        "WELL-C,inj": np.asarray([10, layer2_offset + 10, layer3_offset + 10], dtype=int),
-        "WELL-E,injg": np.asarray([2, layer2_offset + 2, layer3_offset + 2], dtype=int),
-        "WELL-D,closed": np.asarray([14], dtype=int),
+        "WELL-A,prod": np.asarray([0, layer2_offset + 1, layer3_offset + 2], dtype=int),
+        "WELL-B,injw": np.asarray([5, layer2_offset + 6, layer3_offset + 7], dtype=int),
+        "WELL-C,inj": np.asarray([10, layer2_offset + n_cols + 10, layer3_offset + 2*n_cols + 10], dtype=int),
+        "WELL-E,injg": np.asarray([16, layer3_offset + 15], dtype=int),
+        "WELL-D,closed": np.asarray([24], dtype=int),
     }
 
     return DashMapPlot(
@@ -216,6 +216,17 @@ def create_dash_template_app(map_plot=None):
     layer_marks = {idx + 1: str(idx + 1) for idx in range(n_layers)}
 
     app = Dash(__name__)
+
+    initial_figure = map_plot.create_map_figure(
+        property_index=0,
+        day_index=0,
+        layer=1,
+        add_connections=False,
+        add_contours=False,
+        add_wells=False,
+        contour_count=7,
+    )
+    initial_figure.update_layout(autosize=True, width=None, height=None)
 
     app.layout = html.Div(
         [
@@ -471,21 +482,20 @@ def create_dash_template_app(map_plot=None):
                                 style={"display": "none"},
                             ),
                         ],
-                        style={"width": "24%", "display": "inline-block", "verticalAlign": "top"},
+                        style={
+                            "flex": "0 0 24%",
+                            "maxWidth": "420px",
+                            "overflowY": "auto",
+                            "paddingRight": "12px",
+                        },
                     ),
                     html.Div(
                         [
                             dcc.Graph(
                                 id="map-graph",
-                                figure=map_plot.create_map_figure(
-                                    property_index=0,
-                                    day_index=0,
-                                    layer=1,
-                                    add_connections=False,
-                                    add_contours=False,
-                                    add_wells=False,
-                                    contour_count=7,
-                                ),
+                                figure=initial_figure,
+                                responsive=True,
+                                style={"height": "100%", "width": "100%"},
                                 config={
                                     "displaylogo": False,
                                     "modeBarButtonsToRemove": ["select2d", "lasso2d"],
@@ -493,12 +503,24 @@ def create_dash_template_app(map_plot=None):
                                 },
                             )
                         ],
-                        style={"width": "75%", "display": "inline-block"},
+                        style={"flex": "1 1 auto", "height": "100%"},
                     ),
-                ]
+                ],
+                style={
+                    "display": "flex",
+                    "height": "calc(100vh - 72px)",
+                    "minHeight": "560px",
+                    "overflow": "hidden",
+                },
             ),
         ],
-        style={"padding": "12px"},
+        style={
+            "padding": "12px",
+            "boxSizing": "border-box",
+            "width": "100vw",
+            "height": "100vh",
+            "overflow": "hidden",
+        },
     )
 
     @app.callback(
@@ -602,8 +624,7 @@ def create_dash_template_app(map_plot=None):
             "value": "show",
             "disabled": (not has_wells) or (not show_wells),
         }]
-        return (
-            map_plot.create_map_figure(
+        fig = map_plot.create_map_figure(
                 property_index=int(property_index),
                 day_index=int(day_index),
                 layer=int(layer),
@@ -617,7 +638,10 @@ def create_dash_template_app(map_plot=None):
                 connection_width=float(connection_width),
                 connection_line_segments=int(connection_segments),
                 well_size_percent=float(well_size),
-            ),
+            )
+        fig.update_layout(autosize=True, width=None, height=None)
+        return (
+            fig,
             property_style,
             grid_style,
             connection_style,
