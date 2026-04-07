@@ -6,11 +6,20 @@ expanded in later steps to host map, line, scatter, and table components.
 
 from __future__ import annotations
 
-import numpy as np
-from dash import Dash, Input, Output, ctx, dcc, html, no_update
-import plotly.graph_objects as go
+import argparse
 
-from rsimpy.common.plot_dash import DashMapPlot, add_triangle_trace
+import numpy as np
+from dash import Dash, Input, Output, State, dash_table, ctx, dcc, html, no_update
+import plotly.graph_objects as go
+import pandas as pd
+
+from rsimpy.common.plot_dash import (
+    DashLinePlot,
+    DashMapPlot,
+    DashScatterPlot,
+    DashTable,
+    add_triangle_trace,
+)
 
 
 PALETTE_OPTIONS = [
@@ -744,6 +753,402 @@ def create_step_2_2_working_example_app():
     return create_dash_template_app(map_plot=build_step_2_2_demo_map_plot())
 
 
+def build_step_3_demo_line_plot(n_days=15):
+    """Build a line-plot object used by the Step 3 working example."""
+    x_values = np.arange(np.datetime64("2026-01-01"), np.datetime64("2026-01-01") + int(n_days))
+    t = np.arange(int(n_days), dtype=float)
+    y_values = np.vstack(
+        [
+            200.0 + 15.0 * np.sin(0.45 * t),
+            120.0 + 3.0 * t,
+            0.18 + 0.03 * np.cos(0.35 * t),
+        ]
+    )
+    return DashLinePlot(
+        x_values=x_values,
+        y_values=y_values,
+        property_names=["Pressure", "Water Rate", "Water Cut"],
+        secondary_y=[2],
+        title="Step 3.1 - Line Plot Example",
+        width=1000,
+        height=420,
+    )
+
+
+def build_step_3_demo_scatter_plot(n_points=120, seed=7):
+    """Build a scatter-plot object used by the Step 3 working example."""
+    rng = np.random.default_rng(int(seed))
+    x1 = rng.normal(loc=0.0, scale=1.0, size=int(n_points))
+    y1 = 0.8 * x1 + rng.normal(loc=0.0, scale=0.35, size=int(n_points))
+    x2 = rng.normal(loc=2.5, scale=0.9, size=int(n_points))
+    y2 = -0.55 * x2 + 2.0 + rng.normal(loc=0.0, scale=0.3, size=int(n_points))
+    return DashScatterPlot(
+        scatter_data={
+            "Permeability vs Porosity": np.column_stack([x1, y1]),
+            "Pressure vs Saturation": np.column_stack([x2, y2]),
+        },
+        title="Step 3.2 - Scatter Plot Example",
+        width=1000,
+        height=420,
+    )
+
+
+def build_step_3_demo_table(n_rows=30):
+    """Build a table object used by the Step 3 working example."""
+    rows = int(n_rows)
+    table_df = pd.DataFrame(
+        {
+            "Well": [f"W-{i+1:02d}" for i in range(rows)],
+            "Type": ["prod" if i % 3 else "injw" for i in range(rows)],
+            "Layer": [(i % 4) + 1 for i in range(rows)],
+            "CumOil": np.round(1500.0 + 25.0 * np.arange(rows), 2),
+            "CumWater": np.round(800.0 + 17.5 * np.arange(rows), 2),
+        }
+    )
+    return DashTable(
+        table_data=table_df,
+        title="Step 3.3 - Table Example",
+        page_size=10,
+        width=1000,
+        height=420,
+    )
+
+
+def create_step_3_working_example_app():
+    """Create a ready-to-run app with working examples for all Step 3 objects."""
+    line_plot = build_step_3_demo_line_plot()
+    scatter_plot = build_step_3_demo_scatter_plot()
+    table_plot = build_step_3_demo_table()
+
+    has_secondary_y = len(line_plot.secondary_y) > 0
+
+    line_fig = line_plot.create_line_figure(
+        log_scale=False,
+        log_scale_secondary=False,
+        marker_mode=True,
+    )
+    line_fig.update_layout(autosize=True, width=None, height=None)
+
+    scatter_fig = scatter_plot.create_scatter_figure(log_x=False, log_y=False)
+    scatter_fig.update_layout(autosize=True, width=None, height=None)
+
+    table_props = table_plot.create_dash_table_props(page_size=10)
+    step3_content_height = "calc(100vh - 150px)"
+
+    app = Dash(__name__)
+    app.layout = html.Div(
+        [
+            html.H3(
+                "rsimpy Dash - Step 3 Working Examples",
+                style={"margin": "0 0 8px 0"},
+            ),
+            dcc.Tabs(
+                [
+                    dcc.Tab(
+                        label="Line",
+                        children=[
+                            html.Div(
+                                [
+                                    html.Div(
+                                        [
+                                            dcc.Graph(
+                                                id="step3-line-graph",
+                                                figure=line_fig,
+                                                responsive=True,
+                                                style={"height": "100%", "width": "100%"},
+                                                config={
+                                                    "displaylogo": False,
+                                                    "scrollZoom": True,
+                                                    "modeBarButtonsToRemove": [
+                                                        "select2d",
+                                                        "lasso2d",
+                                                    ],
+                                                },
+                                            )
+                                        ],
+                                        style={"flex": "1 1 auto", "height": "100%"},
+                                    ),
+                                    html.Div(
+                                        [
+                                            dcc.Checklist(
+                                                id="step3-line-log-y1",
+                                                options=[{"label": "Log-Y", "value": "on"}],
+                                                value=[],
+                                            ),
+                                            html.Div(
+                                                [
+                                                    dcc.Checklist(
+                                                        id="step3-line-log-y2",
+                                                        options=[{"label": "Log-Y2", "value": "on"}],
+                                                        value=[],
+                                                    ),
+                                                ],
+                                                id="step3-line-y2-controls",
+                                                style={
+                                                    "display": "block" if has_secondary_y else "none"
+                                                },
+                                            ),
+                                        ],
+                                        style={
+                                            "flex": "0 0 170px",
+                                            "padding": "12px",
+                                            "borderLeft": "1px solid #e0e0e0",
+                                            "height": "100%",
+                                        },
+                                    ),
+                                ],
+                                style={"display": "flex", "height": "100%", "minHeight": "0"},
+                            )
+                        ],
+                        style={
+                            "padding": "6px 12px",
+                            "height": "34px",
+                            "lineHeight": "20px",
+                            "display": "inline-flex",
+                            "alignItems": "center",
+                        },
+                        selected_style={
+                            "padding": "6px 12px",
+                            "height": "34px",
+                            "lineHeight": "20px",
+                            "display": "inline-flex",
+                            "alignItems": "center",
+                            "fontWeight": "600",
+                        },
+                    ),
+                    dcc.Tab(
+                        label="Scatter",
+                        children=[
+                            html.Div(
+                                [
+                                    html.Div(
+                                        [
+                                            dcc.Graph(
+                                                id="step3-scatter-graph",
+                                                figure=scatter_fig,
+                                                responsive=True,
+                                                style={"height": "100%", "width": "100%"},
+                                                config={
+                                                    "displaylogo": False,
+                                                    "scrollZoom": True,
+                                                    "modeBarButtonsToRemove": [
+                                                        "select2d",
+                                                        "lasso2d",
+                                                    ],
+                                                },
+                                            )
+                                        ],
+                                        style={"flex": "1 1 auto", "height": "100%"},
+                                    ),
+                                    html.Div(
+                                        [
+                                            dcc.Checklist(
+                                                id="step3-scatter-log-x",
+                                                options=[{"label": "Log-X", "value": "on"}],
+                                                value=[],
+                                            ),
+
+                                            dcc.Checklist(
+                                                id="step3-scatter-log-y",
+                                                options=[{"label": "Log-Y", "value": "on"}],
+                                                value=[],
+                                            ),
+                                        ],
+                                        style={
+                                            "flex": "0 0 170px",
+                                            "padding": "12px",
+                                            "borderLeft": "1px solid #e0e0e0",
+                                            "height": "100%",
+                                        },
+                                    ),
+                                ],
+                                style={"display": "flex", "height": "100%", "minHeight": "0"},
+                            )
+                        ],
+                        style={
+                            "padding": "6px 12px",
+                            "height": "34px",
+                            "lineHeight": "20px",
+                            "display": "inline-flex",
+                            "alignItems": "center",
+                        },
+                        selected_style={
+                            "padding": "6px 12px",
+                            "height": "34px",
+                            "lineHeight": "20px",
+                            "display": "inline-flex",
+                            "alignItems": "center",
+                            "fontWeight": "600",
+                        },
+                    ),
+                    dcc.Tab(
+                        label="Table",
+                        children=[
+                            html.Div(
+                                [
+                                    html.Div(
+                                        [
+                                            html.Label("Visible lines"),
+                                            dcc.Dropdown(
+                                                id="step3-table-page-size",
+                                                options=[
+                                                    {"label": "10", "value": 10},
+                                                    {"label": "20", "value": 20},
+                                                    {"label": "50", "value": 50},
+                                                    {"label": "100", "value": 100},
+                                                ],
+                                                value=10,
+                                                clearable=False,
+                                                style={"width": "130px"},
+                                            ),
+                                            html.Button(
+                                                "Download CSV",
+                                                id="step3-table-download-btn",
+                                                n_clicks=0,
+                                                style={"marginLeft": "16px"},
+                                            ),
+                                            dcc.Download(id="step3-table-download"),
+                                        ],
+                                        style={
+                                            "display": "flex",
+                                            "alignItems": "center",
+                                            "padding": "0 0 10px 0",
+                                            "columnGap": "8px",
+                                        },
+                                    ),
+                                    dash_table.DataTable(
+                                        id="step3-table",
+                                        **table_props,
+                                        style_table={"overflowX": "auto"},
+                                        style_cell={"textAlign": "left", "padding": "6px"},
+                                        style_header={"fontWeight": "bold"},
+                                    )
+                                ],
+                                style={"padding": "12px"},
+                            )
+                        ],
+                        style={
+                            "padding": "6px 12px",
+                            "height": "34px",
+                            "lineHeight": "20px",
+                            "display": "inline-flex",
+                            "alignItems": "center",
+                        },
+                        selected_style={
+                            "padding": "6px 12px",
+                            "height": "34px",
+                            "lineHeight": "20px",
+                            "display": "inline-flex",
+                            "alignItems": "center",
+                            "fontWeight": "600",
+                        },
+                    ),
+                ]
+            ,
+                style={"flex": "1 1 auto", "minHeight": "0"},
+                content_style={
+                    "height": step3_content_height,
+                    "minHeight": "0",
+                    "padding": "0",
+                },
+            )
+        ],
+        style={
+            "padding": "12px",
+            "boxSizing": "border-box",
+            "width": "100vw",
+            "height": "100vh",
+            "display": "flex",
+            "flexDirection": "column",
+        },
+    )
+
+    @app.callback(
+        Output("step3-line-graph", "figure"),
+        Input("step3-line-log-y1", "value"),
+        Input("step3-line-log-y2", "value"),
+    )
+    def _update_step3_line_figure(log_y1_values, log_y2_values):
+        log_y1 = "on" in (log_y1_values or [])
+        log_y2 = "on" in (log_y2_values or [])
+        fig = line_plot.create_line_figure(
+            log_scale=log_y1,
+            log_scale_secondary=log_y2,
+            marker_mode=True,
+        )
+        fig.update_layout(autosize=True, width=None, height=None)
+        return fig
+
+    @app.callback(
+        Output("step3-scatter-graph", "figure"),
+        Input("step3-scatter-log-x", "value"),
+        Input("step3-scatter-log-y", "value"),
+    )
+    def _update_step3_scatter_figure(log_x_values, log_y_values):
+        log_x = "on" in (log_x_values or [])
+        log_y = "on" in (log_y_values or [])
+        fig = scatter_plot.create_scatter_figure(log_x=log_x, log_y=log_y)
+        fig.update_layout(autosize=True, width=None, height=None)
+        return fig
+
+    @app.callback(
+        Output("step3-table", "page_size"),
+        Input("step3-table-page-size", "value"),
+    )
+    def _update_step3_table_page_size(page_size):
+        return int(page_size)
+
+    @app.callback(
+        Output("step3-table-download", "data"),
+        Input("step3-table-download-btn", "n_clicks"),
+        State("step3-table-page-size", "value"),
+        prevent_initial_call=True,
+    )
+    def _download_step3_table_csv(n_clicks, _page_size):
+        if not n_clicks:
+            return no_update
+        table_df = table_plot.table_data
+        return dcc.send_data_frame(table_df.to_csv, "step3_table_data.csv", index=False)
+
+    return app
+
+
+def create_working_example_app(example="step2"):
+    """Create a named working example app.
+
+    Parameters
+    ----------
+    example : str
+        Supported values are "step2" (map demo) and "step3" (line/scatter/table).
+    """
+    choice = str(example).strip().lower()
+    if choice == "step2":
+        return create_step_2_2_working_example_app()
+    if choice == "step3":
+        return create_step_3_working_example_app()
+    raise ValueError("example must be 'step2' or 'step3'.")
+
+
+def _parse_cli_args():
+    """Parse CLI args for choosing which demo app to run."""
+    parser = argparse.ArgumentParser(
+        description="Run rsimpy Dash working examples."
+    )
+    parser.add_argument(
+        "--example",
+        choices=["step2", "step3"],
+        default="step2",
+        help="Select which demo app to run.",
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable Dash debug mode.",
+    )
+    return parser.parse_args()
+
+
 if __name__ == "__main__":
-    demo_app = create_step_2_2_working_example_app()
-    demo_app.run(debug=True)
+    args = _parse_cli_args()
+    demo_app = create_working_example_app(example=args.example)
+    demo_app.run(debug=bool(args.debug))

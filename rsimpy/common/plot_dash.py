@@ -13,6 +13,11 @@ from abc import ABC, abstractmethod
 import numpy as np
 
 try:
+    import pandas as pd
+except ImportError:
+    pd = None
+
+try:
     import plotly.graph_objects as go
     from plotly.colors import sample_colorscale
 except ImportError as exc:
@@ -128,6 +133,61 @@ def validate_wells(wells, n_cells):
             raise ValueError("well cell indices must be within [0, n_cells-1].")
         validated[str(key)] = arr
     return validated
+
+
+def validate_line_plot_data(x_values, y_values):
+    """Validate line-plot arrays and normalize y to (n_properties, n_points)."""
+    x_arr = np.asarray(x_values)
+    if x_arr.ndim != 1:
+        raise ValueError("x_values must be a 1D array.")
+    if x_arr.size == 0:
+        raise ValueError("x_values cannot be empty.")
+
+    y_arr = np.asarray(y_values, dtype=float)
+    if y_arr.ndim == 1:
+        y_arr = y_arr.reshape(1, -1)
+    elif y_arr.ndim != 2:
+        raise ValueError(
+            "y_values must have shape (n_properties, n_points) or (n_points,)."
+        )
+
+    if y_arr.shape[1] != x_arr.size:
+        raise ValueError(
+            "line plot x/y size mismatch: y_values second dimension "
+            "must equal len(x_values)."
+        )
+    if y_arr.shape[0] <= 0:
+        raise ValueError("y_values must contain at least one property.")
+    return x_arr, y_arr
+
+
+def validate_scatter_data(scatter_data):
+    """Validate scatter dictionary mapping name -> array(n_values, 2)."""
+    if not isinstance(scatter_data, dict):
+        raise ValueError("scatter_data must be a dict mapping name to [n_values, 2].")
+    if len(scatter_data) == 0:
+        raise ValueError("scatter_data cannot be empty.")
+
+    validated = {}
+    for key, values in scatter_data.items():
+        if not isinstance(key, str) or len(key.strip()) == 0:
+            raise ValueError("scatter_data keys must be non-empty strings.")
+        arr = np.asarray(values, dtype=float)
+        if arr.ndim != 2 or arr.shape[1] != 2:
+            raise ValueError(
+                f"scatter_data['{key}'] must have shape (n_values, 2)."
+            )
+        validated[str(key)] = arr
+    return validated
+
+
+def validate_table_data(table_data):
+    """Validate pandas DataFrame input for table rendering."""
+    if pd is None:
+        raise ImportError("pandas is required for DashTable. Install pandas>=2.2.3")
+    if not isinstance(table_data, pd.DataFrame):
+        raise ValueError("table_data must be a pandas DataFrame.")
+    return table_data.copy()
 
 
 def _sample_line_points(p0, p1, n_points=20):
@@ -488,6 +548,302 @@ class BaseDashPlot(ABC):
     @abstractmethod
     def create_figure(self):
         """Return a Plotly figure for the component."""
+
+
+class DashLinePlot(BaseDashPlot):
+    """Line-plot component with optional secondary y-axis and log scale."""
+
+    def __init__(
+        self,
+        x_values,
+        y_values,
+        property_names=None,
+        secondary_y=None,
+        width=900,
+        height=400,
+        title="Line Plot",
+    ):
+        super().__init__(width=width, height=height, title=title)
+        self.x_values, self.y_values = validate_line_plot_data(x_values, y_values)
+
+        n_properties = self.y_values.shape[0]
+        if property_names is None:
+            self.property_names = [f"Property {i+1}" for i in range(n_properties)]
+        else:
+            if len(property_names) != n_properties:
+                raise ValueError(
+                    "property_names length must match y_values n_properties."
+                )
+            self.property_names = list(property_names)
+
+        if secondary_y is None:
+            self.secondary_y = set()
+        else:
+            indices = {int(i) for i in secondary_y}
+            for idx in indices:
+                if idx < 0 or idx >= n_properties:
+                    raise ValueError(
+                        f"secondary_y index {idx} out of range [0, {n_properties-1}]."
+                    )
+            self.secondary_y = indices
+
+    def create_figure(self):
+        """Return the default line-plot figure."""
+        return self.create_line_figure()
+
+    def create_line_figure(
+        self,
+        property_indices=None,
+        log_scale=False,
+        log_scale_secondary=None,
+        show_grid=True,
+        line_width=2.0,
+        marker_mode=False,
+    ):
+        """Create line figure with optional subset and log-scaled y-axes."""
+        if property_indices is None:
+            selected = list(range(self.y_values.shape[0]))
+        else:
+            selected = [int(i) for i in property_indices]
+            for idx in selected:
+                if idx < 0 or idx >= self.y_values.shape[0]:
+                    raise ValueError(
+                        f"property index {idx} out of range "
+                        f"[0, {self.y_values.shape[0]-1}]."
+                    )
+
+        mode = "lines+markers" if marker_mode else "lines"
+        if log_scale_secondary is None:
+            log_scale_secondary = bool(log_scale)
+        else:
+            log_scale_secondary = bool(log_scale_secondary)
+
+        fig = go.Figure()
+        for idx in selected:
+            axis = "y2" if idx in self.secondary_y else "y"
+            name = self.property_names[idx]
+            if idx in self.secondary_y:
+                name = f"{name} (Y2)"
+            fig.add_trace(
+                go.Scatter(
+                    x=self.x_values,
+                    y=self.y_values[idx, :],
+                    mode=mode,
+                    line={"width": float(line_width)},
+                    name=name,
+                    yaxis=axis,
+                    showlegend=True,
+                )
+            )
+
+        xaxis_title = "X"
+        xaxis_type = None
+        if np.issubdtype(np.asarray(self.x_values).dtype, np.datetime64):
+            xaxis_title = "Date"
+            xaxis_type = "date"
+
+        right_margin = 120 if len(self.secondary_y) > 0 else 80
+
+        fig.update_layout(
+            title=self.title,
+            width=self.width,
+            height=self.height,
+            template="plotly_white",
+            margin={"l": 50, "r": right_margin, "t": 70, "b": 50},
+            hovermode="x unified",
+            dragmode="pan",
+            uirevision="dash-line-view",
+            legend={
+                "orientation": "h",
+                "x": 0.0,
+                "y": 1.02,
+                "xanchor": "left",
+                "yanchor": "bottom",
+            },
+            xaxis={
+                "title": xaxis_title,
+                "showgrid": bool(show_grid),
+                "type": xaxis_type,
+            },
+            yaxis={
+                "title": "Value",
+                "showgrid": bool(show_grid),
+                "type": "log" if log_scale else "linear",
+            },
+        )
+
+        if len(self.secondary_y) > 0:
+            fig.update_layout(
+                yaxis2={
+                    "title": "Value (Secondary)",
+                    "overlaying": "y",
+                    "side": "right",
+                    "showgrid": False,
+                    "type": "log" if log_scale_secondary else "linear",
+                }
+            )
+
+        return fig
+
+
+class DashScatterPlot(BaseDashPlot):
+    """Scatter-plot component for dictionary input of [n_values, 2] arrays."""
+
+    def __init__(
+        self,
+        scatter_data,
+        width=900,
+        height=450,
+        title="Scatter Plot",
+    ):
+        super().__init__(width=width, height=height, title=title)
+        self.scatter_data = validate_scatter_data(scatter_data)
+
+    def create_figure(self):
+        """Return the default scatter-plot figure."""
+        return self.create_scatter_figure()
+
+    def create_scatter_figure(
+        self,
+        property_name=None,
+        show_grid=True,
+        log_x=False,
+        log_y=False,
+        marker_size=8.0,
+        marker_opacity=0.85,
+    ):
+        """Create scatter figure for one property or all properties."""
+        if property_name is None:
+            selected_keys = list(self.scatter_data.keys())
+        else:
+            if property_name not in self.scatter_data:
+                raise ValueError(
+                    f"property_name '{property_name}' not found in scatter_data."
+                )
+            selected_keys = [property_name]
+
+        fig = go.Figure()
+        for key in selected_keys:
+            arr = self.scatter_data[key]
+            fig.add_trace(
+                go.Scatter(
+                    x=arr[:, 0],
+                    y=arr[:, 1],
+                    mode="markers",
+                    marker={"size": float(marker_size), "opacity": float(marker_opacity)},
+                    name=key,
+                    hovertemplate="(%{x:.6g}, %{y:.6g})<extra></extra>",
+                    showlegend=True,
+                )
+            )
+
+        fig.update_layout(
+            title=self.title,
+            width=self.width,
+            height=self.height,
+            template="plotly_white",
+            margin={"l": 50, "r": 30, "t": 70, "b": 50},
+            dragmode="pan",
+            uirevision="dash-scatter-view",
+            legend={
+                "orientation": "h",
+                "x": 0.0,
+                "y": 1.02,
+                "xanchor": "left",
+                "yanchor": "bottom",
+            },
+            xaxis={
+                "title": "X",
+                "showgrid": bool(show_grid),
+                "type": "log" if bool(log_x) else "linear",
+            },
+            yaxis={
+                "title": "Y",
+                "showgrid": bool(show_grid),
+                "type": "log" if bool(log_y) else "linear",
+            },
+        )
+        return fig
+
+
+class DashTable(BaseDashPlot):
+    """Table component backed by pandas DataFrame."""
+
+    def __init__(
+        self,
+        table_data,
+        width=900,
+        height=450,
+        title="Table",
+        page_size=20,
+    ):
+        super().__init__(width=width, height=height, title=title)
+        self.table_data = validate_table_data(table_data)
+        self.page_size = int(page_size)
+        if self.page_size <= 0:
+            raise ValueError("page_size must be > 0.")
+
+    def create_figure(self):
+        """Return the first page as a Plotly table figure."""
+        return self.create_table_figure(page=0, page_size=self.page_size)
+
+    def create_table_figure(self, page=0, page_size=None):
+        """Create a Plotly table figure for one page of rows."""
+        page = int(page)
+        if page < 0:
+            raise ValueError("page must be >= 0.")
+        size = self.page_size if page_size is None else int(page_size)
+        if size <= 0:
+            raise ValueError("page_size must be > 0.")
+
+        start = page * size
+        end = start + size
+        page_df = self.table_data.iloc[start:end]
+
+        columns = [str(c) for c in page_df.columns]
+        values = [page_df[col].tolist() for col in page_df.columns]
+
+        fig = go.Figure(
+            data=[
+                go.Table(
+                    header={
+                        "values": columns,
+                        "align": "left",
+                        "fill_color": "#f2f2f2",
+                    },
+                    cells={"values": values, "align": "left"},
+                )
+            ]
+        )
+        fig.update_layout(
+            title=self.title,
+            width=self.width,
+            height=self.height,
+            template="plotly_white",
+            margin={"l": 10, "r": 10, "t": 60, "b": 10},
+            uirevision="dash-table-view",
+        )
+        return fig
+
+    def create_dash_table_props(self, page_size=None):
+        """Return kwargs compatible with dash_table.DataTable."""
+        size = self.page_size if page_size is None else int(page_size)
+        if size <= 0:
+            raise ValueError("page_size must be > 0.")
+
+        columns = [
+            {"name": str(col), "id": str(col)}
+            for col in self.table_data.columns
+        ]
+        records = self.table_data.to_dict("records")
+        return {
+            "columns": columns,
+            "data": records,
+            "page_size": size,
+            "page_action": "native",
+            "sort_action": "native",
+            "filter_action": "native",
+        }
 
 
 class DashMapPlot(BaseDashPlot):

@@ -12,9 +12,13 @@ for the Step 2.2 interactive map visualization system. Tests cover:
 import unittest
 
 from rsimpy.common.dash_app_template import (
+    build_step_3_demo_line_plot,
+    build_step_3_demo_scatter_plot,
+    build_step_3_demo_table,
     build_step_2_2_demo_map_plot,
     build_triangle_demo_figure,
     create_dash_template_app,
+    create_step_3_working_example_app,
     create_step_2_2_working_example_app,
 )
 
@@ -146,6 +150,47 @@ class TestDashAppTemplate(unittest.TestCase):
         app = create_step_2_2_working_example_app()
         self.assertIsNotNone(app.layout)
         self.assertIn("Step 2.3", str(app.layout))
+
+    def test_build_step_3_demo_line_plot(self):
+        """Test Step 3 line example builds a valid multi-trace figure."""
+        obj = build_step_3_demo_line_plot(n_days=10)
+        fig = obj.create_line_figure(marker_mode=True)
+        self.assertEqual(len(fig.data), 3)
+        self.assertEqual(fig.data[2].yaxis, "y2")
+        self.assertEqual(fig.layout.xaxis.type, "date")
+
+    def test_build_step_3_demo_scatter_plot(self):
+        """Test Step 3 scatter example builds two scatter traces."""
+        obj = build_step_3_demo_scatter_plot(n_points=20, seed=3)
+        fig = obj.create_scatter_figure()
+        self.assertEqual(len(fig.data), 2)
+        self.assertEqual(fig.data[0].type, "scatter")
+
+    def test_build_step_3_demo_table(self):
+        """Test Step 3 table example builds DataTable-compatible props."""
+        obj = build_step_3_demo_table(n_rows=12)
+        props = obj.create_dash_table_props(page_size=5)
+        self.assertEqual(props["page_size"], 5)
+        self.assertEqual(len(props["data"]), 12)
+        self.assertEqual(len(props["columns"]), 5)
+
+    def test_create_step_3_working_example_app(self):
+        """Test Step 3 working example app contains all demo components."""
+        app = create_step_3_working_example_app()
+        self.assertIsNotNone(app.layout)
+        layout_string = str(app.layout)
+        self.assertIn("Step 3 Working Examples", layout_string)
+        self.assertIn("step3-line-graph", layout_string)
+        self.assertIn("step3-line-log-y1", layout_string)
+        self.assertIn("step3-line-log-y2", layout_string)
+        self.assertIn("step3-line-y2-controls", layout_string)
+        self.assertIn("step3-scatter-graph", layout_string)
+        self.assertIn("step3-scatter-log-x", layout_string)
+        self.assertIn("step3-scatter-log-y", layout_string)
+        self.assertIn("step3-table", layout_string)
+        self.assertIn("step3-table-page-size", layout_string)
+        self.assertIn("step3-table-download-btn", layout_string)
+        self.assertIn("step3-table-download", layout_string)
 
 
 if __name__ == "__main__":

@@ -17,13 +17,22 @@ import unittest
 import numpy as np
 
 try:
+    import pandas as pd
+    HAS_PANDAS = True
+except ImportError:
+    HAS_PANDAS = False
+
+try:
     import plotly.graph_objects as go
     HAS_PLOTLY = True
 except ImportError:
     HAS_PLOTLY = False
 
 from rsimpy.common.plot_dash import (
+    DashLinePlot,
     DashMapPlot,
+    DashScatterPlot,
+    DashTable,
     add_triangle_trace,
     build_layer_per_cell,
     create_triangle_vertices,
@@ -638,6 +647,76 @@ class TestPlotDashFoundation(unittest.TestCase):
                 connection_indices=np.asarray([[0], [2]], dtype=int),
                 connection_data=np.asarray([[[1.0]]], dtype=float),
             )
+
+    def test_dash_line_plot_secondary_axis_and_log_scale(self):
+        """Test line plot builds traces with secondary y-axis and log scale."""
+        x_values = np.asarray(["2026-01-01", "2026-01-02", "2026-01-03"], dtype="datetime64[D]")
+        y_values = np.asarray([
+            [10.0, 12.0, 14.0],
+            [100.0, 120.0, 140.0],
+        ], dtype=float)
+
+        obj = DashLinePlot(
+            x_values=x_values,
+            y_values=y_values,
+            property_names=["P", "Q"],
+            secondary_y=[1],
+            title="Line",
+        )
+        fig = obj.create_line_figure(log_scale=True)
+
+        self.assertEqual(len(fig.data), 2)
+        self.assertEqual(fig.data[0].name, "P")
+        self.assertEqual(fig.data[1].name, "Q (Y2)")
+        self.assertEqual(fig.data[1].yaxis, "y2")
+        self.assertEqual(fig.layout.xaxis.type, "date")
+        self.assertEqual(fig.layout.yaxis.type, "log")
+        self.assertEqual(fig.layout.yaxis2.type, "log")
+        self.assertEqual(fig.layout.yaxis2.overlaying, "y")
+
+    def test_dash_line_plot_input_validation(self):
+        """Test line plot validation raises on x/y length mismatch."""
+        with self.assertRaises(ValueError):
+            DashLinePlot(
+                x_values=np.asarray([0.0, 1.0, 2.0]),
+                y_values=np.asarray([[1.0, 2.0]], dtype=float),
+            )
+
+    def test_dash_scatter_plot_single_property(self):
+        """Test scatter plot can render a selected property key."""
+        data = {
+            "A": np.asarray([[0.0, 1.0], [1.0, 2.0]], dtype=float),
+            "B": np.asarray([[2.0, 3.0], [3.0, 4.0]], dtype=float),
+        }
+        obj = DashScatterPlot(scatter_data=data)
+        fig = obj.create_scatter_figure(property_name="A")
+
+        self.assertEqual(len(fig.data), 1)
+        self.assertEqual(fig.data[0].name, "A")
+        self.assertEqual(fig.layout.uirevision, "dash-scatter-view")
+
+    def test_dash_table_pagination_and_dash_props(self):
+        """Test table figure pagination and DataTable props generation."""
+        if not HAS_PANDAS:
+            self.skipTest("pandas not installed")
+
+        table_df = pd.DataFrame(
+            {
+                "A": [1, 2, 3],
+                "B": ["x", "y", "z"],
+            }
+        )
+        obj = DashTable(table_data=table_df, page_size=2)
+
+        fig = obj.create_table_figure(page=1)
+        self.assertEqual(len(fig.data), 1)
+        self.assertEqual(fig.data[0].type, "table")
+        self.assertEqual(list(fig.data[0].cells.values[0]), [3])
+
+        props = obj.create_dash_table_props()
+        self.assertEqual(props["page_size"], 2)
+        self.assertEqual(len(props["columns"]), 2)
+        self.assertEqual(len(props["data"]), 3)
 
 
 if __name__ == "__main__":
