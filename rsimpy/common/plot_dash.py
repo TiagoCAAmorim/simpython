@@ -97,6 +97,26 @@ def validate_connection_data(connection_data, n_days, n_connections):
     return arr
 
 
+def validate_wells(wells, n_cells):
+    """Validate wells dict mapping "name,type" -> 0-indexed cell indices."""
+    if wells is None:
+        return {}
+    if not isinstance(wells, dict):
+        raise ValueError("wells must be a dict mapping 'name,type' to cell indices.")
+
+    validated = {}
+    for key, values in wells.items():
+        if not isinstance(key, str) or len(key.strip()) == 0:
+            raise ValueError("well keys must be non-empty strings.")
+        arr = np.asarray(values, dtype=int).ravel()
+        if arr.size == 0:
+            continue
+        if np.any(arr < 0) or np.any(arr >= int(n_cells)):
+            raise ValueError("well cell indices must be within [0, n_cells-1].")
+        validated[str(key)] = arr
+    return validated
+
+
 def _sample_line_points(p0, p1, n_points=20):
     """Sample intermediate points for a line segment to improve hover hit area."""
     t = np.linspace(0.0, 1.0, int(n_points))
@@ -145,6 +165,27 @@ def _compute_polygon_bounds(vertices):
     y_min = float(np.nanmin(arr[:, :, 1]))
     y_max = float(np.nanmax(arr[:, :, 1]))
     return x_min, x_max, y_min, y_max
+
+
+def _polygon_area_xy(poly_xy):
+    """Compute polygon area on XY plane using the shoelace formula."""
+    arr = np.asarray(poly_xy, dtype=float)
+    if arr.ndim != 2 or arr.shape[1] != 2:
+        raise ValueError("poly_xy must have shape (n_vertices, 2).")
+    if arr.shape[0] < 3:
+        return 0.0
+    x = arr[:, 0]
+    y = arr[:, 1]
+    area = 0.5 * abs(np.dot(x, np.roll(y, -1)) - np.dot(y, np.roll(x, -1)))
+    return float(area)
+
+
+def _circle_polygon(center_x, center_y, radius, n_points=48):
+    """Build a closed polygon approximating a circle in data coordinates."""
+    theta = np.linspace(0.0, 2.0 * np.pi, int(max(n_points, 12)), endpoint=True)
+    xs = float(center_x) + float(radius) * np.cos(theta)
+    ys = float(center_y) + float(radius) * np.sin(theta)
+    return xs, ys
 
 
 def _interpolate_edge_contour(p1, p2, z1, z2, contour_value):
@@ -461,6 +502,7 @@ class DashMapPlot(BaseDashPlot):
         connection_indices=None,
         connection_data=None,
         connection_property_names=None,
+        wells=None,
         width=900,
         height=600,
         title="Map",
@@ -500,6 +542,7 @@ class DashMapPlot(BaseDashPlot):
             self.cell_names = list(cell_names)
 
         self.centers_xy = np.mean(self.vertices[:, :, :2], axis=1)
+        self.wells = validate_wells(wells, n_cells=n_cells_from_vertices)
 
         self.connection_indices = None
         self.connection_data = None
@@ -543,6 +586,10 @@ class DashMapPlot(BaseDashPlot):
             return False
         return float(np.std(z_vals)) >= 1.0e-2
 
+    def has_wells(self):
+        """Return True when well definitions are available."""
+        return len(self.wells) > 0
+
     def create_figure(self):
         """Backward-compatible wrapper that returns the default map view."""
         return self.create_map_figure()
@@ -571,6 +618,9 @@ class DashMapPlot(BaseDashPlot):
         add_contours=False,
         contour_count=7,
         contour_line_width=3.0,
+        add_wells=False,
+        well_size_percent=20.0,
+        well_line_width=2.0,
     ):
         """Create a basic polygon map for one property/day/layer selection."""
         try:
@@ -596,6 +646,8 @@ class DashMapPlot(BaseDashPlot):
             )
         if add_connections and not self.has_connections():
             raise ValueError("add_connections=True but no connection data was provided.")
+        if add_wells and not self.has_wells():
+            raise ValueError("add_wells=True but no wells data was provided.")
         if self.has_connections():
             n_conn_props = self.connection_data.shape[0]
             if connection_property_index < 0 or connection_property_index >= n_conn_props:
@@ -989,5 +1041,118 @@ class DashMapPlot(BaseDashPlot):
                     name="connection-colorbar",
                 )
             )
+
+        if add_wells and self.has_wells():
+            well_size_percent = float(well_size_percent)
+            well_size_percent = min(max(well_size_percent, 5.0), 200.0)
+
+            # Size well circles by area in data units so zoom preserves physical scale.
+            layer_areas = []
+            for idx in layer_indices:
+                layer_areas.append(_polygon_area_xy(self.vertices[int(idx), :, :2]))
+            finite_areas = np.asarray(layer_areas, dtype=float)
+            finite_areas = finite_areas[np.isfinite(finite_areas)]
+            if finite_areas.size == 0 or float(np.mean(finite_areas)) <= 0.0:
+                mean_cell_area = 1.0
+            else:
+                mean_cell_area = float(np.mean(finite_areas))
+            target_circle_area = mean_cell_area * (well_size_percent / 100.0)
+            circle_radius = float(np.sqrt(max(target_circle_area, 1.0e-12) / np.pi))
+
+            type_colors = {
+                "prod": "green",
+                "injw": "blue",
+                "injg": "red",
+                "inj": "#F17720",
+                "closed": "gray",
+            }
+            active_layer = int(layer)
+
+            for well_key, well_cells in self.wells.items():
+                if "," in well_key:
+                    well_name, well_type = well_key.rsplit(",", 1)
+                else:
+                    well_name, well_type = well_key, "unknown"
+                well_name = well_name.strip()
+                well_type = well_type.strip().lower()
+                well_color = type_colors.get(well_type, "black")
+
+                cells_in_well = [int(c) for c in np.asarray(well_cells, dtype=int).ravel()]
+                if len(cells_in_well) == 0:
+                    continue
+
+                if len(cells_in_well) >= 2:
+                    for c0, c1 in zip(cells_in_well[:-1], cells_in_well[1:]):
+                        p0 = self.centers_xy[int(c0)]
+                        p1 = self.centers_xy[int(c1)]
+                        k0 = int(self.layer_per_cell[int(c0)])
+                        k1 = int(self.layer_per_cell[int(c1)])
+                        line_dash = "solid" if (k0 == active_layer and k1 == active_layer) else "dash"
+                        fig.add_trace(
+                            go.Scatter(
+                                x=[float(p0[0]), float(p1[0])],
+                                y=[float(p0[1]), float(p1[1])],
+                                mode="lines",
+                                line={
+                                    "color": "black",
+                                    "width": float(well_line_width),
+                                    "dash": line_dash,
+                                },
+                                name="well-line",
+                                hoverinfo="skip",
+                                showlegend=False,
+                            )
+                        )
+
+                hover_x = []
+                hover_y = []
+                hover_t = []
+                for c in cells_in_well:
+                    cx = float(self.centers_xy[int(c)][0])
+                    cy = float(self.centers_xy[int(c)][1])
+                    hover_x.append(cx)
+                    hover_y.append(cy)
+                    hover_t.append(
+                        f"{well_name} ({well_type})<br>Cell={int(c)}<br>Layer={int(self.layer_per_cell[int(c)])}"
+                    )
+
+                # Draw non-active circles first, then active circles on top.
+                circle_order = sorted(
+                    cells_in_well,
+                    key=lambda c: int(self.layer_per_cell[int(c)]) == active_layer,
+                )
+                for c in circle_order:
+                    cx = float(self.centers_xy[int(c)][0])
+                    cy = float(self.centers_xy[int(c)][1])
+                    circle_layer = int(self.layer_per_cell[int(c)])
+                    is_active_layer = circle_layer == active_layer
+                    local_radius = circle_radius if is_active_layer else (0.5 * circle_radius)
+                    circle_x, circle_y = _circle_polygon(cx, cy, local_radius, n_points=48)
+                    fig.add_trace(
+                        go.Scatter(
+                            x=circle_x,
+                            y=circle_y,
+                            mode="lines",
+                            fill="toself",
+                            line={"color": "black", "width": 0.8},
+                            fillcolor=(well_color if is_active_layer else "rgba(0,0,0,0)"),
+                            name="well-circle",
+                            hoverinfo="skip",
+                            showlegend=False,
+                        )
+                    )
+
+                fig.add_trace(
+                    go.Scatter(
+                        x=hover_x,
+                        y=hover_y,
+                        mode="markers",
+                        marker={"size": 10, "color": "rgba(0,0,0,0.001)"},
+                        text=hover_t,
+                        hovertemplate="%{text}<extra></extra>",
+                        name="well-hover",
+                        showlegend=False,
+                    )
+                )
 
         return fig

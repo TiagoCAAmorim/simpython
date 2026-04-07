@@ -41,6 +41,10 @@ class TestDashAppTemplate(unittest.TestCase):
         self.assertIn("map-connection-options-toggle", layout_string)
         self.assertIn("map-show-contours", layout_string)
         self.assertIn("map-contour-options-toggle", layout_string)
+        self.assertIn("map-show-wells", layout_string)
+        self.assertIn("map-well-options-toggle", layout_string)
+        self.assertIn("map-well-controls-group", layout_string)
+        self.assertIn("map-well-size", layout_string)
         self.assertIn("map-connection-width", layout_string)
         self.assertIn("map-connection-segments", layout_string)
         self.assertIn("map-contour-count", layout_string)
@@ -56,6 +60,7 @@ class TestDashAppTemplate(unittest.TestCase):
         self.assertEqual(len(obj.cell_names), 54)
         self.assertEqual(obj.connection_property_names, ["Connectivity"])
         self.assertTrue(obj.has_connections())
+        self.assertTrue(obj.has_wells())
         self.assertEqual(obj.layer_sizes.tolist(), [30, 12, 12])
 
     def test_default_map_hides_grid_when_disabled(self):

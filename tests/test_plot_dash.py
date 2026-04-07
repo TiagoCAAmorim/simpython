@@ -334,6 +334,78 @@ class TestPlotDashFoundation(unittest.TestCase):
         line_traces = [tr for tr in fig.data if tr.name == "connection-line"]
         self.assertEqual(len(line_traces), 7)
 
+    def test_wells_render_lines_and_markers(self):
+        vertices = _make_regular_grid_vertices(1, 4)
+        grid_data = np.arange(4, dtype=float).reshape(1, 1, 4)
+        wells = {
+            "W-1,prod": np.asarray([0, 1, 2], dtype=int),
+            "W-2,injw": np.asarray([3], dtype=int),
+        }
+
+        obj = DashMapPlot(
+            vertices=vertices,
+            layer_sizes=[4],
+            grid_data=grid_data,
+            property_names=["P1"],
+            wells=wells,
+        )
+
+        fig = obj.create_map_figure(
+            property_index=0,
+            day_index=0,
+            layer=1,
+            add_wells=True,
+            well_size_percent=50.0,
+        )
+        names = [tr.name for tr in fig.data]
+        self.assertIn("well-line", names)
+        self.assertIn("well-circle", names)
+        self.assertIn("well-hover", names)
+
+        hover_traces = [tr for tr in fig.data if tr.name == "well-hover"]
+        self.assertGreaterEqual(len(hover_traces), 1)
+        self.assertIn("W-1", hover_traces[0].text[0])
+        self.assertIn("prod", hover_traces[0].text[0])
+
+    def test_well_lines_and_faded_cross_layer_circles(self):
+        vertices = _make_regular_grid_vertices(1, 3)
+        vertices_l2 = _make_regular_grid_vertices(1, 1) + np.array([3.0, 0.0, 0.0])
+        vertices = np.concatenate([vertices, vertices_l2], axis=0)
+        grid_data = np.arange(4, dtype=float).reshape(1, 1, 4)
+        wells = {
+            # Consecutive cells: 0->1 (same active layer), 1->3 (cross-layer)
+            "W-X,inj": np.asarray([0, 1, 3], dtype=int),
+        }
+
+        obj = DashMapPlot(
+            vertices=vertices,
+            layer_sizes=[3, 1],
+            grid_data=grid_data,
+            property_names=["P1"],
+            wells=wells,
+        )
+
+        fig = obj.create_map_figure(
+            property_index=0,
+            day_index=0,
+            layer=1,
+            add_wells=True,
+            well_size_percent=20.0,
+        )
+
+        line_traces = [tr for tr in fig.data if tr.name == "well-line"]
+        self.assertEqual(len(line_traces), 2)
+        dashes = [str(tr.line.dash) for tr in line_traces]
+        self.assertIn("solid", dashes)
+        self.assertIn("dash", dashes)
+        self.assertTrue(all(str(tr.line.color) == "black" for tr in line_traces))
+
+        circle_traces = [tr for tr in fig.data if tr.name == "well-circle"]
+        self.assertEqual(len(circle_traces), 3)
+        fill_colors = [str(tr.fillcolor) for tr in circle_traces]
+        self.assertIn("rgba(0,0,0,0)", fill_colors)
+        self.assertTrue(any(color != "rgba(0,0,0,0)" for color in fill_colors))
+
     def test_map_figure_uses_default_uirevision(self):
         vertices = _make_regular_grid_vertices(1, 2)
         grid_data = np.arange(2, dtype=float).reshape(1, 1, 2)

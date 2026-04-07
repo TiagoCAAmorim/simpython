@@ -177,6 +177,14 @@ def build_step_2_2_demo_map_plot(n_rows=5, n_cols=6, n_days=5):
     for day in range(n_days):
         connection_data[0, day, :] = float(day + 1)
 
+    wells = {
+        "WELL-A,prod": np.asarray([0, layer2_offset + 0, layer3_offset + 0], dtype=int),
+        "WELL-B,injw": np.asarray([5, layer2_offset + 5, layer3_offset + 5], dtype=int),
+        "WELL-C,inj": np.asarray([10, layer2_offset + 10, layer3_offset + 10], dtype=int),
+        "WELL-E,injg": np.asarray([2, layer2_offset + 2, layer3_offset + 2], dtype=int),
+        "WELL-D,closed": np.asarray([14], dtype=int),
+    }
+
     return DashMapPlot(
         vertices=vertices,
         layer_sizes=layer_sizes,
@@ -186,6 +194,7 @@ def build_step_2_2_demo_map_plot(n_rows=5, n_cols=6, n_days=5):
         connection_indices=connection_indices,
         connection_data=connection_data,
         connection_property_names=["Connectivity"],
+        wells=wells,
         title="Step 2.2 - Interactive Map Controls",
         width=1000,
         height=700,
@@ -201,6 +210,7 @@ def create_dash_template_app(map_plot=None):
     n_layers = len(map_plot.layer_sizes)
     has_connections = map_plot.has_connections()
     has_contours = map_plot.has_contours()
+    has_wells = map_plot.has_wells()
 
     day_marks = {idx: str(idx) for idx in range(n_days)}
     layer_marks = {idx + 1: str(idx + 1) for idx in range(n_layers)}
@@ -366,6 +376,55 @@ def create_dash_template_app(map_plot=None):
                             html.Div(
                                 [
                                     dcc.Checklist(
+                                        id="map-show-wells",
+                                        options=[
+                                            {
+                                                "label": "Show wells",
+                                                "value": "show",
+                                                "disabled": not has_wells,
+                                            }
+                                        ],
+                                        value=[],
+                                        style={"marginRight": "12px"},
+                                    ),
+                                    dcc.Checklist(
+                                        id="map-well-options-toggle",
+                                        options=[
+                                            {
+                                                "label": "Options",
+                                                "value": "show",
+                                                "disabled": not has_wells,
+                                            }
+                                        ],
+                                        value=[],
+                                    ),
+                                ],
+                                style={
+                                    "display": "flex",
+                                    "alignItems": "center",
+                                    "columnGap": "12px",
+                                },
+                            ),
+                            html.Div(
+                                [
+                                    html.Div("Wells", style={"fontWeight": "bold"}),
+                                    html.Label("Well size (%)"),
+                                    dcc.Slider(
+                                        id="map-well-size",
+                                        min=5,
+                                        max=200,
+                                        step=5,
+                                        value=20,
+                                        disabled=not has_wells,
+                                    ),
+                                ],
+                                id="map-well-controls-group",
+                                style={"display": "none"},
+                            ),
+                            html.Hr(style={"margin": "12px 0"}),
+                            html.Div(
+                                [
+                                    dcc.Checklist(
                                         id="map-show-contours",
                                         options=[
                                             {
@@ -424,6 +483,7 @@ def create_dash_template_app(map_plot=None):
                                     layer=1,
                                     add_connections=False,
                                     add_contours=False,
+                                    add_wells=False,
                                     contour_count=7,
                                 ),
                                 config={
@@ -445,18 +505,21 @@ def create_dash_template_app(map_plot=None):
         Output("map-grid-options-toggle", "value"),
         Output("map-connection-options-toggle", "value"),
         Output("map-contour-options-toggle", "value"),
+        Output("map-well-options-toggle", "value"),
         Input("map-show-grid", "value"),
         Input("map-show-connections", "value"),
         Input("map-show-contours", "value"),
+        Input("map-show-wells", "value"),
         prevent_initial_call=True,
     )
-    def _sync_options_toggles(_show_grid_values, _show_connections_values, _show_contours_values):
+    def _sync_options_toggles(_show_grid_values, _show_connections_values, _show_contours_values, _show_wells_values):
         # Reset only the options toggle that corresponds to the changed show toggle.
         trigger = ctx.triggered_id
         grid_value = [] if trigger == "map-show-grid" else no_update
         connection_value = [] if trigger == "map-show-connections" else no_update
         contour_value = [] if trigger == "map-show-contours" else no_update
-        return grid_value, connection_value, contour_value
+        well_value = [] if trigger == "map-show-wells" else no_update
+        return grid_value, connection_value, contour_value, well_value
 
     @app.callback(
         Output("map-graph", "figure"),
@@ -464,9 +527,11 @@ def create_dash_template_app(map_plot=None):
         Output("map-grid-controls-group", "style"),
         Output("map-connection-controls-group", "style"),
         Output("map-contour-controls-group", "style"),
+        Output("map-well-controls-group", "style"),
         Output("map-grid-options-toggle", "options"),
         Output("map-connection-options-toggle", "options"),
         Output("map-contour-options-toggle", "options"),
+        Output("map-well-options-toggle", "options"),
         Input("map-show-grid", "value"),
         Input("map-property-dropdown", "value"),
         Input("map-day-slider", "value"),
@@ -477,10 +542,13 @@ def create_dash_template_app(map_plot=None):
         Input("map-show-contours", "value"),
         Input("map-contour-options-toggle", "value"),
         Input("map-grid-options-toggle", "value"),
+        Input("map-show-wells", "value"),
+        Input("map-well-options-toggle", "value"),
         Input("map-contour-count", "value"),
         Input("map-connection-palette", "value"),
         Input("map-connection-width", "value"),
         Input("map-connection-segments", "value"),
+        Input("map-well-size", "value"),
     )
     def _update_map_figure(
         show_grid_values,
@@ -493,10 +561,13 @@ def create_dash_template_app(map_plot=None):
         show_contours_values,
         contour_options_values,
         grid_options_values,
+        show_wells_values,
+        well_options_values,
         contour_count,
         connection_palette,
         connection_width,
         connection_segments,
+        well_size,
     ):
         show_connections = (
             map_plot.has_connections() and "show" in (show_connections_values or [])
@@ -505,13 +576,16 @@ def create_dash_template_app(map_plot=None):
         show_contours = (
             map_plot.has_contours() and "show" in (show_contours_values or [])
         )
+        show_wells = map_plot.has_wells() and "show" in (show_wells_values or [])
         show_grid_options = show_grid and "show" in (grid_options_values or [])
         show_connection_options = show_connections and "show" in (connection_options_values or [])
         show_contour_options = show_contours and "show" in (contour_options_values or [])
+        show_well_options = show_wells and "show" in (well_options_values or [])
         property_style = {"display": "block" if show_grid else "none"}
         grid_style = {"display": "block" if show_grid_options else "none"}
         connection_style = {"display": "block" if show_connection_options else "none"}
         contour_style = {"display": "block" if show_contour_options else "none"}
+        well_style = {"display": "block" if show_well_options else "none"}
         grid_options = [{"label": "Options", "value": "show", "disabled": not show_grid}]
         connection_options = [{
             "label": "Options",
@@ -523,6 +597,11 @@ def create_dash_template_app(map_plot=None):
             "value": "show",
             "disabled": (not has_contours) or (not show_contours),
         }]
+        well_options = [{
+            "label": "Options",
+            "value": "show",
+            "disabled": (not has_wells) or (not show_wells),
+        }]
         return (
             map_plot.create_map_figure(
                 property_index=int(property_index),
@@ -532,18 +611,22 @@ def create_dash_template_app(map_plot=None):
                 add_grid=show_grid,
                 add_connections=show_connections,
                 add_contours=show_contours,
+                add_wells=show_wells,
                 contour_count=int(contour_count),
                 connection_palette=str(connection_palette),
                 connection_width=float(connection_width),
                 connection_line_segments=int(connection_segments),
+                well_size_percent=float(well_size),
             ),
             property_style,
             grid_style,
             connection_style,
             contour_style,
+            well_style,
             grid_options,
             connection_options,
             contour_options,
+            well_options,
         )
 
     return app
