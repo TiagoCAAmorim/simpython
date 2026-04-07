@@ -1122,13 +1122,17 @@ def create_step_4_1_working_example_app():
 
     n_properties, n_days, _ = map_plot.grid_data.shape
     n_layers = len(map_plot.layer_sizes)
+    has_connections = map_plot.has_connections()
+    has_contours = map_plot.has_contours()
+    has_wells = map_plot.has_wells()
     has_secondary_y = len(line_plot.secondary_y) > 0
     initial_map_fig = map_plot.create_map_figure(
         property_index=0,
         day_index=0,
         layer=1,
-        add_connections=True,
-        add_wells=True,
+        add_connections=False,
+        add_contours=False,
+        add_wells=False,
     )
     initial_line_fig = line_plot.create_line_figure(
         log_scale=False,
@@ -1157,30 +1161,6 @@ def create_step_4_1_working_example_app():
                                 [
                                     html.Div(
                                         [
-                                            html.Label("Property"),
-                                            dcc.Dropdown(
-                                                id="step4-map-property",
-                                                options=[
-                                                    {
-                                                        "label": map_plot.property_names[i],
-                                                        "value": i,
-                                                    }
-                                                    for i in range(n_properties)
-                                                ],
-                                                value=0,
-                                                clearable=False,
-                                            ),
-                                            html.Br(),
-                                            html.Label("Day"),
-                                            dcc.Slider(
-                                                id="step4-map-day",
-                                                min=0,
-                                                max=max(0, n_days - 1),
-                                                step=1,
-                                                value=0,
-                                                marks={i: str(i) for i in range(n_days)},
-                                            ),
-                                            html.Br(),
                                             html.Label("Layer"),
                                             dcc.Slider(
                                                 id="step4-map-layer",
@@ -1194,22 +1174,260 @@ def create_step_4_1_working_example_app():
                                                 },
                                             ),
                                             html.Br(),
-                                            dcc.Checklist(
-                                                id="step4-map-show-connections",
-                                                options=[
-                                                    {
-                                                        "label": "Connections",
-                                                        "value": "on",
-                                                    }
-                                                ],
-                                                value=["on"],
+                                            html.Label("Day"),
+                                            dcc.Slider(
+                                                id="step4-map-day",
+                                                min=0,
+                                                max=max(0, n_days - 1),
+                                                step=1,
+                                                value=0,
+                                                marks={i: str(i) for i in range(n_days)},
                                             ),
-                                            dcc.Checklist(
-                                                id="step4-map-show-wells",
-                                                options=[
-                                                    {"label": "Wells", "value": "on"}
+                                            html.Br(),
+                                            html.Div(
+                                                [
+                                                    dcc.Checklist(
+                                                        id="step4-map-show-grid",
+                                                        options=[
+                                                            {
+                                                                "label": "Grid",
+                                                                "value": "show",
+                                                            }
+                                                        ],
+                                                        value=["show"],
+                                                        style={"marginRight": "10px"},
+                                                    ),
+                                                    dcc.Checklist(
+                                                        id="step4-map-grid-log-scale",
+                                                        options=[
+                                                            {
+                                                                "label": "Log",
+                                                                "value": "on",
+                                                                "disabled": False,
+                                                            }
+                                                        ],
+                                                        value=[],
+                                                        style={"marginRight": "10px"},
+                                                    ),
+                                                    dcc.Checklist(
+                                                        id="step4-map-grid-options-toggle",
+                                                        options=[
+                                                            {
+                                                                "label": "Options",
+                                                                "value": "show",
+                                                                "disabled": False,
+                                                            }
+                                                        ],
+                                                        value=[],
+                                                    ),
                                                 ],
-                                                value=["on"],
+                                                style={
+                                                    "display": "flex",
+                                                    "alignItems": "center",
+                                                },
+                                            ),
+                                            html.Div(
+                                                [
+                                                    html.Label("Property"),
+                                                    dcc.Dropdown(
+                                                        id="step4-map-property",
+                                                        options=[
+                                                            {
+                                                                "label": map_plot.property_names[i],
+                                                                "value": i,
+                                                            }
+                                                            for i in range(n_properties)
+                                                        ],
+                                                        value=0,
+                                                        clearable=False,
+                                                    ),
+                                                ],
+                                                id="step4-map-property-controls-group",
+                                                style={"display": "block"},
+                                            ),
+                                            html.Div(
+                                                [
+                                                    html.Label("Grid palette"),
+                                                    dcc.Dropdown(
+                                                        id="step4-map-grid-palette",
+                                                        options=PALETTE_OPTIONS,
+                                                        value="Turbo",
+                                                        clearable=False,
+                                                    ),
+                                                ],
+                                                id="step4-map-grid-controls-group",
+                                                style={"display": "none"},
+                                            ),
+                                            html.Hr(style={"margin": "10px 0"}),
+                                            html.Div(
+                                                [
+                                                    dcc.Checklist(
+                                                        id="step4-map-show-connections",
+                                                        options=[
+                                                            {
+                                                                "label": "Connections",
+                                                                "value": "show",
+                                                                "disabled": not has_connections,
+                                                            }
+                                                        ],
+                                                        value=[],
+                                                        style={"marginRight": "10px"},
+                                                    ),
+                                                    dcc.Checklist(
+                                                        id="step4-map-connection-log-scale",
+                                                        options=[
+                                                            {
+                                                                "label": "Log",
+                                                                "value": "on",
+                                                                "disabled": True,
+                                                            }
+                                                        ],
+                                                        value=[],
+                                                        style={"marginRight": "10px"},
+                                                    ),
+                                                    dcc.Checklist(
+                                                        id="step4-map-connection-options-toggle",
+                                                        options=[
+                                                            {
+                                                                "label": "Options",
+                                                                "value": "show",
+                                                                "disabled": True,
+                                                            }
+                                                        ],
+                                                        value=[],
+                                                    ),
+                                                ],
+                                                style={
+                                                    "display": "flex",
+                                                    "alignItems": "center",
+                                                },
+                                            ),
+                                            html.Div(
+                                                [
+                                                    html.Label("Connection palette"),
+                                                    dcc.Dropdown(
+                                                        id="step4-map-connection-palette",
+                                                        options=PALETTE_OPTIONS,
+                                                        value="Plasma",
+                                                        clearable=False,
+                                                    ),
+                                                    html.Br(),
+                                                    html.Label("Connection line width"),
+                                                    dcc.Slider(
+                                                        id="step4-map-connection-width",
+                                                        min=1.0,
+                                                        max=10.0,
+                                                        step=0.5,
+                                                        value=5.0,
+                                                        disabled=not has_connections,
+                                                    ),
+                                                    html.Br(),
+                                                    html.Label("Gradient segments"),
+                                                    dcc.Slider(
+                                                        id="step4-map-connection-segments",
+                                                        min=3,
+                                                        max=20,
+                                                        step=1,
+                                                        value=10,
+                                                        disabled=not has_connections,
+                                                    ),
+                                                ],
+                                                id="step4-map-connection-controls-group",
+                                                style={"display": "none"},
+                                            ),
+                                            html.Hr(style={"margin": "10px 0"}),
+                                            html.Div(
+                                                [
+                                                    dcc.Checklist(
+                                                        id="step4-map-show-wells",
+                                                        options=[
+                                                            {
+                                                                "label": "Wells",
+                                                                "value": "show",
+                                                                "disabled": not has_wells,
+                                                            }
+                                                        ],
+                                                        value=[],
+                                                        style={"marginRight": "10px"},
+                                                    ),
+                                                    dcc.Checklist(
+                                                        id="step4-map-well-options-toggle",
+                                                        options=[
+                                                            {
+                                                                "label": "Options",
+                                                                "value": "show",
+                                                                "disabled": True,
+                                                            }
+                                                        ],
+                                                        value=[],
+                                                    ),
+                                                ],
+                                                style={
+                                                    "display": "flex",
+                                                    "alignItems": "center",
+                                                },
+                                            ),
+                                            html.Div(
+                                                [
+                                                    html.Label("Well size (%)"),
+                                                    dcc.Slider(
+                                                        id="step4-map-well-size",
+                                                        min=5,
+                                                        max=200,
+                                                        step=5,
+                                                        value=20,
+                                                        disabled=not has_wells,
+                                                    ),
+                                                ],
+                                                id="step4-map-well-controls-group",
+                                                style={"display": "none"},
+                                            ),
+                                            html.Hr(style={"margin": "10px 0"}),
+                                            html.Div(
+                                                [
+                                                    dcc.Checklist(
+                                                        id="step4-map-show-contours",
+                                                        options=[
+                                                            {
+                                                                "label": "Contours",
+                                                                "value": "show",
+                                                                "disabled": not has_contours,
+                                                            }
+                                                        ],
+                                                        value=[],
+                                                        style={"marginRight": "10px"},
+                                                    ),
+                                                    dcc.Checklist(
+                                                        id="step4-map-contour-options-toggle",
+                                                        options=[
+                                                            {
+                                                                "label": "Options",
+                                                                "value": "show",
+                                                                "disabled": True,
+                                                            }
+                                                        ],
+                                                        value=[],
+                                                    ),
+                                                ],
+                                                style={
+                                                    "display": "flex",
+                                                    "alignItems": "center",
+                                                },
+                                            ),
+                                            html.Div(
+                                                [
+                                                    html.Label("Contour count"),
+                                                    dcc.Slider(
+                                                        id="step4-map-contour-count",
+                                                        min=2,
+                                                        max=15,
+                                                        step=1,
+                                                        value=7,
+                                                        disabled=not has_contours,
+                                                    ),
+                                                ],
+                                                id="step4-map-contour-controls-group",
+                                                style={"display": "none"},
                                             ),
                                         ],
                                         style={
@@ -1428,23 +1646,167 @@ def create_step_4_1_working_example_app():
     )
 
     @app.callback(
+        Output("step4-map-grid-options-toggle", "value"),
+        Output("step4-map-connection-options-toggle", "value"),
+        Output("step4-map-contour-options-toggle", "value"),
+        Output("step4-map-well-options-toggle", "value"),
+        Input("step4-map-show-grid", "value"),
+        Input("step4-map-show-connections", "value"),
+        Input("step4-map-show-contours", "value"),
+        Input("step4-map-show-wells", "value"),
+        prevent_initial_call=True,
+    )
+    def _sync_step4_map_options_toggles(
+        _show_grid_values,
+        _show_connections_values,
+        _show_contours_values,
+        _show_wells_values,
+    ):
+        trigger = ctx.triggered_id
+        grid_value = [] if trigger == "step4-map-show-grid" else no_update
+        connection_value = [] if trigger == "step4-map-show-connections" else no_update
+        contour_value = [] if trigger == "step4-map-show-contours" else no_update
+        well_value = [] if trigger == "step4-map-show-wells" else no_update
+        return grid_value, connection_value, contour_value, well_value
+
+    @app.callback(
         Output("dashboard-map-graph", "figure"),
+        Output("step4-map-property-controls-group", "style"),
+        Output("step4-map-grid-controls-group", "style"),
+        Output("step4-map-connection-controls-group", "style"),
+        Output("step4-map-contour-controls-group", "style"),
+        Output("step4-map-well-controls-group", "style"),
+        Output("step4-map-grid-log-scale", "options"),
+        Output("step4-map-connection-log-scale", "options"),
+        Output("step4-map-grid-options-toggle", "options"),
+        Output("step4-map-connection-options-toggle", "options"),
+        Output("step4-map-contour-options-toggle", "options"),
+        Output("step4-map-well-options-toggle", "options"),
+        Input("step4-map-show-grid", "value"),
         Input("step4-map-property", "value"),
         Input("step4-map-day", "value"),
         Input("step4-map-layer", "value"),
+        Input("step4-map-grid-palette", "value"),
+        Input("step4-map-grid-log-scale", "value"),
         Input("step4-map-show-connections", "value"),
+        Input("step4-map-connection-options-toggle", "value"),
+        Input("step4-map-show-contours", "value"),
+        Input("step4-map-contour-options-toggle", "value"),
+        Input("step4-map-grid-options-toggle", "value"),
         Input("step4-map-show-wells", "value"),
+        Input("step4-map-well-options-toggle", "value"),
+        Input("step4-map-contour-count", "value"),
+        Input("step4-map-connection-palette", "value"),
+        Input("step4-map-connection-width", "value"),
+        Input("step4-map-connection-segments", "value"),
+        Input("step4-map-connection-log-scale", "value"),
+        Input("step4-map-well-size", "value"),
     )
-    def _update_step4_map_figure(property_index, day_index, layer, show_conn, show_wells):
+    def _update_step4_map_figure(
+        show_grid_values,
+        property_index,
+        day_index,
+        layer,
+        grid_palette,
+        grid_log_scale_values,
+        show_connections_values,
+        connection_options_values,
+        show_contours_values,
+        contour_options_values,
+        grid_options_values,
+        show_wells_values,
+        well_options_values,
+        contour_count,
+        connection_palette,
+        connection_width,
+        connection_segments,
+        connection_log_scale_values,
+        well_size,
+    ):
+        show_connections = (
+            map_plot.has_connections() and "show" in (show_connections_values or [])
+        )
+        show_grid = "show" in (show_grid_values or [])
+        show_contours = (
+            map_plot.has_contours() and "show" in (show_contours_values or [])
+        )
+        show_wells = map_plot.has_wells() and "show" in (show_wells_values or [])
+        show_grid_options = show_grid and "show" in (grid_options_values or [])
+        show_connection_options = (
+            show_connections and "show" in (connection_options_values or [])
+        )
+        show_contour_options = (
+            show_contours and "show" in (contour_options_values or [])
+        )
+        show_well_options = show_wells and "show" in (well_options_values or [])
+        grid_log_scale = show_grid and "on" in (grid_log_scale_values or [])
+        connection_log_scale = (
+            show_connections and "on" in (connection_log_scale_values or [])
+        )
+        property_style = {"display": "block" if show_grid else "none"}
+        grid_style = {"display": "block" if show_grid_options else "none"}
+        connection_style = {"display": "block" if show_connection_options else "none"}
+        contour_style = {"display": "block" if show_contour_options else "none"}
+        well_style = {"display": "block" if show_well_options else "none"}
+        grid_log_options = [{"label": "Log", "value": "on", "disabled": not show_grid}]
+        connection_log_options = [{
+            "label": "Log",
+            "value": "on",
+            "disabled": (not has_connections) or (not show_connections),
+        }]
+        grid_options = [{
+            "label": "Options",
+            "value": "show",
+            "disabled": not show_grid,
+        }]
+        connection_options = [{
+            "label": "Options",
+            "value": "show",
+            "disabled": (not has_connections) or (not show_connections),
+        }]
+        contour_options = [{
+            "label": "Options",
+            "value": "show",
+            "disabled": (not has_contours) or (not show_contours),
+        }]
+        well_options = [{
+            "label": "Options",
+            "value": "show",
+            "disabled": (not has_wells) or (not show_wells),
+        }]
+
         fig = map_plot.create_map_figure(
             property_index=int(property_index),
             day_index=int(day_index),
             layer=int(layer),
-            add_connections="on" in (show_conn or []),
-            add_wells="on" in (show_wells or []),
+            palette=str(grid_palette),
+            grid_log_scale=grid_log_scale,
+            add_grid=show_grid,
+            add_connections=show_connections,
+            add_contours=show_contours,
+            add_wells=show_wells,
+            contour_count=int(contour_count),
+            connection_palette=str(connection_palette),
+            connection_log_scale=connection_log_scale,
+            connection_width=float(connection_width),
+            connection_line_segments=int(connection_segments),
+            well_size_percent=float(well_size),
         )
         fig.update_layout(autosize=True, width=None, height=None)
-        return fig
+        return (
+            fig,
+            property_style,
+            grid_style,
+            connection_style,
+            contour_style,
+            well_style,
+            grid_log_options,
+            connection_log_options,
+            grid_options,
+            connection_options,
+            contour_options,
+            well_options,
+        )
 
     @app.callback(
         Output("dashboard-line-graph", "figure"),
