@@ -1,3 +1,4 @@
+# pylint: disable=too-many-lines
 """Dashboard composition utilities for Dash-based plot components."""
 
 from __future__ import annotations
@@ -885,262 +886,280 @@ class DashMultiPanelDashboard:
             has_contours = map_plot.has_contours()
             has_wells = map_plot.has_wells()
 
-            @app.callback(
-                Output(f"{prefix}-grid-options-toggle", "value"),
-                Output(f"{prefix}-connection-options-toggle", "value"),
-                Output(f"{prefix}-contour-options-toggle", "value"),
-                Output(f"{prefix}-well-options-toggle", "value"),
-                Input(f"{prefix}-show-grid", "value"),
-                Input(f"{prefix}-show-connections", "value"),
-                Input(f"{prefix}-show-contours", "value"),
-                Input(f"{prefix}-show-wells", "value"),
-                prevent_initial_call=True,
+            self._register_map_callback_factory(
+                app=app,
+                prefix=prefix,
+                map_plot=map_plot,
+                has_connections=has_connections,
+                has_contours=has_contours,
+                has_wells=has_wells,
             )
-            def _sync_options_toggles(
-                _show_grid_values,
-                _show_connections_values,
-                _show_contours_values,
-                _show_wells_values,
-                _prefix=prefix,
-            ):
-                trigger = ctx.triggered_id
-                grid_value = [] if trigger == f"{_prefix}-show-grid" else no_update
-                connection_value = (
-                    [] if trigger == f"{_prefix}-show-connections" else no_update
-                )
-                contour_value = (
-                    [] if trigger == f"{_prefix}-show-contours" else no_update
-                )
-                well_value = [] if trigger == f"{_prefix}-show-wells" else no_update
-                return grid_value, connection_value, contour_value, well_value
 
-            @app.callback(
-                Output(f"{prefix}-graph", "figure"),
-                Output(f"{prefix}-grid-controls-group", "style"),
-                Output(f"{prefix}-connection-controls-group", "style"),
-                Output(f"{prefix}-contour-controls-group", "style"),
-                Output(f"{prefix}-well-controls-group", "style"),
-                Output(f"{prefix}-grid-log-scale", "options"),
-                Output(f"{prefix}-connection-log-scale", "options"),
-                Output(f"{prefix}-grid-options-toggle", "options"),
-                Output(f"{prefix}-connection-options-toggle", "options"),
-                Output(f"{prefix}-contour-options-toggle", "options"),
-                Output(f"{prefix}-well-options-toggle", "options"),
-                Input(f"{prefix}-property", "value"),
-                Input(f"{prefix}-day", "value"),
-                Input(f"{prefix}-layer", "value"),
-                Input(f"{prefix}-show-grid", "value"),
-                Input(f"{prefix}-grid-palette", "value"),
-                Input(f"{prefix}-grid-log-scale", "value"),
-                Input(f"{prefix}-show-connections", "value"),
-                Input(f"{prefix}-connection-options-toggle", "value"),
-                Input(f"{prefix}-show-contours", "value"),
-                Input(f"{prefix}-contour-options-toggle", "value"),
-                Input(f"{prefix}-grid-options-toggle", "value"),
-                Input(f"{prefix}-show-wells", "value"),
-                Input(f"{prefix}-well-options-toggle", "value"),
-                Input(f"{prefix}-contour-count", "value"),
-                Input(f"{prefix}-connection-palette", "value"),
-                Input(f"{prefix}-connection-width", "value"),
-                Input(f"{prefix}-connection-segments", "value"),
-                Input(f"{prefix}-connection-log-scale", "value"),
-                Input(f"{prefix}-well-size", "value"),
+    def _register_map_callback_factory(
+        self,
+        app,
+        prefix,
+        map_plot,
+        has_connections,
+        has_contours,
+        has_wells,
+    ):
+        @app.callback(
+            Output(f"{prefix}-grid-options-toggle", "value"),
+            Output(f"{prefix}-connection-options-toggle", "value"),
+            Output(f"{prefix}-contour-options-toggle", "value"),
+            Output(f"{prefix}-well-options-toggle", "value"),
+            Input(f"{prefix}-show-grid", "value"),
+            Input(f"{prefix}-show-connections", "value"),
+            Input(f"{prefix}-show-contours", "value"),
+            Input(f"{prefix}-show-wells", "value"),
+            prevent_initial_call=True,
+        )
+        def _sync_options_toggles(
+            _show_grid_values,
+            _show_connections_values,
+            _show_contours_values,
+            _show_wells_values,
+        ):
+            trigger = ctx.triggered_id
+            grid_value = [] if trigger == f"{prefix}-show-grid" else no_update
+            connection_value = (
+                [] if trigger == f"{prefix}-show-connections" else no_update
             )
-            def _update_map(
-                property_index,
-                day_index,
-                layer,
-                show_grid_values,
-                grid_palette,
-                grid_log_scale_values,
-                show_connection_values,
-                connection_options_values,
-                show_contours_values,
-                contour_options_values,
-                grid_options_values,
-                show_wells_values,
-                well_options_values,
-                contour_count,
-                connection_palette,
-                connection_width,
-                connection_segments,
-                connection_log_scale_values,
-                well_size,
-                _plot=map_plot,
-                _has_connections=has_connections,
-                _has_contours=has_contours,
-                _has_wells=has_wells,
-            ):
-                show_grid = "show" in (show_grid_values or [])
-                show_connections = (
-                    _has_connections and "show" in (show_connection_values or [])
-                )
-                show_contours = _has_contours and "show" in (show_contours_values or [])
-                show_wells = _has_wells and "show" in (show_wells_values or [])
+            contour_value = [] if trigger == f"{prefix}-show-contours" else no_update
+            well_value = [] if trigger == f"{prefix}-show-wells" else no_update
+            return grid_value, connection_value, contour_value, well_value
 
-                show_grid_options = show_grid and "show" in (grid_options_values or [])
-                show_connection_options = (
-                    show_connections and "show" in (connection_options_values or [])
-                )
-                show_contour_options = (
-                    show_contours and "show" in (contour_options_values or [])
-                )
-                show_well_options = show_wells and "show" in (well_options_values or [])
+        @app.callback(
+            Output(f"{prefix}-graph", "figure"),
+            Output(f"{prefix}-grid-controls-group", "style"),
+            Output(f"{prefix}-connection-controls-group", "style"),
+            Output(f"{prefix}-contour-controls-group", "style"),
+            Output(f"{prefix}-well-controls-group", "style"),
+            Output(f"{prefix}-grid-log-scale", "options"),
+            Output(f"{prefix}-connection-log-scale", "options"),
+            Output(f"{prefix}-grid-options-toggle", "options"),
+            Output(f"{prefix}-connection-options-toggle", "options"),
+            Output(f"{prefix}-contour-options-toggle", "options"),
+            Output(f"{prefix}-well-options-toggle", "options"),
+            Input(f"{prefix}-property", "value"),
+            Input(f"{prefix}-day", "value"),
+            Input(f"{prefix}-layer", "value"),
+            Input(f"{prefix}-show-grid", "value"),
+            Input(f"{prefix}-grid-palette", "value"),
+            Input(f"{prefix}-grid-log-scale", "value"),
+            Input(f"{prefix}-show-connections", "value"),
+            Input(f"{prefix}-connection-options-toggle", "value"),
+            Input(f"{prefix}-show-contours", "value"),
+            Input(f"{prefix}-contour-options-toggle", "value"),
+            Input(f"{prefix}-grid-options-toggle", "value"),
+            Input(f"{prefix}-show-wells", "value"),
+            Input(f"{prefix}-well-options-toggle", "value"),
+            Input(f"{prefix}-contour-count", "value"),
+            Input(f"{prefix}-connection-palette", "value"),
+            Input(f"{prefix}-connection-width", "value"),
+            Input(f"{prefix}-connection-segments", "value"),
+            Input(f"{prefix}-connection-log-scale", "value"),
+            Input(f"{prefix}-well-size", "value"),
+        )
+        def _update_map(
+            property_index,
+            day_index,
+            layer,
+            show_grid_values,
+            grid_palette,
+            grid_log_scale_values,
+            show_connection_values,
+            connection_options_values,
+            show_contours_values,
+            contour_options_values,
+            grid_options_values,
+            show_wells_values,
+            well_options_values,
+            contour_count,
+            connection_palette,
+            connection_width,
+            connection_segments,
+            connection_log_scale_values,
+            well_size,
+        ):
+            show_grid = "show" in (show_grid_values or [])
+            show_connections = has_connections and "show" in (show_connection_values or [])
+            show_contours = has_contours and "show" in (show_contours_values or [])
+            show_wells = has_wells and "show" in (show_wells_values or [])
 
-                grid_style = {"display": "block" if show_grid_options else "none"}
-                connection_style = {
-                    "display": "block" if show_connection_options else "none"
+            show_grid_options = show_grid and "show" in (grid_options_values or [])
+            show_connection_options = (
+                show_connections and "show" in (connection_options_values or [])
+            )
+            show_contour_options = (
+                show_contours and "show" in (contour_options_values or [])
+            )
+            show_well_options = show_wells and "show" in (well_options_values or [])
+
+            grid_style = {"display": "block" if show_grid_options else "none"}
+            connection_style = {
+                "display": "block" if show_connection_options else "none"
+            }
+            contour_style = {"display": "block" if show_contour_options else "none"}
+            well_style = {"display": "block" if show_well_options else "none"}
+
+            grid_log_scale = show_grid and "on" in (grid_log_scale_values or [])
+            connection_log_scale = (
+                show_connections and "on" in (connection_log_scale_values or [])
+            )
+
+            grid_log_options = [
+                {"label": "Log", "value": "on", "disabled": not show_grid}
+            ]
+            connection_log_options = [
+                {
+                    "label": "Log",
+                    "value": "on",
+                    "disabled": (not has_connections) or (not show_connections),
                 }
-                contour_style = {
-                    "display": "block" if show_contour_options else "none"
+            ]
+            grid_options = [
+                {"label": "Options", "value": "show", "disabled": not show_grid}
+            ]
+            connection_options = [
+                {
+                    "label": "Options",
+                    "value": "show",
+                    "disabled": (not has_connections) or (not show_connections),
                 }
-                well_style = {"display": "block" if show_well_options else "none"}
+            ]
+            contour_options = [
+                {
+                    "label": "Options",
+                    "value": "show",
+                    "disabled": (not has_contours) or (not show_contours),
+                }
+            ]
+            well_options = [
+                {
+                    "label": "Options",
+                    "value": "show",
+                    "disabled": (not has_wells) or (not show_wells),
+                }
+            ]
 
-                grid_log_scale = show_grid and "on" in (grid_log_scale_values or [])
-                connection_log_scale = (
-                    show_connections and "on" in (connection_log_scale_values or [])
-                )
-
-                grid_log_options = [
-                    {"label": "Log", "value": "on", "disabled": not show_grid}
-                ]
-                connection_log_options = [
-                    {
-                        "label": "Log",
-                        "value": "on",
-                        "disabled": (not _has_connections) or (not show_connections),
-                    }
-                ]
-                grid_options = [
-                    {
-                        "label": "Options",
-                        "value": "show",
-                        "disabled": not show_grid,
-                    }
-                ]
-                connection_options = [
-                    {
-                        "label": "Options",
-                        "value": "show",
-                        "disabled": (not _has_connections) or (not show_connections),
-                    }
-                ]
-                contour_options = [
-                    {
-                        "label": "Options",
-                        "value": "show",
-                        "disabled": (not _has_contours) or (not show_contours),
-                    }
-                ]
-                well_options = [
-                    {
-                        "label": "Options",
-                        "value": "show",
-                        "disabled": (not _has_wells) or (not show_wells),
-                    }
-                ]
-
-                fig = _plot.create_map_figure(
-                    property_index=int(property_index),
-                    day_index=int(day_index),
-                    layer=int(layer),
-                    palette=str(grid_palette),
-                    grid_log_scale=grid_log_scale,
-                    add_grid=show_grid,
-                    add_connections=show_connections,
-                    add_contours=show_contours,
-                    add_wells=show_wells,
-                    contour_count=int(contour_count),
-                    connection_palette=str(connection_palette),
-                    connection_log_scale=connection_log_scale,
-                    connection_width=float(connection_width),
-                    connection_line_segments=int(connection_segments),
-                    well_size_percent=float(well_size),
-                )
-                fig.update_layout(autosize=True, width=None, height=None)
-                return (
-                    fig,
-                    grid_style,
-                    connection_style,
-                    contour_style,
-                    well_style,
-                    grid_log_options,
-                    connection_log_options,
-                    grid_options,
-                    connection_options,
-                    contour_options,
-                    well_options,
-                )
+            fig = map_plot.create_map_figure(
+                property_index=int(property_index),
+                day_index=int(day_index),
+                layer=int(layer),
+                palette=str(grid_palette),
+                grid_log_scale=grid_log_scale,
+                add_grid=show_grid,
+                add_connections=show_connections,
+                add_contours=show_contours,
+                add_wells=show_wells,
+                contour_count=int(contour_count),
+                connection_palette=str(connection_palette),
+                connection_log_scale=connection_log_scale,
+                connection_width=float(connection_width),
+                connection_line_segments=int(connection_segments),
+                well_size_percent=float(well_size),
+            )
+            fig.update_layout(autosize=True, width=None, height=None)
+            return (
+                fig,
+                grid_style,
+                connection_style,
+                contour_style,
+                well_style,
+                grid_log_options,
+                connection_log_options,
+                grid_options,
+                connection_options,
+                contour_options,
+                well_options,
+            )
 
     def _register_line_callbacks(self, app):
         for idx, line_plot in enumerate(self.line_plots.values()):
             prefix = f"mp-line-{idx}"
 
-            @app.callback(
-                Output(f"{prefix}-graph", "figure"),
-                Input(f"{prefix}-log-y", "value"),
-                Input(f"{prefix}-log-y2", "value"),
+            self._register_line_callback_factory(app=app, prefix=prefix, line_plot=line_plot)
+
+    def _register_line_callback_factory(self, app, prefix, line_plot):
+
+        @app.callback(
+            Output(f"{prefix}-graph", "figure"),
+            Input(f"{prefix}-log-y", "value"),
+            Input(f"{prefix}-log-y2", "value"),
+        )
+        def _update_line(log_y_values, log_y2_values, _plot=line_plot):
+            fig = _plot.create_line_figure(
+                log_scale="on" in (log_y_values or []),
+                log_scale_secondary="on" in (log_y2_values or []),
+                marker_mode=True,
             )
-            def _update_line(log_y_values, log_y2_values, _plot=line_plot):
-                fig = _plot.create_line_figure(
-                    log_scale="on" in (log_y_values or []),
-                    log_scale_secondary="on" in (log_y2_values or []),
-                    marker_mode=True,
-                )
-                fig.update_layout(autosize=True, width=None, height=None)
-                return fig
+            fig.update_layout(autosize=True, width=None, height=None)
+            return fig
 
     def _register_scatter_callbacks(self, app):
         for idx, scatter_plot in enumerate(self.scatter_plots.values()):
             prefix = f"mp-scatter-{idx}"
 
-            @app.callback(
-                Output(f"{prefix}-graph", "figure"),
-                Input(f"{prefix}-property", "value"),
-                Input(f"{prefix}-log-x", "value"),
-                Input(f"{prefix}-log-y", "value"),
+            self._register_scatter_callback_factory(
+                app=app,
+                prefix=prefix,
+                scatter_plot=scatter_plot,
             )
-            def _update_scatter(
-                property_name,
-                log_x_values,
-                log_y_values,
-                _plot=scatter_plot,
-            ):
-                selected_property = None
-                if property_name and property_name != "__all__":
-                    selected_property = str(property_name)
-                fig = _plot.create_scatter_figure(
-                    property_name=selected_property,
-                    log_x="on" in (log_x_values or []),
-                    log_y="on" in (log_y_values or []),
-                )
-                fig.update_layout(autosize=True, width=None, height=None)
-                return fig
+
+    def _register_scatter_callback_factory(self, app, prefix, scatter_plot):
+
+        @app.callback(
+            Output(f"{prefix}-graph", "figure"),
+            Input(f"{prefix}-property", "value"),
+            Input(f"{prefix}-log-x", "value"),
+            Input(f"{prefix}-log-y", "value"),
+        )
+        def _update_scatter(
+            property_name,
+            log_x_values,
+            log_y_values,
+            _plot=scatter_plot,
+        ):
+            selected_property = None
+            if property_name and property_name != "__all__":
+                selected_property = str(property_name)
+            fig = _plot.create_scatter_figure(
+                property_name=selected_property,
+                log_x="on" in (log_x_values or []),
+                log_y="on" in (log_y_values or []),
+            )
+            fig.update_layout(autosize=True, width=None, height=None)
+            return fig
 
     def _register_table_callbacks(self, app):
         for idx, table_plot in enumerate(self.table_plots.values()):
             prefix = f"mp-table-{idx}"
 
-            @app.callback(
-                Output(f"{prefix}-table", "page_size"),
-                Input(f"{prefix}-page-size", "value"),
-            )
-            def _update_table_page_size(page_size):
-                return int(page_size)
+            self._register_table_callback_factory(app=app, prefix=prefix, table_plot=table_plot, idx=idx)
 
-            @app.callback(
-                Output(f"{prefix}-download", "data"),
-                Input(f"{prefix}-download-btn", "n_clicks"),
-                prevent_initial_call=True,
+    def _register_table_callback_factory(self, app, prefix, table_plot, idx):
+        @app.callback(
+            Output(f"{prefix}-table", "page_size"),
+            Input(f"{prefix}-page-size", "value"),
+        )
+        def _update_table_page_size(page_size):
+            return int(page_size)
+
+        @app.callback(
+            Output(f"{prefix}-download", "data"),
+            Input(f"{prefix}-download-btn", "n_clicks"),
+            prevent_initial_call=True,
+        )
+        def _download_table_csv(n_clicks, _plot=table_plot, _idx=idx):
+            if not n_clicks:
+                return no_update
+            return dcc.send_data_frame(
+                _plot.table_data.to_csv,
+                f"table_panel_{_idx+1}.csv",
+                index=False,
             )
-            def _download_table_csv(n_clicks, _plot=table_plot, _idx=idx):
-                if not n_clicks:
-                    return no_update
-                return dcc.send_data_frame(
-                    _plot.table_data.to_csv,
-                    f"table_panel_{_idx+1}.csv",
-                    index=False,
-                )
 
     def create_app(self):
         """Create a Dash app with nested tabs and automatic callbacks."""

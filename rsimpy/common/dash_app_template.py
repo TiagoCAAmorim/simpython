@@ -9,7 +9,7 @@ from __future__ import annotations
 import argparse
 
 import numpy as np
-from dash import Dash, Input, Output, State, dash_table, ctx, dcc, html, no_update
+from dash import Dash, Input, Output, ctx, dcc, html, no_update
 import plotly.graph_objects as go
 import pandas as pd
 
