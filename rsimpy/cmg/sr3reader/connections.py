@@ -85,7 +85,7 @@ class ConnectionsHandler:
             (1=I, 2=J, 3=K, 4=Mat-Frac). For connections with type 4, the
             cell order is matrix cell and fracture cell.
         """
-        con_type = self._file.get_table("SpatialProperties/000000/GRID/ICNTDR")[:]
+        con = self._file.get_table("SpatialProperties/000000/GRID/ICNTDR")[:]
         cell1 = self._file.get_table("SpatialProperties/000000/GRID/ICTPS1")[:]
         cell2 = self._file.get_table("SpatialProperties/000000/GRID/ICTPS2")[:]
 
@@ -95,14 +95,16 @@ class ConnectionsHandler:
         ijk1 = self._grid.n2ijk(cell1_)
         ijk2 = self._grid.n2ijk(cell2_)
 
-        con = np.min(np.stack([con_type, 3*np.ones_like(con_type)], axis=1), axis=1)
+        if np.max(con) > 3:
+            raise NotImplementedError(
+                "Connections with type 4 (matrix-fracture) are not supported yet.")
         downstream = ijk1[np.arange(ijk1.shape[0]),con-1] <= ijk2[np.arange(ijk2.shape[0]),con-1]
 
         connections = np.zeros((len(cell1_), 3), dtype=cell1_.dtype)
         connections[downstream] = np.column_stack((
-            cell1_[downstream], cell2_[downstream], con_type[downstream]))
+            cell1_[downstream], cell2_[downstream], con[downstream]))
         connections[~downstream] = np.column_stack((
-            cell2_[~downstream], cell1_[~downstream], con_type[~downstream]))
+            cell2_[~downstream], cell1_[~downstream], con[~downstream]))
 
         self._connections = connections
 
@@ -385,9 +387,10 @@ class ConnectionsHandler:
 
         Parameters:
         connections (np.ndarray): Array of shape (n_connections, 3) where each row
-            contains the two connected cells ("+" face and "-" face) and the
-            connection type (1=I, 2=J, 3=K, 4=Mat-Frac). For connections with
-            type 4, the cell order is matrix cell and fracture cell.
+            contains the two connected cells ("+" face and "-" face, i.e., increasing index
+            direction) and the connection type (1=I, 2=J, 3=K, 4=Mat-Frac).
+            For connections with type 4, the cell order is matrix cell and fracture cell.
+            (matrix-fracture connections are not supported yet).
         add_areas (bool): If True, the function will calculate the area of the common face
             with a more precise method.
         tof (bool): If True, the function will return the normalized time of flight in
@@ -431,6 +434,20 @@ class ConnectionsHandler:
 
         t = (perm * ntg * (ad/dd).flatten()).reshape((-1,2))
         tran = 1/np.sum(1/t, axis=1)
+
+        # Apply transmissibility multipliers
+        tr_list = ["TRMI", "TRMJ", "TRMK"]
+        trans_mult = self._data.get("grid", tr_list, days=0, active_only=False)
+        trans_mod = tran.copy()
+        for i_dir, tr in enumerate(tr_list):
+            dir_mask = connections[:,-1] == (i_dir + 1)
+            if not np.any(dir_mask):
+                continue
+            connections_i = connections[dir_mask]
+            trans_i = trans_mult[tr].values.flatten()
+            trans_mod[dir_mask] = trans_mod[dir_mask] * trans_i[connections_i[:,0]-1]
+        tran = trans_mod
+
 
         if tof:
             tof_values = np.sum(ad / np.sqrt(dd), axis=1) / tran
