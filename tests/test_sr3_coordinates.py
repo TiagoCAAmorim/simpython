@@ -88,10 +88,10 @@ class TestSr3Coordinates(unittest.TestCase):
         file_read_ = sr3.connections.get_transmissibilities()
         self.assertEqual(len(file_read_), 7, "Expected 7 transmissibilities.")
 
-        file_read_ = sr3.connections.get_transmissibilities(tof=True)
+        file_read_ = sr3.connections.get_transmissibilities(geom_mod=True)
         self.assertEqual(file_read_.shape[0], 7, "Expected 7 values.")
-        self.assertEqual(file_read_.shape[1], 2,
-                         "Expected 2 columns for transmissibilities and TOF.")
+        self.assertEqual(file_read_.shape[1], 3,
+                         "Expected 3 columns for transmissibilities and distances.")
 
     def test_print_transmissibilities(self):
         """Tests printing grid connections transmissibilities"""

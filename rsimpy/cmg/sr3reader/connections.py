@@ -65,6 +65,7 @@ class ConnectionsHandler:
         self._grid = sr3_reader.grid
         self._properties = sr3_reader.properties
         self._data = sr3_reader.data
+        self._reference_grid_properties = [100.0, 100.0, 1.0, 0.10]
 
         if auto_read:
             self.read()
@@ -131,39 +132,35 @@ class ConnectionsHandler:
 
 
     def get_transmissibilities(self, connections=None, add_areas=False,
-                               force_recalc=False, tof=False):
+                               force_recalc=False, geom_mod=False):
         """
         Calculates the transmissibility for each connection.
 
-        Tran = 1 / (1/Ti + 1/Tj)
-        Ti = Ki * NTGi * A.Di / Di.Di
-        A.Di = Ax * Dix + Ay * Diy + Az * Diz
-        Di.Di = Dix^2 + Diy^2 + Diz^2
+        Uses the formulas described in the ECLIPSE manual for corner-point grids.
+        For a connection between cell i and cell j:
 
-        Ki: Permeability of cell i.
-        NTGi: Net-to-gross ratio of cell i (does not apply for K connections).
-        A: Area of the common face.
-        Di: Distance between the center of the cell and the center of the corresponding face.
-        Ax, Ay, Az: X-,Y- and Z- projections of the mutual interface area of cell i and cell j
-        Dix, Diy,Diz: X-, Y- and Z-components of the distance between the center of cell i.
+            Tran = 1 / (1/Ti + 1/Tj)
+            Ti = Ki * NTGi * A.Di / Di.Di
+            A.Di = Ax * Dix + Ay * Diy + Az * Diz
+            Di.Di = Dix^2 + Diy^2 + Diz^2
+
+        * Ki: Permeability of cell i.
+        * NTGi: Net-to-gross ratio of cell i (does not apply for K connections).
+        * A: Area of the common face.
+        * Di: Distance between the center of the cell and the center of the corresponding face.
+        * Ax, Ay, Az: X-,Y- and Z- projections of the mutual interface area of cell i and cell j
+        * Dix, Diy,Diz: X-, Y- and Z-components of the distance between the center of cell i.
         and the center of the relevant face of cell i.
 
-        vi = Q / Ai = Tran * (kr/B.mu) * dPhi * sqrt(Di.Di) / (A.Di)
-        ti = sqrt(Di.Di) / vi = sqrt(Di.Di) * (A.Di) / (Tran * (kr/B.mu) * dPhi * sqrt(Di.Di))
-           = (A.Di) / (Tran * (kr/B.mu) * dPhi)
-        Assuming (kr/B.mu) * dPhi / sqrt(Di.Di) = cte
-        tof_i = (A.Di/sqrt(Di.Di)) / Tran
-        tof = tof_i + tof_j = (A.Di/sqrt(Di.Di) + A.Dj/sqrt(Dj.Dj)) / Tran
+        The geo_mod option estimates geometric modifications to the distances between cells based
+        on the reference grid properties set by set_reference_grid_properties(). This modified
+        distance is estimated assuming a transient flow and small distances. It can be shown, from
+        the transient flow equation of a linear system, that the normalized pressure depletion
+        of a linear system is equivalent to the pressure depletion of a reference system, with the
+        coordinates scaled by the square root of the pore-volume ratios and inverse of the
+        transmissibility ratios.
 
-        vi: Velocity from the center of cell i to the common face.
-        Q: Flow rate through the connection.
-        Ai: Area of the common face projected in the flow direction = (A.Di) / sqrt(Di.Di).
-        kr: Relative permeability.
-        B: Formation volume factor.
-        mu: Viscosity.
-        dPhi: Pressure potential difference between the two cells.
-        ti: Time for a particle to travel from the center of cell i to the common face.
-        tof: Normalized time of flight through the connection.
+            alpha = sqrt((PorVol/PorVol_ref) / (Trans/Trans_ref))
 
         Parameters:
         connections (np.ndarray): Array of shape (n_connections, 3) where each row
@@ -175,28 +172,28 @@ class ConnectionsHandler:
             with a more precise method.
         force_recalc (bool): If True, the function will recalculate the transmissibilities
             even if they were previously calculated.
-        tof (bool): If True, the function will return the normalized time of flight in
-            addition to the transmissibilities.
+        geom_mod (bool): If True, the function will estimate geometric modifications to the
+            distances between cells. Returns original and modified distances,
 
         Returns:
         np.ndarray: Array of shape (n_connections,) containing the transmissibility
-            for each connection. If tof is True, it returns an array (n_connections,2),
-            with the second column containing the time of flight.
+            for each connection. If geom_mod is True, it returns an array (n_connections, 3),
+            with the second column containing the original distances between cells and the
+            third column containing the modified distances.
         """
         if connections is None:
             connections = self.get_connections()
-            transmissibilities = self._transmissibilities
-            if self._transmissibilities is None or force_recalc or tof:
-                transmissibilities = self._get_transmissibilities(
-                    connections=connections, add_areas=add_areas, tof=tof)
-            if tof:
-                self._transmissibilities = transmissibilities[:,0]
-                return transmissibilities
-            self._transmissibilities = transmissibilities
-            return self._transmissibilities
 
-        return self._get_transmissibilities(
-            connections=connections, add_areas=add_areas, tof=tof)
+        if self._transmissibilities is None or force_recalc:
+            self._calc_transmissibilities(
+                connections=connections, add_areas=add_areas)
+
+        transmissibilities = self._transmissibilities
+
+        if geom_mod:
+            return transmissibilities
+        return transmissibilities[:,0]
+
 
 # MARK: Setters
     def set_epsilon(self, epsilon):
@@ -219,6 +216,21 @@ class ConnectionsHandler:
         """
         self.z_scale = z_scale
 
+    def set_reference_grid_properties(self, perm_i, perm_j, perm_k, porosity):
+        """
+        Set the reference grid properties.
+
+        These properties are used to estimate the cell-to-cell distances adjusted to
+        the grid properties.
+        See get_transmissibilities() for more details.
+
+        Parameters:
+            perm_i (float): Reference permeability in the I direction.
+            perm_j (float): Reference permeability in the J direction.
+            perm_k (float): Reference permeability in the K direction.
+            porosity (float): Reference porosity.
+        """
+        self._reference_grid_properties = [perm_i, perm_j, perm_k, porosity]
 
 # MARK: Faces Intersection
     def _get_nnc_face(self, face1, face2):
@@ -352,7 +364,7 @@ class ConnectionsHandler:
         return ad, dd
 
 
-    def _get_transmissibilities(self, connections, add_areas=False, tof=False):
+    def _calc_transmissibilities(self, connections, add_areas=False, apply_multipliers=True):
         """Calculates the transmissibility for each connection.
 
         Tran = 1 / (1/Ti + 1/Tj)
@@ -368,22 +380,10 @@ class ConnectionsHandler:
         Dix, Diy,Diz: X-, Y- and Z-components of the distance between the center of cell i.
         and the center of the relevant face of cell i.
 
-        vi = Q / Ai = Tran * (kr/B.mu) * dPhi * sqrt(Di.Di) / (A.Di)
-        ti = sqrt(Di.Di) / vi = sqrt(Di.Di) * (A.Di) / (Tran * (kr/B.mu) * dPhi * sqrt(Di.Di))
-           = (A.Di) / (Tran * (kr/B.mu) * dPhi)
-        Assuming (kr/B.mu) * dPhi / sqrt(Di.Di) = cte
-        tof_i = (A.Di/sqrt(Di.Di)) / Tran
-        tof = tof_i + tof_j = (A.Di/sqrt(Di.Di) + A.Dj/sqrt(Dj.Dj)) / Tran
-
-        vi: Velocity from the center of cell i to the common face.
-        Q: Flow rate through the connection.
-        Ai: Area of the common face projected in the flow direction = (A.Di) / sqrt(Di.Di).
-        kr: Relative permeability.
-        B: Formation volume factor.
-        mu: Viscosity.
-        dPhi: Pressure potential difference between the two cells.
-        ti: Time for a particle to travel from the center of cell i to the common face.
-        tof: Normalized time of flight through the connection.
+        The connection distance is calculated as the sum of the norm of the vectors from the
+        cell centers to the respective face center. The modified distance is calculated by
+        scaling the original distances by the square root of the pore-volume ratios and inverse
+        of the transmissibility ratios with respect to a reference grid.
 
         Parameters:
         connections (np.ndarray): Array of shape (n_connections, 3) where each row
@@ -393,17 +393,17 @@ class ConnectionsHandler:
             (matrix-fracture connections are not supported yet).
         add_areas (bool): If True, the function will calculate the area of the common face
             with a more precise method.
-        tof (bool): If True, the function will return the normalized time of flight in
-            addition to the transmissibilities.
+        apply_multipliers (bool): If True, the function will apply the transmissibility
+            multipliers.
 
         Returns:
-        np.ndarray: Array of shape (n_connections,) containing the transmissibility
-            for each connection. If tof is True, it returns an array (n_connections,2),
-            with the second column containing the time of flight.
+        np.ndarray: Array of shape (n_connections, 3) containing the transmissibility
+            for each connection, the original distance between cells and the modified
+            distance between cells.
         """
         ad, dd = self._get_ad_dd(connections, add_areas=add_areas)
 
-        props = ["PERMI","PERMJ","PERMK"]
+        props = ["PERMI","PERMJ","PERMK","BLOCKPVOL"]
         prop_list = self._properties.get(element_type='grid').keys()
 
         if 'NET/GROSS' in prop_list:
@@ -417,43 +417,68 @@ class ConnectionsHandler:
         perms = np.stack([
             grid_data['PERMI'],
             grid_data['PERMJ'],
-            grid_data['PERMK']], axis=0).reshape((3,-1))
+            grid_data['PERMK']
+        ], axis=0).reshape((3,-1))
+
+        perms_ref = np.stack([
+            np.ones_like(grid_data['PERMI']) * self._reference_grid_properties[0],
+            np.ones_like(grid_data['PERMJ']) * self._reference_grid_properties[1],
+            np.ones_like(grid_data['PERMK']) * self._reference_grid_properties[2]
+        ], axis=0).reshape((3,-1))
+
+        por_vol = (grid_data['BLOCKPVOL'] * ntg_vec).values.flatten()
+        bulk = self._grid.get_bulk_volumes(active_only=False).flatten()
+        por_vol_ref = bulk * self._reference_grid_properties[3]
+
         ntgs = np.stack([
             ntg_vec,
             ntg_vec,
-            np.ones_like(ntg_vec)], axis=0).reshape((3,-1))
+            np.ones_like(ntg_vec)
+        ], axis=0).reshape((3,-1))
 
         cells = connections[:,[0,1]].flatten()-1
         cons = np.stack([connections[:,2],connections[:,2]], axis=1).flatten()-1
+
         perm = np.ones_like(cells, dtype=np.float64)
         ntg = np.ones_like(cells, dtype=np.float64)
+        perm_ref = np.ones_like(cells, dtype=np.float64)
+        por_vol_ratio = np.ones_like(cells, dtype=np.float64)
 
         for i in range(3):
             perm[cons==i] = perms[i,cells[cons==i]]
             ntg[cons==i] = ntgs[i,cells[cons==i]]
+            perm_ref[cons==i] = perms_ref[i,cells[cons==i]]
+            por_vol_ratio[cons==i] = por_vol[cells[cons==i]] / por_vol_ref[cells[cons==i]]
 
-        t = (perm * ntg * (ad/dd).flatten()).reshape((-1,2))
+        aa_dd = (ad/dd).flatten()
+        t = (perm * ntg * aa_dd).reshape((-1,2))
         tran = 1/np.sum(1/t, axis=1)
 
-        # Apply transmissibility multipliers
-        tr_list = ["TRMI", "TRMJ", "TRMK"]
-        trans_mult = self._data.get("grid", tr_list, days=0, active_only=False)
-        trans_mod = tran.copy()
-        for i_dir, tr in enumerate(tr_list):
-            dir_mask = connections[:,-1] == (i_dir + 1)
-            if not np.any(dir_mask):
-                continue
-            connections_i = connections[dir_mask]
-            trans_i = trans_mult[tr].values.flatten()
-            trans_mod[dir_mask] = trans_mod[dir_mask] * trans_i[connections_i[:,0]-1]
-        tran = trans_mod
+        t_ref = (perm_ref * aa_dd).reshape((-1,2))
+        tran_ref = 1/np.sum(1/t_ref, axis=1)
 
+        if apply_multipliers:
+            # Apply transmissibility multipliers
+            tr_list = ["TRMI", "TRMJ", "TRMK"]
+            trans_mult = self._data.get("grid", tr_list, days=0, active_only=False)
+            for i_dir, tr in enumerate(tr_list):
+                dir_mask = connections[:,-1] == (i_dir + 1)
+                if not np.any(dir_mask):
+                    continue
+                connections_i = connections[dir_mask]
+                trans_i = trans_mult[tr].values.flatten()
+                tran[dir_mask] = tran[dir_mask] * trans_i[connections_i[:,0]-1]
 
-        if tof:
-            tof_values = np.sum(ad / np.sqrt(dd), axis=1) / tran
-            return np.stack((tran, tof_values), axis=1)
+        d = np.sqrt(dd)
+        d_original = d.sum(axis=1)
 
-        return tran
+        # Apply por modifier for each half of the connection,
+        d_mod = d * (np.sqrt(por_vol_ratio).reshape((-1,2)))
+        # and transmissibility modifier for the whole connection.
+        tran_ratio = tran / tran_ref
+        d_modified = d_mod.sum(axis=1) / np.sqrt(tran_ratio)
+
+        self._transmissibilities =  np.stack((tran, d_original, d_modified), axis=1)
 
 
 # MARK: Utilities
