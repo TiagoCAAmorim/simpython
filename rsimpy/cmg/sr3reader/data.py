@@ -285,6 +285,9 @@ class DataHandler:
 
 
     def _get_interpolated_grid_property(self, raw_data, ts_list, days):
+        if len(ts_list) == 1:
+            return np.repeat(raw_data[:, :1], len(days), axis=1)
+
         data = []
         for day in days:
             ts_a, ts_b = self._get_grid_interpoland_timesteps(day)
@@ -304,12 +307,16 @@ class DataHandler:
 
 
     def _get_single_grid_property(self, property_name, elements, days, active_only):
-        ts_list = self._get_grid_timesteps_list(days)
-        for ts in ts_list:
-            if ts not in self._grid.get_property(property_name)["timesteps"]:
-                msg = f"Grid property {property_name} does not "
-                msg += f"have values for timestep {ts}."
-                raise ValueError(msg)
+        prop_info = self._grid.get_property(property_name)
+        if prop_info["is_internal"] or len(prop_info["timesteps"]) == 1:
+            ts_list = prop_info["timesteps"]
+        else:
+            ts_list = self._get_grid_timesteps_list(days)
+            for ts in ts_list:
+                if ts not in prop_info["timesteps"]:
+                    msg = f"Grid property {property_name} does not "
+                    msg += f"have values for timestep {ts}."
+                    raise ValueError(msg)
 
         raw_data = self._get_raw_grid_property(property_name, elements, ts_list)
         data = self._get_interpolated_grid_property(raw_data, ts_list, days)
@@ -331,7 +338,7 @@ class DataHandler:
 
         for k, v in self._properties.description(property_name).items():
             data_array.attrs[k] = v
-        for k, v in self._grid.get_property(property_name).items():
+        for k, v in prop_info.items():
             data_array.attrs[k] = v
         return data_array
 

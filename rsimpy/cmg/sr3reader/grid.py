@@ -333,6 +333,67 @@ class GridHandler:
         return index[:]
 
 
+    def get_bulk_volumes(self, cells=None, active_only=False):
+        """Calculate bulk volume for grid cells from vertex coordinates.
+
+        Coordinates are read from ``self.coordinates.get`` and processed in a
+        fully vectorized way for all selected cells.
+
+        The implementation follows the tetrakis-hexahedron (TH) formula in
+        Grandy (1997), UCRL-ID-128886, Eq. (12):
+
+            12 v = [a1; b1; c1] + [a2; b2; c2] + [a3; b3; c3]
+
+        where each bracket is a scalar triple product. The report uses a node
+        ordering where node 0 has neighbors (1, 2, 4). ``coordinates.py`` uses
+        a different convention, so coordinates are remapped before applying the
+        equation.
+
+        Parameters
+        ----------
+        cells : int, list of int, np.ndarray or None, optional
+            Complete cell index(es). If provided, ``active_only`` is ignored.
+        active_only : bool, optional
+            If True and ``cells`` is None, returns volumes only for active cells.
+            If False and ``cells`` is None, returns volumes for all cells.
+            (default: False)
+
+        Returns
+        -------
+        np.ndarray
+            Bulk volumes for the selected cells.
+        """
+        if cells is None and active_only:
+            cells = self.get_cell_indexes(is_complete=False)
+
+        nodes = self.coordinates.get(cells=cells, face=None)
+        if nodes.ndim == 2:
+            nodes = nodes[np.newaxis, ...]
+
+        # Remap from coordinates.py numbering to Grandy's Eq. (12) numbering.
+        # report_idx -> current_idx: [0, 1, 2, 3, 4, 5, 6, 7] -> [0, 1, 3, 2, 4, 5, 7, 6]
+        report_nodes = nodes[:, [0, 1, 3, 2, 4, 5, 7, 6], :]
+        x0, x1, x2, x3, x4, x5, x6, x7 = [report_nodes[:, i, :] for i in range(8)]
+
+        term1 = np.einsum(
+            "ij,ij->i",
+            (x7 - x1) + (x6 - x0),
+            np.cross((x7 - x2), (x3 - x0)),
+        )
+        term2 = np.einsum(
+            "ij,ij->i",
+            (x6 - x0),
+            np.cross((x7 - x2) + (x5 - x0), (x7 - x4)),
+        )
+        term3 = np.einsum(
+            "ij,ij->i",
+            (x7 - x1),
+            np.cross((x5 - x0), (x7 - x4) + (x3 - x0)),
+        )
+
+        return np.abs((term1 + term2 + term3) / 12.0)
+
+
     def _validate_elements(self, elements):
         if elements is None:
             elements = ["MATRIX"]

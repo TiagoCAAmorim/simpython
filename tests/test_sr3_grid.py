@@ -4,8 +4,8 @@ sr3reader module tests - Grid sizes and properties
 
 from pathlib import Path
 import unittest
+import numpy as np
 
-import context  # noqa # pylint: disable=unused-import
 from rsimpy.cmg.sr3reader import Sr3Reader
 
 
@@ -307,6 +307,24 @@ class TestSr3Grid(unittest.TestCase):
         file_read_ = file_read["SO"].sel(day=1096.).values
         for t,v in zip(true_result[8:], file_read_):
             self.assertAlmostEqual(t, round(v,5))
+
+
+    def test_get_bulk_volumes_matches_modbvol(self):
+        """Tests if coordinate-based bulk volumes are close to MODBVOL."""
+        test_file = Path("tests/sr3/base_case_3a.sr3")
+        sr3 = Sr3Reader(test_file)
+
+        bulk_volumes = sr3.grid.get_bulk_volumes(active_only=True)
+
+        data = sr3.data.get(
+            element_type="grid",
+            properties="MODBVOL",
+            days=0.,
+            active_only=True)
+        modbvol = data["MODBVOL"].sel(day=0.).values
+
+        self.assertEqual(len(bulk_volumes), len(modbvol))
+        np.testing.assert_allclose(bulk_volumes, modbvol, rtol=1e-5, atol=1e-2)
 
 
 if __name__ == "__main__":

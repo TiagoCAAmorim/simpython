@@ -6,7 +6,6 @@ from pathlib import Path
 from collections import Counter
 import unittest
 
-import context  # noqa # pylint: disable=unused-import
 from rsimpy.cmg.sr3reader import Sr3Reader
 
 

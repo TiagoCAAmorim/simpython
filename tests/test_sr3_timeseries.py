@@ -5,9 +5,7 @@ sr3reader module tests - Timeseries data and CSV export
 from pathlib import Path
 from collections import Counter
 import unittest
-from time import time
 
-import context  # noqa # pylint: disable=unused-import
 from rsimpy.cmg.sr3reader import Sr3Reader
 
 
@@ -161,43 +159,36 @@ class TestSr3Timeseries(unittest.TestCase):
         Path('test_C.csv').unlink()
 
     def test_quick_read_timeseries(self):
-        """Tests reading timeseries quicker."""
+        """Tests reading timeseries with read_grid=False."""
         test_file = Path("tests/sr3/base_case_3a.sr3")
 
-        start = time()
         sr3 = Sr3Reader(test_file)
         file_read = sr3.data.get(
             element_type="well",
             properties="BHP",
             elements="P11",
             days=[30., 1085., 2162.])
-        regular = time() - start
 
         file_read = file_read["BHP"].sel(element="P11").values
         true_result = [60627.83967735492 / 98.0665,
                        55779.152843383265 / 98.0665,
                        52595.77029111726 / 98.0665]
         _test_equal_lists(self, true_result, list(file_read))
+        self.assertIn("MATRIX", sr3.elements.get("grid"))
 
-        start = time()
         sr3 = Sr3Reader(test_file, read_grid=False)
         file_read = sr3.data.get(
             element_type="well",
             properties="BHP",
             elements="P11",
             days=[30., 1085., 2162.])
-        quick = time() - start
 
         file_read = file_read["BHP"].sel(element="P11").values
         true_result = [60627.83967735492 / 98.0665,
                        55779.152843383265 / 98.0665,
                        52595.77029111726 / 98.0665]
         _test_equal_lists(self, true_result, list(file_read))
-
-        self.assertTrue(
-            quick < regular,
-            f"Quick read time ({quick:0.4} s) not less than"
-            f" regular read time {regular:0.4} s")
+        self.assertEqual(sr3.elements.get("grid"), {})
 
 if __name__ == "__main__":
     unittest.main()
