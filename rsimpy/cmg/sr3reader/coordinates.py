@@ -204,8 +204,21 @@ class GridCoordHandler:
         return self._nodes[self._blocks[cells-1][:,edge_n]-1]
 
 
-    def get_center(self, cells, face=None):
-        """Get coordinates of the center of a cell or cell face."""
+    def get_center(self, cells=None, face=None):
+        """
+        Get coordinates of the center of a cell or cell face.
+
+        Parameters
+        ----------
+        cell : int, list of int or np.ndarray
+            Cell number(s) (complete index).
+            If None, uses all cells in the grid. Default is None.
+        face : int, str or None
+            Face of the cell.
+            Valid values are "I-", "I+", "J-", "J+", "K-", "K+", or
+            0, 1, 2, 3, 4, 5 for I-, I+, J-, J+, K-, K+, respectively.
+            If None, returns the center of the cell. Default is None.
+        """
         return np.mean(self.get(cells, face), axis=1)
 
 
