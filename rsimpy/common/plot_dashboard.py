@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import numpy as np
-from dash import Dash, Input, Output, Patch, State, ctx, dash_table, dcc, html, no_update
+from dash import Dash, Input, Output, Patch, ctx, dash_table, dcc, html, no_update
 
 from rsimpy.common.plot_dash import (
     DashLinePlot,
@@ -35,7 +35,7 @@ _COLOR_ERROR_STYLE = {"color": "red", "fontSize": "11px", "marginTop": "2px"}
 _INPUT_SMALL = {"width": "88px", "fontSize": "12px"}
 
 
-def _parse_color_limits(vmin_input, vmax_input, log_scale, auto_vmin=None, auto_vmax=None):
+def _parse_color_limits(vmin_input, vmax_input, scale_mode, auto_vmin=None, auto_vmax=None):
     """Parse and validate vmin/vmax inputs. Returns (color_limits, error_msg).
 
     When only one bound is provided the missing bound is filled from the
@@ -70,7 +70,7 @@ def _parse_color_limits(vmin_input, vmax_input, log_scale, auto_vmin=None, auto_
         if vmax_val <= vmin_val:
             return None, "Max must be greater than Min."
 
-    if log_scale and vmin_val <= 0.0:
+    if scale_mode == "log" and vmin_val <= 0.0:
         return None, "Min must be > 0 for log scale."
     return [vmin_val, vmax_val], ""
 
@@ -409,6 +409,18 @@ class DashMultiPanelDashboard:
                                             style={"marginRight": "10px"},
                                         ),
                                         dcc.Checklist(
+                                            id=f"{prefix}-grid-asinh-scale",
+                                            options=[
+                                                {
+                                                    "label": "Asinh",
+                                                    "value": "on",
+                                                    "disabled": False,
+                                                }
+                                            ],
+                                            value=[],
+                                            style={"marginRight": "10px"},
+                                        ),
+                                        dcc.Checklist(
                                             id=f"{prefix}-grid-options-toggle",
                                             options=[
                                                 {
@@ -491,6 +503,18 @@ class DashMultiPanelDashboard:
                                             options=[
                                                 {
                                                     "label": "Log",
+                                                    "value": "on",
+                                                    "disabled": True,
+                                                }
+                                            ],
+                                            value=[],
+                                            style={"marginRight": "10px"},
+                                        ),
+                                        dcc.Checklist(
+                                            id=f"{prefix}-connection-asinh-scale",
+                                            options=[
+                                                {
+                                                    "label": "Asinh",
                                                     "value": "on",
                                                     "disabled": True,
                                                 }
@@ -1038,7 +1062,9 @@ class DashMultiPanelDashboard:
             Output(f"{prefix}-contour-controls-group", "style"),
             Output(f"{prefix}-well-controls-group", "style"),
             Output(f"{prefix}-grid-log-scale", "options"),
+            Output(f"{prefix}-grid-asinh-scale", "options"),
             Output(f"{prefix}-connection-log-scale", "options"),
+            Output(f"{prefix}-connection-asinh-scale", "options"),
             Output(f"{prefix}-grid-options-toggle", "options"),
             Output(f"{prefix}-connection-options-toggle", "options"),
             Output(f"{prefix}-contour-options-toggle", "options"),
@@ -1050,6 +1076,7 @@ class DashMultiPanelDashboard:
             Input(f"{prefix}-show-grid", "value"),
             Input(f"{prefix}-grid-palette", "value"),
             Input(f"{prefix}-grid-log-scale", "value"),
+            Input(f"{prefix}-grid-asinh-scale", "value"),
             Input(f"{prefix}-show-connections", "value"),
             Input(f"{prefix}-connection-options-toggle", "value"),
             Input(f"{prefix}-show-contours", "value"),
@@ -1062,6 +1089,7 @@ class DashMultiPanelDashboard:
             Input(f"{prefix}-connection-width", "value"),
             Input(f"{prefix}-connection-segments", "value"),
             Input(f"{prefix}-connection-log-scale", "value"),
+            Input(f"{prefix}-connection-asinh-scale", "value"),
             Input(f"{prefix}-well-size", "value"),
             Input(f"{prefix}-vmin", "value"),
             Input(f"{prefix}-vmax", "value"),
@@ -1073,6 +1101,7 @@ class DashMultiPanelDashboard:
             show_grid_values,
             grid_palette,
             grid_log_scale_values,
+            grid_asinh_scale_values,
             show_connection_values,
             connection_options_values,
             show_contours_values,
@@ -1085,6 +1114,7 @@ class DashMultiPanelDashboard:
             connection_width,
             connection_segments,
             connection_log_scale_values,
+            connection_asinh_scale_values,
             well_size,
             vmin_input,
             vmax_input,
@@ -1111,18 +1141,52 @@ class DashMultiPanelDashboard:
             well_style = {"display": "block" if show_well_options else "none"}
 
             grid_log_scale = show_grid and "on" in (grid_log_scale_values or [])
+            grid_asinh_scale = (
+                show_grid and "on" in (grid_asinh_scale_values or []) and not grid_log_scale
+            )
             connection_log_scale = (
                 show_connections and "on" in (connection_log_scale_values or [])
             )
+            connection_asinh_scale = (
+                show_connections
+                and "on" in (connection_asinh_scale_values or [])
+                and not connection_log_scale
+            )
 
             grid_log_options = [
-                {"label": "Log", "value": "on", "disabled": not show_grid}
+                {
+                    "label": "Log",
+                    "value": "on",
+                    "disabled": (not show_grid) or grid_asinh_scale,
+                }
+            ]
+            grid_asinh_options = [
+                {
+                    "label": "Asinh",
+                    "value": "on",
+                    "disabled": (not show_grid) or grid_log_scale,
+                }
             ]
             connection_log_options = [
                 {
                     "label": "Log",
                     "value": "on",
-                    "disabled": (not has_connections) or (not show_connections),
+                    "disabled": (
+                        (not has_connections)
+                        or (not show_connections)
+                        or connection_asinh_scale
+                    ),
+                }
+            ]
+            connection_asinh_options = [
+                {
+                    "label": "Asinh",
+                    "value": "on",
+                    "disabled": (
+                        (not has_connections)
+                        or (not show_connections)
+                        or connection_log_scale
+                    ),
                 }
             ]
             grid_options = [
@@ -1160,8 +1224,12 @@ class DashMultiPanelDashboard:
                 _auto_vmin = float(np.nanmin(fin)) if fin.size > 0 else None
                 _auto_vmax = float(np.nanmax(fin)) if fin.size > 0 else None
 
+            scale_mode = "log" if grid_log_scale else "asinh" if grid_asinh_scale else "linear"
+
             color_limits, color_error = _parse_color_limits(
-                vmin_input, vmax_input, grid_log_scale,
+                vmin_input,
+                vmax_input,
+                scale_mode,
                 auto_vmin=_auto_vmin, auto_vmax=_auto_vmax,
             )
 
@@ -1171,6 +1239,7 @@ class DashMultiPanelDashboard:
                 layer=int(layer),
                 palette=str(grid_palette),
                 grid_log_scale=grid_log_scale,
+                grid_asinh_scale=grid_asinh_scale,
                 color_limits=color_limits,
                 add_grid=show_grid,
                 add_connections=show_connections,
@@ -1179,6 +1248,7 @@ class DashMultiPanelDashboard:
                 contour_count=int(contour_count),
                 connection_palette=str(connection_palette),
                 connection_log_scale=connection_log_scale,
+                connection_asinh_scale=connection_asinh_scale,
                 connection_width=float(connection_width),
                 connection_line_segments=int(connection_segments),
                 well_size_percent=float(well_size),
@@ -1191,7 +1261,9 @@ class DashMultiPanelDashboard:
                 contour_style,
                 well_style,
                 grid_log_options,
+                grid_asinh_options,
                 connection_log_options,
+                connection_asinh_options,
                 grid_options,
                 connection_options,
                 contour_options,
@@ -1477,6 +1549,12 @@ class DashMapCompare:
                                             style={"marginRight": "12px"},
                                         ),
                                         dcc.Checklist(
+                                            id=f"{prefix}-grid-asinh",
+                                            options=[{"label": "Asinh", "value": "on"}],
+                                            value=[],
+                                            style={"marginRight": "12px"},
+                                        ),
+                                        dcc.Checklist(
                                             id=f"{prefix}-grid-options",
                                             options=[{"label": "Options", "value": "show"}],
                                             value=[],
@@ -1705,11 +1783,14 @@ class DashMapCompare:
             Output(f"{prefix}-contour-controls-group", "style"),
             Output(f"{prefix}-color-error", "children"),
             Output(f"{prefix}-maps-container", "style"),
+            Output(f"{prefix}-grid-log", "options"),
+            Output(f"{prefix}-grid-asinh", "options"),
             Input(f"{prefix}-property", "value"),
             Input(f"{prefix}-day", "value"),
             Input(f"{prefix}-layer", "value"),
             Input(f"{prefix}-show-grid", "value"),
             Input(f"{prefix}-grid-log", "value"),
+            Input(f"{prefix}-grid-asinh", "value"),
             Input(f"{prefix}-grid-options", "value"),
             Input(f"{prefix}-palette", "value"),
             Input(f"{prefix}-vmin", "value"),
@@ -1722,13 +1803,14 @@ class DashMapCompare:
         )
         def _update_compare(
             property_index, day_index, layer,
-            show_grid_values, grid_log_values, grid_options_values, palette,
+            show_grid_values, grid_log_values, grid_asinh_values, grid_options_values, palette,
             vmin_input, vmax_input,
             show_wells_values, show_contours_values, contour_options_values,
             contour_count, layout_toggle,
         ):
             show_grid = "show" in (show_grid_values or [])
             grid_log = show_grid and "on" in (grid_log_values or [])
+            grid_asinh = show_grid and "on" in (grid_asinh_values or []) and not grid_log
             show_grid_options = show_grid and "show" in (grid_options_values or [])
             show_contours = has_contours and "show" in (show_contours_values or [])
             show_wells_flag = has_wells and "show" in (show_wells_values or [])
@@ -1736,10 +1818,23 @@ class DashMapCompare:
 
             grid_style = {"display": "block" if show_grid_options else "none"}
             contour_style = {"display": "block" if show_contour_options else "none"}
+            grid_log_options = [{
+                "label": "Log",
+                "value": "on",
+                "disabled": (not show_grid) or grid_asinh,
+            }]
+            grid_asinh_options = [{
+                "label": "Asinh",
+                "value": "on",
+                "disabled": (not show_grid) or grid_log,
+            }]
 
             synced = self._compute_synced_limits(int(property_index), grid_log)
+            scale_mode = "log" if grid_log else "asinh" if grid_asinh else "linear"
             color_limits, color_error = _parse_color_limits(
-                vmin_input, vmax_input, grid_log,
+                vmin_input,
+                vmax_input,
+                scale_mode,
                 auto_vmin=synced[0], auto_vmax=synced[1],
             )
             if color_limits is None and not color_error:
@@ -1756,6 +1851,7 @@ class DashMapCompare:
                 layer=int(layer),
                 palette=str(palette),
                 grid_log_scale=grid_log,
+                grid_asinh_scale=grid_asinh,
                 color_limits=color_limits,
                 add_grid=show_grid,
                 add_connections=False,
@@ -1769,6 +1865,7 @@ class DashMapCompare:
                 layer=int(layer),
                 palette=str(palette),
                 grid_log_scale=grid_log,
+                grid_asinh_scale=grid_asinh,
                 color_limits=color_limits,
                 add_grid=show_grid,
                 add_connections=False,
@@ -1784,6 +1881,8 @@ class DashMapCompare:
                 grid_style, contour_style,
                 color_error,
                 _maps_container_style(layout_toggle),
+                grid_log_options,
+                grid_asinh_options,
             )
 
         # ── Axis sync callback ───────────────────────────────────────────

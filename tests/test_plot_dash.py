@@ -329,6 +329,31 @@ class TestPlotDashFoundation(unittest.TestCase):
             )
         )
 
+    def test_grid_asinh_scale_accepts_negative_values(self):
+        """Test asinh grid scale handles negative and positive values without masking."""
+        vertices = _make_regular_grid_vertices(1, 3)
+        grid_data = np.asarray([[[ -10.0, 0.0, 10.0 ]]], dtype=float)
+
+        obj = DashMapPlot(
+            vertices=vertices,
+            layer_sizes=[3],
+            grid_data=grid_data,
+            property_names=["P1"],
+        )
+        fig = obj.create_map_figure(
+            property_index=0,
+            day_index=0,
+            layer=1,
+            grid_asinh_scale=True,
+        )
+        polygon_colors = [
+            str(tr.fillcolor).lower() for tr in fig.data if tr.name == "cell-polygon"
+        ]
+        self.assertEqual(len(polygon_colors), 3)
+        self.assertNotIn("#bdbdbd", polygon_colors)
+        grid_colorbar = [tr for tr in fig.data if tr.name == "colorbar"][0]
+        self.assertIsNotNone(grid_colorbar.marker.colorbar.ticktext)
+
     def test_dash_map_plot_connections_lines_and_triangles(self):
         """Test connection rendering for both same-layer lines and
         cross-layer triangles.
@@ -498,6 +523,32 @@ class TestPlotDashFoundation(unittest.TestCase):
         self.assertTrue(any("77, 77, 77" in color for color in line_colors))
         conn_colorbar = [tr for tr in fig.data if tr.name == "connection-colorbar"][0]
         self.assertEqual(str(conn_colorbar.marker.colorbar.title.text), "Connection")
+        self.assertIsNotNone(conn_colorbar.marker.colorbar.ticktext)
+
+    def test_connection_asinh_scale_accepts_negative_values(self):
+        """Test asinh connection scale handles negative values and still renders colorbar."""
+        vertices = _make_regular_grid_vertices(1, 2)
+        grid_data = np.arange(2, dtype=float).reshape(1, 1, 2)
+        connection_indices = np.asarray([[0], [1]], dtype=int)
+        connection_data = np.asarray([[[ -4.0 ]]], dtype=float)
+
+        obj = DashMapPlot(
+            vertices=vertices,
+            layer_sizes=[2],
+            grid_data=grid_data,
+            property_names=["P1"],
+            connection_indices=connection_indices,
+            connection_data=connection_data,
+            connection_property_names=["C1"],
+        )
+        fig = obj.create_map_figure(
+            property_index=0,
+            day_index=0,
+            layer=1,
+            add_connections=True,
+            connection_asinh_scale=True,
+        )
+        conn_colorbar = [tr for tr in fig.data if tr.name == "connection-colorbar"][0]
         self.assertIsNotNone(conn_colorbar.marker.colorbar.ticktext)
 
     def test_connection_line_segments_respected(self):

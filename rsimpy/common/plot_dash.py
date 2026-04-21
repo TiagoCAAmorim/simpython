@@ -753,7 +753,7 @@ class DashScatterPlot(BaseDashPlot):
                 xy_min, xy_max = 0.0, 1.0
 
         if show_xy_line:
-            pad = 0.05 * max(xy_max - xy_min, 1e-10)
+            pad = 0.05 * max(xy_max - xy_min, 1e-10) # pylint: disable=possibly-used-before-assignment
             line_range = [xy_min - pad, xy_max + pad]
             fig.add_trace(
                 go.Scatter(
@@ -930,7 +930,8 @@ class DashMapPlot(BaseDashPlot):
             else:
                 if len(property_names) != self.grid_data.shape[0]:
                     raise ValueError(
-                        "property_names length must match grid_data n_properties."
+                        f"property_names length ({len(property_names)}) "
+                        f"must match grid_data n_properties ({self.grid_data.shape[0]})."
                     )
                 self.property_names = list(property_names)
 
@@ -977,8 +978,8 @@ class DashMapPlot(BaseDashPlot):
             else:
                 if len(connection_property_names) != self.connection_data.shape[0]:
                     raise ValueError(
-                        "connection_property_names length must match "
-                        "connection_data n_conn_properties."
+                        f"connection_property_names length ({len(connection_property_names)}) "
+                        f"must match connection_data n_conn_properties ({self.connection_data.shape[0]})."
                     )
                 self.connection_property_names = list(connection_property_names)
 
@@ -1009,6 +1010,7 @@ class DashMapPlot(BaseDashPlot):
         layer=1,
         palette="Turbo",
         grid_log_scale=False,
+        grid_asinh_scale=False,
         color_limits=None,
         line_color="black",
         line_width=0.8,
@@ -1021,6 +1023,7 @@ class DashMapPlot(BaseDashPlot):
         connection_triangle_color=None,
         connection_palette="Plasma",
         connection_log_scale=False,
+        connection_asinh_scale=False,
         connection_color_limits=None,
         connection_nan_inf_color="#bdbdbd",
         connection_line_segments=10,
@@ -1050,6 +1053,14 @@ class DashMapPlot(BaseDashPlot):
         if add_connections and not self.has_connections():
             raise ValueError(
                 "add_connections=True but no connection data provided."
+            )
+        if grid_log_scale and grid_asinh_scale:
+            raise ValueError(
+                "grid_log_scale and grid_asinh_scale cannot both be True."
+            )
+        if connection_log_scale and connection_asinh_scale:
+            raise ValueError(
+                "connection_log_scale and connection_asinh_scale cannot both be True."
             )
         if add_wells and not self.has_wells():
             raise ValueError("add_wells=True but no wells data was provided.")
@@ -1121,6 +1132,78 @@ class DashMapPlot(BaseDashPlot):
             tick_text = [_format_original_value(v) for v in unique_vals]
             return tick_vals, tick_text
 
+        def _build_asinh_tick_labels(transformed_min, transformed_max, n_ticks=7):
+            """Build readable asinh-scale ticks using nice raw-domain values."""
+            transformed_min = float(transformed_min)
+            transformed_max = float(transformed_max)
+            if (
+                not np.isfinite(transformed_min)
+                or not np.isfinite(transformed_max)
+                or transformed_max <= transformed_min
+            ):
+                vals = np.array([transformed_min, transformed_max], dtype=float)
+                tick_text = [f"{float(np.sinh(v)):.6g}" for v in vals]
+                return vals, tick_text
+
+            raw_min = float(np.sinh(transformed_min))
+            raw_max = float(np.sinh(transformed_max))
+            target_n = int(max(n_ticks, 2))
+
+            raw_span = raw_max - raw_min
+            if not np.isfinite(raw_span) or raw_span <= 0.0:
+                vals = np.array([transformed_min, transformed_max], dtype=float)
+                tick_text = [f"{float(np.sinh(v)):.6g}" for v in vals]
+                return vals, tick_text
+
+            rough_step = raw_span / max(target_n - 1, 1)
+            base = 10.0 ** np.floor(np.log10(max(rough_step, 1.0e-12)))
+            multipliers = (1.0, 2.0, 2.5, 5.0, 10.0)
+
+            best_ticks = None
+            best_score = None
+            for m in multipliers:
+                step = m * base
+                start = np.floor(raw_min / step) * step
+                stop = np.ceil(raw_max / step) * step
+                ticks = np.arange(start, stop + 0.5 * step, step, dtype=float)
+                ticks = ticks[(ticks >= raw_min - 1.0e-12) & (ticks <= raw_max + 1.0e-12)]
+                if raw_min < 0.0 < raw_max and not np.any(np.isclose(ticks, 0.0, atol=1.0e-12)):
+                    ticks = np.sort(np.append(ticks, 0.0))
+                ticks = np.unique(np.clip(ticks, raw_min, raw_max))
+                if ticks.size < 2:
+                    ticks = np.array([raw_min, raw_max], dtype=float)
+                score = abs(int(ticks.size) - target_n)
+                if best_score is None or score < best_score:
+                    best_score = score
+                    best_ticks = ticks
+
+            raw_ticks = np.asarray(best_ticks, dtype=float)
+            if raw_ticks.size > target_n:
+                idx = np.linspace(0, raw_ticks.size - 1, target_n)
+                idx = np.unique(np.round(idx).astype(int))
+                raw_ticks = raw_ticks[idx]
+
+            if raw_ticks.size < 2:
+                raw_ticks = np.array([raw_min, raw_max], dtype=float)
+
+            raw_ticks[0] = raw_min
+            raw_ticks[-1] = raw_max
+            raw_ticks = np.unique(raw_ticks)
+            transformed_ticks = np.arcsinh(raw_ticks)
+
+            def _format_original_value(v):
+                av = abs(v)
+                if av >= 1000:
+                    return f"{v:.0f}"
+                if av >= 1:
+                    return f"{v:.3f}".rstrip("0").rstrip(".")
+                if av >= 0.1:
+                    return f"{v:.4f}".rstrip("0").rstrip(".")
+                return f"{v:.6f}".rstrip("0").rstrip(".")
+
+            tick_text = [_format_original_value(float(v)) for v in raw_ticks]
+            return transformed_ticks, tick_text
+
         prop_name = self.property_names[property_index]
         day_label = self.day_labels[day_index]
         figure_title = f"{self.title} ({prop_name} @ {day_label} d, k={layer})"
@@ -1154,8 +1237,37 @@ class DashMapPlot(BaseDashPlot):
 
             def _value_to_color(value):
                 if not np.isfinite(value) or float(value) <= 0.0:
-                    return nan_inf_color
+                    return "#4d4d4d"
                 t = (float(np.log10(value)) - vmin) / (vmax - vmin)
+                if user_color_limits and (t < 0.0 or t > 1.0):
+                    return nan_inf_color
+                t = min(max(t, 0.0), 1.0)
+                return sample_colorscale(palette, [t])[0]
+
+        elif grid_asinh_scale:
+            if color_limits is None:
+                if finite_values_global.size == 0:
+                    vmin, vmax = 0.0, 1.0
+                else:
+                    vmin = float(np.arcsinh(np.nanmin(finite_values_global)))
+                    vmax = float(np.arcsinh(np.nanmax(finite_values_global)))
+                    if np.isclose(vmin, vmax):
+                        vmax = vmin + 1.0
+            else:
+                if len(color_limits) != 2:
+                    raise ValueError(
+                        "color_limits must be a tuple/list with two values."
+                    )
+                raw_min, raw_max = float(color_limits[0]), float(color_limits[1])
+                if raw_max <= raw_min:
+                    raise ValueError("color_limits must satisfy max > min.")
+                vmin = float(np.arcsinh(raw_min))
+                vmax = float(np.arcsinh(raw_max))
+
+            def _value_to_color(value):
+                if not np.isfinite(value):
+                    return nan_inf_color
+                t = (float(np.arcsinh(value)) - vmin) / (vmax - vmin)
                 if user_color_limits and (t < 0.0 or t > 1.0):
                     return nan_inf_color
                 t = min(max(t, 0.0), 1.0)
@@ -1247,6 +1359,13 @@ class DashMapPlot(BaseDashPlot):
                     if finite_values_current_layer.size > 0
                     else np.array([vmin, vmax], dtype=float)
                 )
+            elif grid_asinh_scale:
+                finite_values_current_layer = layer_values[np.isfinite(layer_values)]
+                colorbar_values = (
+                    np.arcsinh(finite_values_current_layer)
+                    if finite_values_current_layer.size > 0
+                    else np.array([vmin, vmax], dtype=float)
+                )
             else:
                 finite_values_current_layer = layer_values[np.isfinite(layer_values)]
                 colorbar_values = (
@@ -1258,6 +1377,11 @@ class DashMapPlot(BaseDashPlot):
             grid_colorbar = {"title": prop_name, "x": 1.02, "y": 0.5, "len": 0.9}
             if grid_log_scale:
                 tick_vals, tick_text = _build_log_tick_labels(vmin, vmax)
+                grid_colorbar["tickmode"] = "array"
+                grid_colorbar["tickvals"] = tick_vals
+                grid_colorbar["ticktext"] = tick_text
+            elif grid_asinh_scale:
+                tick_vals, tick_text = _build_asinh_tick_labels(vmin, vmax)
                 grid_colorbar["tickmode"] = "array"
                 grid_colorbar["tickvals"] = tick_vals
                 grid_colorbar["ticktext"] = tick_text
@@ -1414,8 +1538,42 @@ class DashMapPlot(BaseDashPlot):
 
                 def _connection_value_to_color(value):
                     if not np.isfinite(value) or float(value) <= 0.0:
-                        return connection_nan_inf_color
+                        return "#4d4d4d"
                     t = (float(np.log10(value)) - conn_vmin) / (conn_vmax - conn_vmin)
+                    if user_conn_color_limits and (t < 0.0 or t > 1.0):
+                        return connection_nan_inf_color
+                    t = min(max(t, 0.0), 1.0)
+                    return sample_colorscale(connection_palette, [t])[0]
+
+                connection_colorbar_title = "Connection"
+            elif connection_asinh_scale:
+                if connection_color_limits is None:
+                    if conn_finite_global.size == 0:
+                        conn_vmin, conn_vmax = 0.0, 1.0
+                    else:
+                        conn_vmin = float(np.arcsinh(np.nanmin(conn_finite_global)))
+                        conn_vmax = float(np.arcsinh(np.nanmax(conn_finite_global)))
+                        if np.isclose(conn_vmin, conn_vmax):
+                            conn_vmax = conn_vmin + 1.0
+                else:
+                    if len(connection_color_limits) != 2:
+                        raise ValueError(
+                            "connection_color_limits must be a tuple/list "
+                            "with two values."
+                        )
+                    raw_cmin = float(connection_color_limits[0])
+                    raw_cmax = float(connection_color_limits[1])
+                    if raw_cmax <= raw_cmin:
+                        raise ValueError(
+                            "connection_color_limits must satisfy max > min."
+                        )
+                    conn_vmin = float(np.arcsinh(raw_cmin))
+                    conn_vmax = float(np.arcsinh(raw_cmax))
+
+                def _connection_value_to_color(value):
+                    if not np.isfinite(value):
+                        return connection_nan_inf_color
+                    t = (float(np.arcsinh(value)) - conn_vmin) / (conn_vmax - conn_vmin)
                     if user_conn_color_limits and (t < 0.0 or t > 1.0):
                         return connection_nan_inf_color
                     t = min(max(t, 0.0), 1.0)
@@ -1595,6 +1753,12 @@ class DashMapPlot(BaseDashPlot):
                     conn_colorbar_values = np.array([conn_vmin, conn_vmax], dtype=float)
                 else:
                     conn_colorbar_values = np.log10(conn_finite_current_day)
+            elif connection_asinh_scale:
+                conn_finite_current_day = conn_values[np.isfinite(conn_values)]
+                if conn_finite_current_day.size == 0:
+                    conn_colorbar_values = np.array([conn_vmin, conn_vmax], dtype=float)
+                else:
+                    conn_colorbar_values = np.arcsinh(conn_finite_current_day)
             else:
                 conn_finite_current_day = conn_values[np.isfinite(conn_values)]
                 if conn_finite_current_day.size == 0:
@@ -1610,6 +1774,11 @@ class DashMapPlot(BaseDashPlot):
             }
             if connection_log_scale:
                 tick_vals, tick_text = _build_log_tick_labels(conn_vmin, conn_vmax)
+                connection_colorbar["tickmode"] = "array"
+                connection_colorbar["tickvals"] = tick_vals
+                connection_colorbar["ticktext"] = tick_text
+            elif connection_asinh_scale:
+                tick_vals, tick_text = _build_asinh_tick_labels(conn_vmin, conn_vmax)
                 connection_colorbar["tickmode"] = "array"
                 connection_colorbar["tickvals"] = tick_vals
                 connection_colorbar["ticktext"] = tick_text

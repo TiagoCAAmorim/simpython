@@ -32,7 +32,7 @@ _COLOR_ERROR_STYLE = {"color": "red", "fontSize": "11px", "marginTop": "2px"}
 _INPUT_SMALL = {"width": "88px", "fontSize": "12px"}
 
 
-def _parse_color_limits(vmin_input, vmax_input, log_scale, auto_vmin=None, auto_vmax=None):
+def _parse_color_limits(vmin_input, vmax_input, scale_mode, auto_vmin=None, auto_vmax=None):
     """Parse and validate vmin/vmax inputs. Returns (color_limits, error_msg).
 
     When only one bound is provided the missing bound is filled from the
@@ -67,7 +67,7 @@ def _parse_color_limits(vmin_input, vmax_input, log_scale, auto_vmin=None, auto_
         if vmax_val <= vmin_val:
             return None, "Max must be greater than Min."
 
-    if log_scale and vmin_val <= 0.0:
+    if scale_mode == "log" and vmin_val <= 0.0:
         return None, "Min must be > 0 for log scale."
     return [vmin_val, vmax_val], ""
 
@@ -369,6 +369,17 @@ def create_dash_template_app(map_plot=None):
                                         style={"marginRight": "12px"},
                                     ),
                                     dcc.Checklist(
+                                        id="map-grid-asinh-scale",
+                                        options=[
+                                            {
+                                                "label": "Asinh",
+                                                "value": "on",
+                                            }
+                                        ],
+                                        value=[],
+                                        style={"marginRight": "12px"},
+                                    ),
+                                    dcc.Checklist(
                                         id="map-grid-options-toggle",
                                         options=[
                                             {
@@ -474,6 +485,18 @@ def create_dash_template_app(map_plot=None):
                                         options=[
                                             {
                                                 "label": "Log",
+                                                "value": "on",
+                                                "disabled": not has_connections,
+                                            }
+                                        ],
+                                        value=[],
+                                        style={"marginRight": "12px"},
+                                    ),
+                                    dcc.Checklist(
+                                        id="map-connection-asinh-scale",
+                                        options=[
+                                            {
+                                                "label": "Asinh",
                                                 "value": "on",
                                                 "disabled": not has_connections,
                                             }
@@ -703,7 +726,9 @@ def create_dash_template_app(map_plot=None):
         Output("map-contour-controls-group", "style"),
         Output("map-well-controls-group", "style"),
         Output("map-grid-log-scale", "options"),
+        Output("map-grid-asinh-scale", "options"),
         Output("map-connection-log-scale", "options"),
+        Output("map-connection-asinh-scale", "options"),
         Output("map-grid-options-toggle", "options"),
         Output("map-connection-options-toggle", "options"),
         Output("map-contour-options-toggle", "options"),
@@ -714,6 +739,7 @@ def create_dash_template_app(map_plot=None):
         Input("map-day-slider", "value"),
         Input("map-grid-palette", "value"),
         Input("map-grid-log-scale", "value"),
+        Input("map-grid-asinh-scale", "value"),
         Input("map-layer-slider", "value"),
         Input("map-show-connections", "value"),
         Input("map-connection-options-toggle", "value"),
@@ -727,6 +753,7 @@ def create_dash_template_app(map_plot=None):
         Input("map-connection-width", "value"),
         Input("map-connection-segments", "value"),
         Input("map-connection-log-scale", "value"),
+        Input("map-connection-asinh-scale", "value"),
         Input("map-well-size", "value"),
         Input("map-vmin", "value"),
         Input("map-vmax", "value"),
@@ -737,6 +764,7 @@ def create_dash_template_app(map_plot=None):
         day_index,
         grid_palette,
         grid_log_scale_values,
+        grid_asinh_scale_values,
         layer,
         show_connections_values,
         connection_options_values,
@@ -750,6 +778,7 @@ def create_dash_template_app(map_plot=None):
         connection_width,
         connection_segments,
         connection_log_scale_values,
+        connection_asinh_scale_values,
         well_size,
         vmin_input,
         vmax_input,
@@ -771,19 +800,49 @@ def create_dash_template_app(map_plot=None):
         )
         show_well_options = show_wells and "show" in (well_options_values or [])
         grid_log_scale = show_grid and "on" in (grid_log_scale_values or [])
+        grid_asinh_scale = (
+            show_grid and "on" in (grid_asinh_scale_values or []) and not grid_log_scale
+        )
         connection_log_scale = (
             show_connections and "on" in (connection_log_scale_values or [])
+        )
+        connection_asinh_scale = (
+            show_connections
+            and "on" in (connection_asinh_scale_values or [])
+            and not connection_log_scale
         )
         property_style = {"display": "block" if show_grid else "none"}
         grid_style = {"display": "block" if show_grid_options else "none"}
         connection_style = {"display": "block" if show_connection_options else "none"}
         contour_style = {"display": "block" if show_contour_options else "none"}
         well_style = {"display": "block" if show_well_options else "none"}
-        grid_log_options = [{"label": "Log", "value": "on", "disabled": not show_grid}]
+        grid_asinh_options = [{
+            "label": "Asinh",
+            "value": "on",
+            "disabled": (not show_grid) or grid_log_scale,
+        }]
+        grid_log_options = [{
+            "label": "Log",
+            "value": "on",
+            "disabled": (not show_grid) or grid_asinh_scale,
+        }]
         connection_log_options = [{
             "label": "Log",
             "value": "on",
-            "disabled": (not has_connections) or (not show_connections),
+            "disabled": (
+                (not has_connections)
+                or (not show_connections)
+                or connection_asinh_scale
+            ),
+        }]
+        connection_asinh_options = [{
+            "label": "Asinh",
+            "value": "on",
+            "disabled": (
+                (not has_connections)
+                or (not show_connections)
+                or connection_log_scale
+            ),
         }]
         grid_options = [{
             "label": "Options",
@@ -814,8 +873,11 @@ def create_dash_template_app(map_plot=None):
             fin = prop_data[np.isfinite(prop_data)]
             _auto_vmin = float(np.nanmin(fin)) if fin.size > 0 else None
             _auto_vmax = float(np.nanmax(fin)) if fin.size > 0 else None
+        scale_mode = "log" if grid_log_scale else "asinh" if grid_asinh_scale else "linear"
         color_limits, color_error = _parse_color_limits(
-            vmin_input, vmax_input, grid_log_scale,
+            vmin_input,
+            vmax_input,
+            scale_mode,
             auto_vmin=_auto_vmin, auto_vmax=_auto_vmax,
         )
         fig = map_plot.create_map_figure(
@@ -824,6 +886,7 @@ def create_dash_template_app(map_plot=None):
                 layer=int(layer),
                 palette=str(grid_palette),
                 grid_log_scale=grid_log_scale,
+                grid_asinh_scale=grid_asinh_scale,
                 color_limits=color_limits,
                 add_grid=show_grid,
                 add_connections=show_connections,
@@ -832,6 +895,7 @@ def create_dash_template_app(map_plot=None):
                 contour_count=int(contour_count),
                 connection_palette=str(connection_palette),
                 connection_log_scale=connection_log_scale,
+                connection_asinh_scale=connection_asinh_scale,
                 connection_width=float(connection_width),
                 connection_line_segments=int(connection_segments),
                 well_size_percent=float(well_size),
@@ -845,7 +909,9 @@ def create_dash_template_app(map_plot=None):
             contour_style,
             well_style,
             grid_log_options,
+            grid_asinh_options,
             connection_log_options,
+            connection_asinh_options,
             grid_options,
             connection_options,
             contour_options,
