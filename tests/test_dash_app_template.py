@@ -48,46 +48,15 @@ class TestDashAppTemplate(unittest.TestCase):
         self.assertEqual(len(fig.data), 0)
 
     def test_create_dash_template_app_layout(self):
-        """Test Dash template app layout contains all required control component IDs.
-
-        Verifies presence of:
-        - Grid controls (show, options, palette, log scale)
-        - Connection controls (show, options, palette, width, segments, log scale)
-        - Contour controls (show, options, count)
-        - Well controls (show, options, size)
-        - Property and day sliders
-        - Layer slider and graph component
-        """
+        """Test the template app delegates to the example dashboard launcher."""
         app = create_dash_template_app()
         self.assertIsNotNone(app.layout)
         layout_string = str(app.layout)
-        self.assertIn("map-show-grid", layout_string)
-        self.assertIn("map-grid-options-toggle", layout_string)
-        self.assertIn("map-property-dropdown", layout_string)
-        self.assertIn("map-property-controls-group", layout_string)
-        self.assertIn("map-grid-palette", layout_string)
-        self.assertIn("map-grid-log-scale", layout_string)
-        self.assertIn("map-grid-asinh-scale", layout_string)
-        self.assertIn("map-day-slider", layout_string)
-        self.assertIn("map-grid-controls-group", layout_string)
-        self.assertIn("map-connection-controls-group", layout_string)
-        self.assertIn("map-connection-palette", layout_string)
-        self.assertIn("map-contour-controls-group", layout_string)
-        self.assertIn("map-layer-slider", layout_string)
-        self.assertIn("map-show-connections", layout_string)
-        self.assertIn("map-connection-options-toggle", layout_string)
-        self.assertIn("map-show-contours", layout_string)
-        self.assertIn("map-contour-options-toggle", layout_string)
-        self.assertIn("map-show-wells", layout_string)
-        self.assertIn("map-well-options-toggle", layout_string)
-        self.assertIn("map-well-controls-group", layout_string)
-        self.assertIn("map-well-size", layout_string)
-        self.assertIn("map-connection-width", layout_string)
-        self.assertIn("map-connection-segments", layout_string)
-        self.assertIn("map-connection-log-scale", layout_string)
-        self.assertIn("map-connection-asinh-scale", layout_string)
-        self.assertIn("map-contour-count", layout_string)
-        self.assertIn("map-graph", layout_string)
+        self.assertIn("rsimpy Dash - Step 4 Generic Wrapper Example", layout_string)
+        self.assertIn("Maps", layout_string)
+        self.assertIn("Line Plots", layout_string)
+        self.assertIn("Scatter Plots", layout_string)
+        self.assertIn("Tables", layout_string)
 
     def test_build_step_2_2_demo_map_plot(self):
         """Test demo map plot creation generates correct 3-layer dataset structure.
