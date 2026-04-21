@@ -23,7 +23,53 @@ from rsimpy.common.plot_dash import (
     DashTable,
     add_triangle_trace,
 )
-from rsimpy.common.plot_dashboard import DashMultiPanelDashboard
+from rsimpy.common.plot_dashboard import DashMapCompare, DashMultiPanelDashboard
+
+
+_SLIDER_TOOLTIP = {"placement": "bottom", "always_visible": True}
+_COLOR_LIMITS_STYLE = {"display": "flex", "alignItems": "center", "gap": "4px", "marginTop": "6px"}
+_COLOR_ERROR_STYLE = {"color": "red", "fontSize": "11px", "marginTop": "2px"}
+_INPUT_SMALL = {"width": "88px", "fontSize": "12px"}
+
+
+def _parse_color_limits(vmin_input, vmax_input, log_scale, auto_vmin=None, auto_vmax=None):
+    """Parse and validate vmin/vmax inputs. Returns (color_limits, error_msg).
+
+    When only one bound is provided the missing bound is filled from the
+    auto_vmin / auto_vmax fallbacks (data-derived range). If the auto
+    fallback still violates max > min, a 10 % padding is applied instead.
+    """
+    if vmin_input is None and vmax_input is None:
+        return None, ""
+
+    only_min = vmin_input is not None and vmax_input is None
+    only_max = vmin_input is None and vmax_input is not None
+
+    if only_min:
+        if auto_vmax is None:
+            return None, "Provide both Min and Max."
+        vmin_val = float(vmin_input)
+        vmax_val = float(auto_vmax)
+        if vmax_val <= vmin_val:
+            delta = 0.1 * abs(vmin_val)
+            vmax_val = vmin_val + (delta if delta > 1e-12 else 1.0)
+    elif only_max:
+        if auto_vmin is None:
+            return None, "Provide both Min and Max."
+        vmax_val = float(vmax_input)
+        vmin_val = float(auto_vmin)
+        if vmin_val >= vmax_val:
+            delta = 0.1 * abs(vmax_val)
+            vmin_val = vmax_val - (delta if delta > 1e-12 else 1.0)
+    else:
+        vmin_val = float(vmin_input)
+        vmax_val = float(vmax_input)
+        if vmax_val <= vmin_val:
+            return None, "Max must be greater than Min."
+
+    if log_scale and vmin_val <= 0.0:
+        return None, "Min must be > 0 for log scale."
+    return [vmin_val, vmax_val], ""
 
 
 PALETTE_OPTIONS = [
@@ -252,8 +298,8 @@ def create_dash_template_app(map_plot=None):
     has_contours = map_plot.has_contours()
     has_wells = map_plot.has_wells()
 
-    day_marks = {idx: str(idx) for idx in range(n_days)}
-    layer_marks = {idx + 1: str(idx + 1) for idx in range(n_layers)}
+    day_marks = {0: "0", max(0, n_days - 1): str(max(0, n_days - 1))}
+    layer_marks = {1: "1", n_layers: str(n_layers)}
 
     app = Dash(__name__)
 
@@ -283,6 +329,7 @@ def create_dash_template_app(map_plot=None):
                                 step=1,
                                 marks=layer_marks,
                                 value=1,
+                                tooltip=_SLIDER_TOOLTIP,
                                 disabled=n_layers == 1,
                             ),
                             html.Br(),
@@ -294,6 +341,7 @@ def create_dash_template_app(map_plot=None):
                                 step=1,
                                 marks=day_marks,
                                 value=0,
+                                tooltip=_SLIDER_TOOLTIP,
                             ),
                             html.Hr(style={"margin": "12px 0"}),
                             html.Div(
@@ -365,6 +413,42 @@ def create_dash_template_app(map_plot=None):
                                         options=PALETTE_OPTIONS,
                                         value="Turbo",
                                         clearable=False,
+                                    ),
+                                    html.Div(
+                                        [
+                                            html.Label(
+                                                "Color limits",
+                                                style={"fontSize": "12px"},
+                                            ),
+                                            html.Div(
+                                                [
+                                                    dcc.Input(
+                                                        id="map-vmin",
+                                                        type="number",
+                                                        placeholder="Min (auto)",
+                                                        debounce=True,
+                                                        style=_INPUT_SMALL,
+                                                    ),
+                                                    html.Span(
+                                                        "–",
+                                                        style={"margin": "0 4px"},
+                                                    ),
+                                                    dcc.Input(
+                                                        id="map-vmax",
+                                                        type="number",
+                                                        placeholder="Max (auto)",
+                                                        debounce=True,
+                                                        style=_INPUT_SMALL,
+                                                    ),
+                                                ],
+                                                style=_COLOR_LIMITS_STYLE,
+                                            ),
+                                            html.Div(
+                                                id="map-color-error",
+                                                style=_COLOR_ERROR_STYLE,
+                                            ),
+                                        ],
+                                        style={"marginTop": "8px"},
                                     ),
                                 ],
                                 id="map-grid-controls-group",
@@ -624,6 +708,7 @@ def create_dash_template_app(map_plot=None):
         Output("map-connection-options-toggle", "options"),
         Output("map-contour-options-toggle", "options"),
         Output("map-well-options-toggle", "options"),
+        Output("map-color-error", "children"),
         Input("map-show-grid", "value"),
         Input("map-property-dropdown", "value"),
         Input("map-day-slider", "value"),
@@ -643,6 +728,8 @@ def create_dash_template_app(map_plot=None):
         Input("map-connection-segments", "value"),
         Input("map-connection-log-scale", "value"),
         Input("map-well-size", "value"),
+        Input("map-vmin", "value"),
+        Input("map-vmax", "value"),
     )
     def _update_map_figure(
         show_grid_values,
@@ -664,6 +751,8 @@ def create_dash_template_app(map_plot=None):
         connection_segments,
         connection_log_scale_values,
         well_size,
+        vmin_input,
+        vmax_input,
     ):
         show_connections = (
             map_plot.has_connections() and "show" in (show_connections_values or [])
@@ -716,12 +805,26 @@ def create_dash_template_app(map_plot=None):
             "value": "show",
             "disabled": (not has_wells) or (not show_wells),
         }]
+        prop_data = map_plot.grid_data[int(property_index), :, :]
+        if grid_log_scale:
+            pos = prop_data[np.isfinite(prop_data) & (prop_data > 0)]
+            _auto_vmin = float(np.nanmin(pos)) if pos.size > 0 else None
+            _auto_vmax = float(np.nanmax(pos)) if pos.size > 0 else None
+        else:
+            fin = prop_data[np.isfinite(prop_data)]
+            _auto_vmin = float(np.nanmin(fin)) if fin.size > 0 else None
+            _auto_vmax = float(np.nanmax(fin)) if fin.size > 0 else None
+        color_limits, color_error = _parse_color_limits(
+            vmin_input, vmax_input, grid_log_scale,
+            auto_vmin=_auto_vmin, auto_vmax=_auto_vmax,
+        )
         fig = map_plot.create_map_figure(
                 property_index=int(property_index),
                 day_index=int(day_index),
                 layer=int(layer),
                 palette=str(grid_palette),
                 grid_log_scale=grid_log_scale,
+                color_limits=color_limits,
                 add_grid=show_grid,
                 add_connections=show_connections,
                 add_contours=show_contours,
@@ -747,6 +850,7 @@ def create_dash_template_app(map_plot=None):
             connection_options,
             contour_options,
             well_options,
+            color_error,
         )
 
     return app
@@ -952,20 +1056,85 @@ def create_sr3_working_example_app():
     return panel.app
 
 
+def build_map_compare_demo(n_rows=10, n_cols=15, n_days=5):
+    """Build two DashMapPlot objects for the map comparison demo.
+
+    Map A uses base values; Map B adds a small perturbation to the same data,
+    simulating a comparison between two model runs.
+    """
+    rng = np.random.default_rng(42)
+    layer_sizes_a = [n_rows * n_cols, (n_rows - 1) * (n_cols - 1)]
+    layer_sizes_b = list(layer_sizes_a)
+
+    def _make_verts(rows, cols):
+        verts = _make_regular_grid_vertices(rows, cols)
+        verts[:, :, 0] *= 10.0
+        verts[:, :, 1] *= 10.0
+        return verts
+
+    verts_l1 = _make_verts(n_rows, n_cols)
+    verts_l2 = _make_verts(n_rows - 1, n_cols - 1)
+    vertices = np.concatenate([verts_l1, verts_l2], axis=0)
+    n_cells = vertices.shape[0]
+
+    base_data = np.zeros((3, n_days, n_cells), dtype=float)
+    for d in range(n_days):
+        base_data[0, d, :] = np.arange(n_cells, dtype=float) + 1.0
+        base_data[1, d, :] = (np.arange(n_cells, dtype=float) % n_cols) + 1.0
+        base_data[2, d, :] = 50.0 + 20.0 * float(d) + rng.uniform(0, 5, n_cells)
+
+    perturbed_data = base_data.copy()
+    perturbed_data[2] *= 1.0 + rng.uniform(-0.15, 0.15, (n_days, n_cells))
+
+    property_names = ["Cell Index", "Column", "Pressure"]
+    day_labels = [str(d * 30) for d in range(n_days)]
+
+    map_a = DashMapPlot(
+        vertices=vertices,
+        layer_sizes=layer_sizes_a,
+        grid_data=base_data,
+        property_names=property_names,
+        day_labels=day_labels,
+        title="Base Case",
+    )
+    map_b = DashMapPlot(
+        vertices=vertices,
+        layer_sizes=layer_sizes_b,
+        grid_data=perturbed_data,
+        property_names=property_names,
+        day_labels=day_labels,
+        title="Perturbed Case",
+    )
+    return DashMapCompare(
+        map_plot_a=map_a,
+        map_plot_b=map_b,
+        label_a="Base Case",
+        label_b="Perturbed Case",
+        title="Map Comparison Demo",
+    )
+
+
+def create_map_compare_app():
+    """Create a map comparison Dash app using synthetic demo data."""
+    return build_map_compare_demo().create_app()
+
+
 def create_working_example_app(example="step4generic"):
     """Create a named working example app.
 
     Parameters
     ----------
     example : str
-        Supported values are "step4generic" and "sr3".
+        Supported values are "step4generic", "sr3", and "compare".
     """
     choice = str(example).strip().lower()
     if choice == "step4generic":
         return create_step_4_generic_wrapper_working_example_app()
     if choice == "sr3":
         return create_sr3_working_example_app()
-    raise ValueError("example must be 'step4generic' or 'sr3'.")
+    if choice == "compare":
+        return create_map_compare_app()
+    raise ValueError("example must be 'step4generic', 'sr3', or 'compare'.")
 
 
 def _parse_cli_args():
@@ -975,7 +1144,7 @@ def _parse_cli_args():
     )
     parser.add_argument(
         "--example",
-        choices=["step4generic", "sr3"],
+        choices=["step4generic", "sr3", "compare"],
         default="sr3",
         help="Select which demo app to run.",
     )

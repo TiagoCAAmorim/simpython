@@ -711,6 +711,8 @@ class DashScatterPlot(BaseDashPlot):
         log_y=False,
         marker_size=8.0,
         marker_opacity=0.85,
+        show_xy_line=False,
+        equal_axes=False,
     ):
         """Create scatter figure for one property or all properties."""
         if property_name is None:
@@ -723,8 +725,8 @@ class DashScatterPlot(BaseDashPlot):
             selected_keys = [property_name]
 
         fig = go.Figure()
-        for key in selected_keys:
-            arr = self.scatter_data[key]
+        selected_data = {k: self.scatter_data[k] for k in selected_keys}
+        for key, arr in selected_data.items():
             fig.add_trace(
                 go.Scatter(
                     x=arr[:, 0],
@@ -736,6 +738,40 @@ class DashScatterPlot(BaseDashPlot):
                     showlegend=True,
                 )
             )
+
+        xaxis_overrides = {}
+        yaxis_overrides = {}
+
+        if show_xy_line or equal_axes:
+            all_pts = np.vstack(list(selected_data.values()))
+            finite_mask = np.isfinite(all_pts).all(axis=1)
+            finite_pts = all_pts[finite_mask]
+            if finite_pts.size > 0:
+                xy_min = float(np.min(finite_pts))
+                xy_max = float(np.max(finite_pts))
+            else:
+                xy_min, xy_max = 0.0, 1.0
+
+        if show_xy_line:
+            pad = 0.05 * max(xy_max - xy_min, 1e-10)
+            line_range = [xy_min - pad, xy_max + pad]
+            fig.add_trace(
+                go.Scatter(
+                    x=line_range,
+                    y=line_range,
+                    mode="lines",
+                    line={"color": "red", "dash": "dash", "width": 1.5},
+                    name="X = Y",
+                    showlegend=True,
+                    hoverinfo="skip",
+                )
+            )
+
+        if equal_axes:
+            pad = 0.05 * max(xy_max - xy_min, 1e-10)
+            axis_range = [xy_min - pad, xy_max + pad]
+            xaxis_overrides = {"range": axis_range, "autorange": False}
+            yaxis_overrides = {"range": axis_range, "autorange": False}
 
         fig.update_layout(
             title={"text": self.title, "y": 0.99, "x": 0.0, "xanchor": "left"},
@@ -756,11 +792,13 @@ class DashScatterPlot(BaseDashPlot):
                 "title": "X",
                 "showgrid": bool(show_grid),
                 "type": "log" if bool(log_x) else "linear",
+                **xaxis_overrides,
             },
             yaxis={
                 "title": "Y",
                 "showgrid": bool(show_grid),
                 "type": "log" if bool(log_y) else "linear",
+                **yaxis_overrides,
             },
         )
         return fig
@@ -860,6 +898,7 @@ class DashMapPlot(BaseDashPlot):
         connection_data=None,
         connection_property_names=None,
         wells=None,
+        day_labels=None,
         width=900,
         height=600,
         title="Map",
@@ -904,6 +943,14 @@ class DashMapPlot(BaseDashPlot):
 
         self.centers_xy = np.mean(self.vertices[:, :, :2], axis=1)
         self.wells = validate_wells(wells, n_cells=n_cells_from_vertices)
+
+        n_days = self.grid_data.shape[1]
+        if day_labels is None:
+            self.day_labels = [str(i) for i in range(n_days)]
+        else:
+            if len(day_labels) != n_days:
+                raise ValueError("day_labels length must match grid_data n_days.")
+            self.day_labels = [str(d) for d in day_labels]
 
         self.connection_indices = None
         self.connection_data = None
@@ -1074,9 +1121,14 @@ class DashMapPlot(BaseDashPlot):
             tick_text = [_format_original_value(v) for v in unique_vals]
             return tick_vals, tick_text
 
+        prop_name = self.property_names[property_index]
+        day_label = self.day_labels[day_index]
+        figure_title = f"{self.title} ({prop_name} @ {day_label} d, k={layer})"
+
         property_all_days = self.grid_data[property_index, :, :]
         finite_values_global = property_all_days[np.isfinite(property_all_days)]
         positive_values_global = finite_values_global[finite_values_global > 0.0]
+        user_color_limits = color_limits is not None
 
         if grid_log_scale:
             if color_limits is None:
@@ -1092,18 +1144,23 @@ class DashMapPlot(BaseDashPlot):
                     raise ValueError(
                         "color_limits must be a tuple/list with two values."
                     )
-                vmin, vmax = float(color_limits[0]), float(color_limits[1])
-                if vmax <= vmin:
+                raw_min, raw_max = float(color_limits[0]), float(color_limits[1])
+                if raw_max <= raw_min:
                     raise ValueError("color_limits must satisfy max > min.")
+                if raw_min <= 0.0 or raw_max <= 0.0:
+                    raise ValueError("color_limits values must be > 0 for log scale.")
+                vmin = float(np.log10(raw_min))
+                vmax = float(np.log10(raw_max))
 
             def _value_to_color(value):
                 if not np.isfinite(value) or float(value) <= 0.0:
-                    return "#4d4d4d"
+                    return nan_inf_color
                 t = (float(np.log10(value)) - vmin) / (vmax - vmin)
+                if user_color_limits and (t < 0.0 or t > 1.0):
+                    return nan_inf_color
                 t = min(max(t, 0.0), 1.0)
                 return sample_colorscale(palette, [t])[0]
 
-            prop_name = self.property_names[property_index]
         else:
             if color_limits is None:
                 if finite_values_global.size == 0:
@@ -1126,10 +1183,10 @@ class DashMapPlot(BaseDashPlot):
                 if not np.isfinite(value):
                     return nan_inf_color
                 t = (float(value) - vmin) / (vmax - vmin)
+                if user_color_limits and (t < 0.0 or t > 1.0):
+                    return nan_inf_color
                 t = min(max(t, 0.0), 1.0)
                 return sample_colorscale(palette, [t])[0]
-
-            prop_name = self.property_names[property_index]
 
         fig = go.Figure()
 
@@ -1230,7 +1287,7 @@ class DashMapPlot(BaseDashPlot):
         y_pad = 0.05 * max(y_max - y_min, 1.0)
 
         fig.update_layout(
-            title=self.title,
+            title=figure_title,
             width=self.width,
             height=self.height,
             dragmode="pan",
@@ -1326,6 +1383,7 @@ class DashMapPlot(BaseDashPlot):
             conn_all_days = self.connection_data[connection_property_index, :, :]
             conn_finite_global = conn_all_days[np.isfinite(conn_all_days)]
             conn_positive_global = conn_finite_global[conn_finite_global > 0.0]
+            user_conn_color_limits = connection_color_limits is not None
             if connection_log_scale:
                 if connection_color_limits is None:
                     if conn_positive_global.size == 0:
@@ -1341,17 +1399,25 @@ class DashMapPlot(BaseDashPlot):
                             "connection_color_limits must be a tuple/list "
                             "with two values."
                         )
-                    conn_vmin = float(connection_color_limits[0])
-                    conn_vmax = float(connection_color_limits[1])
-                    if conn_vmax <= conn_vmin:
+                    raw_cmin = float(connection_color_limits[0])
+                    raw_cmax = float(connection_color_limits[1])
+                    if raw_cmax <= raw_cmin:
                         raise ValueError(
                             "connection_color_limits must satisfy max > min."
                         )
+                    if raw_cmin <= 0.0 or raw_cmax <= 0.0:
+                        raise ValueError(
+                            "connection_color_limits values must be > 0 for log scale."
+                        )
+                    conn_vmin = float(np.log10(raw_cmin))
+                    conn_vmax = float(np.log10(raw_cmax))
 
                 def _connection_value_to_color(value):
                     if not np.isfinite(value) or float(value) <= 0.0:
-                        return "#4d4d4d"
+                        return connection_nan_inf_color
                     t = (float(np.log10(value)) - conn_vmin) / (conn_vmax - conn_vmin)
+                    if user_conn_color_limits and (t < 0.0 or t > 1.0):
+                        return connection_nan_inf_color
                     t = min(max(t, 0.0), 1.0)
                     return sample_colorscale(connection_palette, [t])[0]
 
@@ -1382,6 +1448,8 @@ class DashMapPlot(BaseDashPlot):
                     if not np.isfinite(value):
                         return connection_nan_inf_color
                     t = (float(value) - conn_vmin) / (conn_vmax - conn_vmin)
+                    if user_conn_color_limits and (t < 0.0 or t > 1.0):
+                        return connection_nan_inf_color
                     t = min(max(t, 0.0), 1.0)
                     return sample_colorscale(connection_palette, [t])[0]
 
