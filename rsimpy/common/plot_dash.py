@@ -1385,6 +1385,27 @@ class DashMapPlot(BaseDashPlot):
                 grid_colorbar["tickmode"] = "array"
                 grid_colorbar["tickvals"] = tick_vals
                 grid_colorbar["ticktext"] = tick_text
+            else:
+                # For linear scale, use smart formatting with scientific notation for small/large values
+                def _format_linear_value(v):
+                    """Format value with scientific notation for very small or very large values."""
+                    av = abs(v)
+                    if av == 0:
+                        return "0"
+                    if av < 1e-5 or av > 1e5:
+                        # Use scientific notation
+                        return f"{v:.2e}"
+                    # Use standard notation with appropriate precision
+                    if av >= 1:
+                        return f"{v:.3g}"
+                    return f"{v:.3g}"
+
+                # Generate reasonable ticks
+                tick_vals = np.linspace(vmin, vmax, min(7, max(2, int(10 * (vmax - vmin) / max(abs(vmin), abs(vmax), 1)))))
+                tick_text = [_format_linear_value(v) for v in tick_vals]
+                grid_colorbar["tickmode"] = "array"
+                grid_colorbar["tickvals"] = tick_vals
+                grid_colorbar["ticktext"] = tick_text
 
             fig.add_trace(
                 go.Scatter(
@@ -1779,6 +1800,27 @@ class DashMapPlot(BaseDashPlot):
                 connection_colorbar["ticktext"] = tick_text
             elif connection_asinh_scale:
                 tick_vals, tick_text = _build_asinh_tick_labels(conn_vmin, conn_vmax)
+                connection_colorbar["tickmode"] = "array"
+                connection_colorbar["tickvals"] = tick_vals
+                connection_colorbar["ticktext"] = tick_text
+            else:
+                # For linear scale, use smart formatting with scientific notation for small/large values
+                def _format_linear_value_conn(v):
+                    """Format value with scientific notation for very small or very large values."""
+                    av = abs(v)
+                    if av == 0:
+                        return "0"
+                    if av < 1e-5 or av > 1e5:
+                        # Use scientific notation
+                        return f"{v:.2e}"
+                    # Use standard notation with appropriate precision
+                    if av >= 1:
+                        return f"{v:.3g}"
+                    return f"{v:.3g}"
+
+                # Generate reasonable ticks
+                tick_vals = np.linspace(conn_vmin, conn_vmax, min(7, max(2, int(10 * (conn_vmax - conn_vmin) / max(abs(conn_vmin), abs(conn_vmax), 1)))))
+                tick_text = [_format_linear_value_conn(v) for v in tick_vals]
                 connection_colorbar["tickmode"] = "array"
                 connection_colorbar["tickvals"] = tick_vals
                 connection_colorbar["ticktext"] = tick_text
