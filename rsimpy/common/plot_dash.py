@@ -1095,6 +1095,50 @@ class DashMapPlot(BaseDashPlot):
                 return f"{v:.4f}".rstrip("0").rstrip(".")
             return f"{v:.6f}".rstrip("0").rstrip(".")
 
+        def _build_linear_tick_labels(vmin, vmax, n_ticks=7):
+            """Build readable linear-scale ticks using 1-2-5 steps."""
+            vmin = float(vmin)
+            vmax = float(vmax)
+            if not np.isfinite(vmin) or not np.isfinite(vmax) or vmax <= vmin:
+                vals = np.array([vmin, vmax], dtype=float)
+                text = [_format_colorbar_value(v) for v in vals]
+                return vals, text
+
+            target_n = int(max(n_ticks, 2))
+            span = vmax - vmin
+
+            # Find appropriate step size using 1-2-5 rule
+            rough_step = span / max(target_n - 1, 1)
+            base = 10.0 ** np.floor(np.log10(max(rough_step, 1.0e-12)))
+            multipliers = (1.0, 2.0, 5.0, 10.0)
+
+            best_ticks = None
+            best_score = None
+            for m in multipliers:
+                step = m * base
+                start = np.ceil(vmin / step) * step
+                stop = np.floor(vmax / step) * step
+                ticks = np.arange(start, stop + 0.5 * step, step, dtype=float)
+                ticks = ticks[(ticks >= vmin - 1.0e-12) & (ticks <= vmax + 1.0e-12)]
+                if vmin < 0 < vmax and not np.any(np.isclose(ticks, 0.0, atol=1.0e-12)):
+                    ticks = np.sort(np.append(ticks, 0.0))
+                ticks = np.unique(np.clip(ticks, vmin, vmax))
+                if ticks.size < 2:
+                    ticks = np.array([vmin, vmax], dtype=float)
+                score = abs(int(ticks.size) - target_n)
+                if best_score is None or score < best_score:
+                    best_score = score
+                    best_ticks = ticks
+
+            unique_vals = np.asarray(best_ticks, dtype=float)
+            if unique_vals.size > target_n:
+                idx = np.linspace(0, unique_vals.size - 1, target_n)
+                idx = np.unique(np.round(idx).astype(int))
+                unique_vals = unique_vals[idx]
+
+            tick_text = [_format_colorbar_value(v) for v in unique_vals]
+            return unique_vals, tick_text
+
         def _build_log_tick_labels(log_min, log_max, n_ticks=7):
             """Build readable log-scale ticks using 1-2-5 steps in original units."""
             log_min = float(log_min)
@@ -1162,14 +1206,14 @@ class DashMapPlot(BaseDashPlot):
 
             rough_step = raw_span / max(target_n - 1, 1)
             base = 10.0 ** np.floor(np.log10(max(rough_step, 1.0e-12)))
-            multipliers = (1.0, 2.0, 2.5, 5.0, 10.0)
+            multipliers = (1.0, 2.0, 5.0)  # Use consistent multipliers, remove 2.5 and 10.0
 
             best_ticks = None
             best_score = None
             for m in multipliers:
                 step = m * base
-                start = np.floor(raw_min / step) * step
-                stop = np.ceil(raw_max / step) * step
+                start = np.ceil(raw_min / step) * step
+                stop = np.floor(raw_max / step) * step
                 ticks = np.arange(start, stop + 0.5 * step, step, dtype=float)
                 ticks = ticks[(ticks >= raw_min - 1.0e-12) & (ticks <= raw_max + 1.0e-12)]
                 if raw_min < 0.0 < raw_max and not np.any(np.isclose(ticks, 0.0, atol=1.0e-12)):
@@ -1191,8 +1235,7 @@ class DashMapPlot(BaseDashPlot):
             if raw_ticks.size < 2:
                 raw_ticks = np.array([raw_min, raw_max], dtype=float)
 
-            raw_ticks[0] = raw_min
-            raw_ticks[-1] = raw_max
+            # Don't force endpoints - let meaningful ticks stand
             raw_ticks = np.unique(raw_ticks)
             transformed_ticks = np.arcsinh(raw_ticks)
 
@@ -1381,10 +1424,8 @@ class DashMapPlot(BaseDashPlot):
                 grid_colorbar["tickvals"] = tick_vals
                 grid_colorbar["ticktext"] = tick_text
             else:
-                # For linear scale, use unified formatting with scientific notation for small/large values
-                # Generate reasonable ticks
-                tick_vals = np.linspace(vmin, vmax, min(7, max(2, int(10 * (vmax - vmin) / max(abs(vmin), abs(vmax), 1)))))
-                tick_text = [_format_colorbar_value(v) for v in tick_vals]
+                # For linear scale, use 1-2-5 rule to generate meaningful ticks
+                tick_vals, tick_text = _build_linear_tick_labels(vmin, vmax)
                 grid_colorbar["tickmode"] = "array"
                 grid_colorbar["tickvals"] = tick_vals
                 grid_colorbar["ticktext"] = tick_text
@@ -1786,10 +1827,8 @@ class DashMapPlot(BaseDashPlot):
                 connection_colorbar["tickvals"] = tick_vals
                 connection_colorbar["ticktext"] = tick_text
             else:
-                # For linear scale, use unified formatting with scientific notation for small/large values
-                # Generate reasonable ticks
-                tick_vals = np.linspace(conn_vmin, conn_vmax, min(7, max(2, int(10 * (conn_vmax - conn_vmin) / max(abs(conn_vmin), abs(conn_vmax), 1)))))
-                tick_text = [_format_colorbar_value(v) for v in tick_vals]
+                # For linear scale, use 1-2-5 rule to generate meaningful ticks
+                tick_vals, tick_text = _build_linear_tick_labels(conn_vmin, conn_vmax)
                 connection_colorbar["tickmode"] = "array"
                 connection_colorbar["tickvals"] = tick_vals
                 connection_colorbar["ticktext"] = tick_text
