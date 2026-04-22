@@ -1723,7 +1723,7 @@ class DashMultiPanelDashboard:
                 add_connections=False,
                 add_contours=show_contours_a,
                 add_wells=show_wells_a,
-                well_size=float(well_size) if well_size else 20,
+                well_size_percent=float(well_size) if well_size else 20.0,
                 contour_count=int(contour_count),
             )
             fig_b = map_b.create_map_figure(
@@ -1738,7 +1738,7 @@ class DashMultiPanelDashboard:
                 add_connections=False,
                 add_contours=show_contours_b,
                 add_wells=show_wells_b,
-                well_size=float(well_size) if well_size else 20,
+                well_size_percent=float(well_size) if well_size else 20.0,
                 contour_count=int(contour_count),
             )
             for fig in (fig_a, fig_b):
