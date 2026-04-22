@@ -1212,12 +1212,19 @@ class DashMapPlot(BaseDashPlot):
 
             # Region 1: Linear spacing from abs_min to 1 (if abs_min < 1)
             if abs_min < 1.0:
-                # Use regular scale for small values
-                step = (1.0 - abs_min) / max(3, int(np.log10(1.0 / max(abs_min, 1e-10)) * 2))
-                start = np.ceil(abs_min / step) * step
-                linear_ticks = np.arange(start, 1.0 + 0.5 * step, step)
-                linear_ticks = linear_ticks[linear_ticks <= 1.0]
-                candidate_ticks.extend(linear_ticks)
+                # Use 1-2-5 rule for linear region to get round numbers
+                span = 1.0 - abs_min
+                rough_step = span / 4.0  # target ~4 ticks in this region
+                base = 10.0 ** np.floor(np.log10(max(rough_step, 1.0e-12)))
+                multipliers = (1.0, 2.0, 5.0)
+                for m in multipliers:
+                    step = m * base
+                    start = np.ceil(abs_min / step) * step
+                    linear_ticks = np.arange(start, 1.0 + 0.5 * step, step)
+                    linear_ticks = linear_ticks[linear_ticks <= 1.0]
+                    if linear_ticks.size >= 2:  # Keep this set if we get at least 2 ticks
+                        candidate_ticks.extend(linear_ticks)
+                        break
 
             # Always include 1 if in reasonable range
             if abs_min <= 1.0 <= abs_max:
