@@ -1182,7 +1182,12 @@ class DashMapPlot(BaseDashPlot):
             return tick_vals, tick_text
 
         def _build_asinh_tick_labels(transformed_min, transformed_max, n_ticks=7):
-            """Build readable asinh-scale ticks using nice raw-domain values."""
+            """Build readable asinh-scale ticks uniformly distributed in transformed space.
+
+            Generate ticks uniformly spaced in the transformed (asinh) domain,
+            then convert back to raw values. This gives visually balanced spacing
+            in the colorbar while respecting the asinh transformation's compression.
+            """
             transformed_min = float(transformed_min)
             transformed_max = float(transformed_max)
             if (
@@ -1194,52 +1199,18 @@ class DashMapPlot(BaseDashPlot):
                 tick_text = [_format_colorbar_value(float(np.sinh(v))) for v in vals]
                 return vals, tick_text
 
-            raw_min = float(np.sinh(transformed_min))
-            raw_max = float(np.sinh(transformed_max))
             target_n = int(max(n_ticks, 2))
 
-            raw_span = raw_max - raw_min
-            if not np.isfinite(raw_span) or raw_span <= 0.0:
-                vals = np.array([transformed_min, transformed_max], dtype=float)
-                tick_text = [_format_colorbar_value(float(np.sinh(v))) for v in vals]
-                return vals, tick_text
+            # Generate ticks uniformly in transformed space (visual space)
+            # This ensures they're well-distributed in the colorbar display
+            transformed_ticks = np.linspace(transformed_min, transformed_max, target_n)
 
-            rough_step = raw_span / max(target_n - 1, 1)
-            base = 10.0 ** np.floor(np.log10(max(rough_step, 1.0e-12)))
-            multipliers = (1.0, 2.0, 5.0)  # Use consistent multipliers, remove 2.5 and 10.0
+            # Convert back to raw domain for display
+            raw_ticks = np.sinh(transformed_ticks)
 
-            best_ticks = None
-            best_score = None
-            for m in multipliers:
-                step = m * base
-                start = np.ceil(raw_min / step) * step
-                stop = np.floor(raw_max / step) * step
-                ticks = np.arange(start, stop + 0.5 * step, step, dtype=float)
-                ticks = ticks[(ticks >= raw_min - 1.0e-12) & (ticks <= raw_max + 1.0e-12)]
-                if raw_min < 0.0 < raw_max and not np.any(np.isclose(ticks, 0.0, atol=1.0e-12)):
-                    ticks = np.sort(np.append(ticks, 0.0))
-                ticks = np.unique(np.clip(ticks, raw_min, raw_max))
-                if ticks.size < 2:
-                    ticks = np.array([raw_min, raw_max], dtype=float)
-                score = abs(int(ticks.size) - target_n)
-                if best_score is None or score < best_score:
-                    best_score = score
-                    best_ticks = ticks
-
-            raw_ticks = np.asarray(best_ticks, dtype=float)
-            if raw_ticks.size > target_n:
-                idx = np.linspace(0, raw_ticks.size - 1, target_n)
-                idx = np.unique(np.round(idx).astype(int))
-                raw_ticks = raw_ticks[idx]
-
-            if raw_ticks.size < 2:
-                raw_ticks = np.array([raw_min, raw_max], dtype=float)
-
-            # Don't force endpoints - let meaningful ticks stand
-            raw_ticks = np.unique(raw_ticks)
-            transformed_ticks = np.arcsinh(raw_ticks)
-
+            # Format the raw values for display
             tick_text = [_format_colorbar_value(float(v)) for v in raw_ticks]
+
             return transformed_ticks, tick_text
 
         prop_name = self.property_names[property_index]
