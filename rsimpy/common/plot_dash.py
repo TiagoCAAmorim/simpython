@@ -1182,11 +1182,10 @@ class DashMapPlot(BaseDashPlot):
             return tick_vals, tick_text
 
         def _build_asinh_tick_labels(transformed_min, transformed_max, n_ticks=7):
-            """Build readable asinh-scale ticks uniformly distributed in transformed space.
+            """Build readable asinh-scale ticks with round numbers, well-distributed in visual space.
 
-            Generate ticks uniformly spaced in the transformed (asinh) domain,
-            then convert back to raw values. This gives visually balanced spacing
-            in the colorbar while respecting the asinh transformation's compression.
+            Generate meaningful round numbers (1-2-5 rule) in raw domain, then
+            select subset that is well-distributed when viewed in transformed space.
             """
             transformed_min = float(transformed_min)
             transformed_max = float(transformed_max)
@@ -1199,18 +1198,56 @@ class DashMapPlot(BaseDashPlot):
                 tick_text = [_format_colorbar_value(float(np.sinh(v))) for v in vals]
                 return vals, tick_text
 
+            raw_min = float(np.sinh(transformed_min))
+            raw_max = float(np.sinh(transformed_max))
             target_n = int(max(n_ticks, 2))
 
-            # Generate ticks uniformly in transformed space (visual space)
-            # This ensures they're well-distributed in the colorbar display
-            transformed_ticks = np.linspace(transformed_min, transformed_max, target_n)
+            raw_span = raw_max - raw_min
+            if not np.isfinite(raw_span) or raw_span <= 0.0:
+                vals = np.array([transformed_min, transformed_max], dtype=float)
+                tick_text = [_format_colorbar_value(float(np.sinh(v))) for v in vals]
+                return vals, tick_text
 
-            # Convert back to raw domain for display
-            raw_ticks = np.sinh(transformed_ticks)
+            # Generate many candidate round numbers using 1-2-5 rule
+            rough_step = raw_span / max(target_n - 1, 1)
+            base = 10.0 ** np.floor(np.log10(max(rough_step, 1.0e-12)))
+            multipliers = (1.0, 2.0, 5.0)
 
-            # Format the raw values for display
+            candidates = []
+            for m in multipliers:
+                step = m * base
+                start = np.ceil(raw_min / step) * step
+                stop = np.floor(raw_max / step) * step
+                ticks = np.arange(start, stop + 0.5 * step, step, dtype=float)
+                ticks = ticks[(ticks >= raw_min - 1.0e-12) & (ticks <= raw_max + 1.0e-12)]
+                candidates.extend(ticks)
+
+            # Include zero if it's in range
+            if raw_min < 0.0 < raw_max and 0.0 not in candidates:
+                candidates.append(0.0)
+
+            candidates = np.unique(np.asarray(candidates, dtype=float))
+            candidates = np.clip(candidates, raw_min, raw_max)
+
+            if candidates.size < 2:
+                candidates = np.array([raw_min, raw_max], dtype=float)
+
+            # Now select subset that is well-distributed in transformed space
+            # Transform candidates and find those uniformly spaced in transformed domain
+            transformed_candidates = np.arcsinh(candidates)
+
+            if candidates.size <= target_n:
+                # Use all candidates if we don't have too many
+                selected_indices = np.arange(candidates.size)
+            else:
+                # Select candidates uniformly distributed in transformed space
+                selected_indices = np.linspace(0, candidates.size - 1, target_n)
+                selected_indices = np.unique(np.round(selected_indices).astype(int))
+
+            raw_ticks = candidates[selected_indices]
+            transformed_ticks = np.arcsinh(raw_ticks)
+
             tick_text = [_format_colorbar_value(float(v)) for v in raw_ticks]
-
             return transformed_ticks, tick_text
 
         prop_name = self.property_names[property_index]
