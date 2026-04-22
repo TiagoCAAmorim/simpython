@@ -276,11 +276,7 @@ class DashMultiPanelDashboard:
         table_plots=None,
         title="Dash Multi-Panel Dashboard",
     ):
-        self.map_plots = self._normalize_panel_dict(
-            map_plots,
-            expected_type=DashMapPlot,
-            name="map_plots",
-        )
+        self.map_plots = self._normalize_map_panel_dict(map_plots)
         self.line_plots = self._normalize_panel_dict(
             line_plots,
             expected_type=DashLinePlot,
@@ -327,7 +323,81 @@ class DashMultiPanelDashboard:
             normalized[str(key)] = value
         return normalized
 
+    def _normalize_map_panel_dict(self, values):
+        """Normalize map_plots dict accepting both DashMapPlot and DashMapCompare."""
+        if values is None:
+            return {}
+        if not isinstance(values, dict):
+            raise ValueError("map_plots must be a dict mapping tab names to objects.")
+
+        normalized = {}
+        for key, value in values.items():
+            if not isinstance(key, str) or len(key.strip()) == 0:
+                raise ValueError("map_plots keys must be non-empty strings.")
+            if not isinstance(value, (DashMapPlot, DashMapCompare)):
+                raise ValueError(
+                    f"map_plots['{key}'] must be an instance of DashMapPlot or DashMapCompare."
+                )
+            normalized[str(key)] = value
+        return normalized
+
     def _build_map_panel_tab(self, panel_name, map_plot, prefix):
+        # Handle DashMapCompare specially by creating a side-by-side view
+        if isinstance(map_plot, DashMapCompare):
+            map_a = map_plot.map_plot_a
+            map_b = map_plot.map_plot_b
+            init_limits = map_plot._compute_synced_limits(0, log_scale=False)
+
+            fig_a = map_a.create_map_figure(
+                property_index=0, day_index=0, layer=1,
+                add_grid=True, add_connections=False,
+                add_contours=False, add_wells=False,
+                color_limits=init_limits,
+            )
+            fig_b = map_b.create_map_figure(
+                property_index=0, day_index=0, layer=1,
+                add_grid=True, add_connections=False,
+                add_contours=False, add_wells=False,
+                color_limits=init_limits,
+            )
+
+            for fig in (fig_a, fig_b):
+                fig.update_layout(autosize=True, width=None, height=None)
+
+            return dcc.Tab(
+                label=panel_name,
+                style=_TAB_STYLE,
+                selected_style=_TAB_SELECTED_STYLE,
+                children=[
+                    html.Div(
+                        [
+                            html.H3(f"{map_plot.title}", style={"textAlign": "center", "marginBottom": "20px"}),
+                            html.Div(
+                                [
+                                    html.Div(
+                                        [
+                                            html.H4(f"{map_plot.label_a}", style={"textAlign": "center"}),
+                                            dcc.Graph(figure=fig_a, style={"height": "600px"}),
+                                        ],
+                                        style={"width": "48%", "display": "inline-block", "marginRight": "2%", "verticalAlign": "top"}
+                                    ),
+                                    html.Div(
+                                        [
+                                            html.H4(f"{map_plot.label_b}", style={"textAlign": "center"}),
+                                            dcc.Graph(figure=fig_b, style={"height": "600px"}),
+                                        ],
+                                        style={"width": "48%", "display": "inline-block", "verticalAlign": "top"}
+                                    ),
+                                ],
+                                style={"display": "flex", "justifyContent": "space-between"}
+                            ),
+                        ],
+                        style={"padding": "20px"}
+                    )
+                ],
+            )
+
+        # Handle regular DashMapPlot
         n_properties, n_days, _ = map_plot.grid_data.shape
         n_layers = len(map_plot.layer_sizes)
         has_connections = map_plot.has_connections()
@@ -1006,6 +1076,10 @@ class DashMultiPanelDashboard:
 
     def _register_map_callbacks(self, app):
         for idx, map_plot in enumerate(self.map_plots.values()):
+            # Skip DashMapCompare objects (they don't need callbacks in this context)
+            if isinstance(map_plot, DashMapCompare):
+                continue
+
             prefix = f"mp-map-{idx}"
             has_connections = map_plot.has_connections()
             has_contours = map_plot.has_contours()

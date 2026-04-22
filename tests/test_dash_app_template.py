@@ -180,6 +180,7 @@ class TestDashAppTemplate(unittest.TestCase):
         self.assertIn("Scatter Plots", layout_string)
         self.assertIn("Tables", layout_string)
         self.assertIn("Map A", layout_string)
+        self.assertIn("Map Compare", layout_string)
         self.assertIn("Line A", layout_string)
         self.assertIn("Scatter A", layout_string)
         self.assertIn("Table A", layout_string)

@@ -14,6 +14,8 @@ import plotly.graph_objects as go
 import pandas as pd
 
 from rsimpy.cmg.sr3reader import Sr3Reader
+from rsimpy.cmg.sr3reader.plot_dash import PlotHandlerDash
+from rsimpy.common.plot_dashboard import DashMapCompare
 
 from rsimpy.common.plot_dash import (
     DashLinePlot,
@@ -396,23 +398,65 @@ def create_step_4_generic_wrapper_working_example_app():
     return wrapper.create_app()
 
 
+def _get_common_sr3_grid_days(*sr3_readers):
+    """Return the shared grid days after normalizing floating-point drift."""
+    day_sets = []
+    for reader in sr3_readers:
+        rounded_days = np.round(np.asarray(reader.dates.get_days("grid"), dtype=float), 0)
+        day_sets.append(set(rounded_days.tolist()))
+
+    common_days = sorted(set.intersection(*day_sets))
+    if not common_days:
+        raise ValueError("No common grid days found between the SR3 files.")
+    return np.asarray(common_days, dtype=float)
+
+
 def create_sr3_working_example_app():
     """Create a runnable SR3-backed dashboard example app."""
     sr3_file = Path("tests/sr3/base_case_3a.sr3")
+    sr3_compare_file = Path("tests/sr3/base_case_bo.sr3")
     if not sr3_file.exists():
         raise FileNotFoundError(f"SR3 example file not found: {sr3_file}")
+    if not sr3_compare_file.exists():
+        raise FileNotFoundError(f"SR3 example file not found: {sr3_compare_file}")
 
     sr3 = Sr3Reader(str(sr3_file))
-    days = sr3.dates.get_days("grid")
+    sr3_compare = Sr3Reader(str(sr3_compare_file))
+
+    common_grid_days = _get_common_sr3_grid_days(sr3, sr3_compare)
+    common_properties = [("matrix", "POR"), ("matrix", "PERMI"), ("matrix", "PERMJ"), ("matrix", "PRES")]
+
+    # Create map tabs from base_case_3a
     map_obj_1 = sr3.plots.make_map(
         properties=[("matrix", "BLOCKDEPTH"), ("matrix", "POR")],
-        days=days[:3],
+        days=sr3.dates.get_days("grid")[:3],
         title="Map A",
     )
     map_obj_2 = sr3.plots.make_map(
         properties=[("matrix", "PRES")],
-        days=days[:10],
+        days=sr3.dates.get_days("grid")[:10],
         title="Map B",
+    )
+
+    # Create synchronized comparison maps using common properties and common days
+    plots_a = PlotHandlerDash(sr3)
+    map_compare_a = plots_a.make_map(
+        properties=common_properties,
+        days=common_grid_days,
+        title="Base Case 3a",
+    )
+    plots_b = PlotHandlerDash(sr3_compare)
+    map_compare_b = plots_b.make_map(
+        properties=common_properties,
+        days=common_grid_days,
+        title="Base Case BO",
+    )
+    compare_map = DashMapCompare(
+        map_plot_a=map_compare_a,
+        map_plot_b=map_compare_b,
+        label_a="3a",
+        label_b="BO",
+        title="Map Compare",
     )
 
     days = sr3.dates.get_days("well")
@@ -441,7 +485,7 @@ def create_sr3_working_example_app():
     )
 
     panel = sr3.plots.dashboard(
-        maps={"Map A": map_obj_1, "Map B": map_obj_2},
+        maps={"Map A": map_obj_1, "Map B": map_obj_2, "Map Compare": compare_map},
         lines={"Line A": line_obj},
         scatter={"Scatter A": scatter_obj},
         table={"Table A": table_obj},
@@ -513,7 +557,7 @@ def create_map_compare_app():
     return build_map_compare_demo().create_app()
 
 
-def create_working_example_app(example="step4generic"):
+def create_working_example_app(example="sr3"):
     """Create a named working example app.
 
     Parameters
@@ -539,7 +583,7 @@ def _parse_cli_args():
     parser.add_argument(
         "--example",
         choices=["step4generic", "sr3", "compare"],
-        default="step4generic",
+        default="sr3",
         help="Select which demo app to run.",
     )
     parser.add_argument(
