@@ -24,6 +24,7 @@ Tools for reading and writing CMG simulation files:
   - [Coordinates & Connections](sr3reader/coordinates.md)
   - [Relative Permeability](sr3reader/krel.md)
   - [Visualization & Plotting](sr3reader/plotting.md)
+  - [Interactive Dashboards](sr3reader/dashboards.md)
 
 - **[GridFile](gridfile.md)** - Read/write ASCII grid files (ALL format)
 
