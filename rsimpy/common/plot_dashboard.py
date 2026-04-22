@@ -342,10 +342,16 @@ class DashMultiPanelDashboard:
         return normalized
 
     def _build_map_panel_tab(self, panel_name, map_plot, prefix):
-        # Handle DashMapCompare specially by creating a side-by-side view
+        # Handle DashMapCompare specially by creating a side-by-side view with controls
         if isinstance(map_plot, DashMapCompare):
             map_a = map_plot.map_plot_a
             map_b = map_plot.map_plot_b
+            n_properties = map_a.grid_data.shape[0]
+            n_days = map_a.grid_data.shape[1]
+            n_layers = len(map_a.layer_sizes)
+            has_contours = map_a.has_contours() or map_b.has_contours()
+            has_wells = map_a.has_wells() or map_b.has_wells()
+
             init_limits = map_plot._compute_synced_limits(0, log_scale=False)
 
             fig_a = map_a.create_map_figure(
@@ -371,28 +377,274 @@ class DashMultiPanelDashboard:
                 children=[
                     html.Div(
                         [
-                            html.H3(f"{map_plot.title}", style={"textAlign": "center", "marginBottom": "20px"}),
                             html.Div(
                                 [
+                                    # ── Controls panel ──────────────────────────────
                                     html.Div(
                                         [
-                                            html.H4(f"{map_plot.label_a}", style={"textAlign": "center"}),
-                                            dcc.Graph(figure=fig_a, style={"height": "600px"}),
+                                            html.Label("Property"),
+                                            dcc.Dropdown(
+                                                id=f"{prefix}-property",
+                                                options=[
+                                                    {"label": map_a.property_names[i], "value": i}
+                                                    for i in range(n_properties)
+                                                ],
+                                                value=0,
+                                                clearable=False,
+                                            ),
+                                            html.Br(),
+                                            html.Label("Layer"),
+                                            dcc.Slider(
+                                                id=f"{prefix}-layer",
+                                                min=1,
+                                                max=max(1, n_layers),
+                                                step=1,
+                                                value=1,
+                                                marks={1: "1", n_layers: str(n_layers)},
+                                                tooltip=_SLIDER_TOOLTIP,
+                                                disabled=n_layers == 1,
+                                            ),
+                                            html.Br(),
+                                            html.Label("Day"),
+                                            dcc.Slider(
+                                                id=f"{prefix}-day",
+                                                min=0,
+                                                max=max(0, n_days - 1),
+                                                step=1,
+                                                value=0,
+                                                marks={0: "0", max(0, n_days - 1): str(max(0, n_days - 1))},
+                                                tooltip=_SLIDER_TOOLTIP,
+                                            ),
+                                            html.Hr(style={"margin": "12px 0"}),
+                                            html.Div(
+                                                [
+                                                    dcc.Checklist(
+                                                        id=f"{prefix}-show-grid",
+                                                        options=[{"label": "Grid", "value": "show"}],
+                                                        value=["show"],
+                                                        style={"marginRight": "12px"},
+                                                    ),
+                                                    dcc.Checklist(
+                                                        id=f"{prefix}-grid-log",
+                                                        options=[{"label": "Log", "value": "on"}],
+                                                        value=[],
+                                                        style={"marginRight": "12px"},
+                                                    ),
+                                                    dcc.Checklist(
+                                                        id=f"{prefix}-grid-asinh",
+                                                        options=[{"label": "Asinh", "value": "on"}],
+                                                        value=[],
+                                                        style={"marginRight": "12px"},
+                                                    ),
+                                                    dcc.Checklist(
+                                                        id=f"{prefix}-grid-options",
+                                                        options=[{"label": "Options", "value": "show"}],
+                                                        value=[],
+                                                    ),
+                                                ],
+                                                style={
+                                                    "display": "flex",
+                                                    "alignItems": "center",
+                                                    "columnGap": "8px",
+                                                },
+                                            ),
+                                            html.Div(
+                                                [
+                                                    html.Label("Grid palette"),
+                                                    dcc.Dropdown(
+                                                        id=f"{prefix}-palette",
+                                                        options=PALETTE_OPTIONS,
+                                                        value="Turbo",
+                                                        clearable=False,
+                                                    ),
+                                                    html.Div(
+                                                        [
+                                                            html.Label(
+                                                                "Color limits",
+                                                                style={"fontSize": "12px"},
+                                                            ),
+                                                            html.Div(
+                                                                [
+                                                                    dcc.Input(
+                                                                        id=f"{prefix}-vmin",
+                                                                        type="number",
+                                                                        placeholder="Min (auto)",
+                                                                        debounce=True,
+                                                                        style=_INPUT_SMALL,
+                                                                    ),
+                                                                    html.Span(
+                                                                        "–",
+                                                                        style={"margin": "0 4px"},
+                                                                    ),
+                                                                    dcc.Input(
+                                                                        id=f"{prefix}-vmax",
+                                                                        type="number",
+                                                                        placeholder="Max (auto)",
+                                                                        debounce=True,
+                                                                        style=_INPUT_SMALL,
+                                                                    ),
+                                                                ],
+                                                                style=_COLOR_LIMITS_STYLE,
+                                                            ),
+                                                            html.Div(
+                                                                id=f"{prefix}-color-error",
+                                                                style=_COLOR_ERROR_STYLE,
+                                                            ),
+                                                        ],
+                                                        style={"marginTop": "8px"},
+                                                    ),
+                                                ],
+                                                id=f"{prefix}-grid-controls-group",
+                                                style={"display": "none"},
+                                            ),
+                                            html.Hr(style={"margin": "12px 0"}),
+                                            html.Div(
+                                                [
+                                                    dcc.Checklist(
+                                                        id=f"{prefix}-show-wells",
+                                                        options=[
+                                                            {
+                                                                "label": "Wells",
+                                                                "value": "show",
+                                                                "disabled": not has_wells,
+                                                            }
+                                                        ],
+                                                        value=[],
+                                                        style={"marginRight": "12px"},
+                                                    ),
+                                                ],
+                                                style={"display": "flex", "alignItems": "center"},
+                                            ),
+                                            html.Hr(style={"margin": "12px 0"}),
+                                            html.Div(
+                                                [
+                                                    dcc.Checklist(
+                                                        id=f"{prefix}-show-contours",
+                                                        options=[
+                                                            {
+                                                                "label": "Contours",
+                                                                "value": "show",
+                                                                "disabled": not has_contours,
+                                                            }
+                                                        ],
+                                                        value=[],
+                                                        style={"marginRight": "12px"},
+                                                    ),
+                                                    dcc.Checklist(
+                                                        id=f"{prefix}-contour-options",
+                                                        options=[
+                                                            {
+                                                                "label": "Options",
+                                                                "value": "show",
+                                                                "disabled": not has_contours,
+                                                            }
+                                                        ],
+                                                        value=[],
+                                                    ),
+                                                ],
+                                                style={"display": "flex", "alignItems": "center"},
+                                            ),
+                                            html.Div(
+                                                [
+                                                    html.Label("Contour count"),
+                                                    dcc.Slider(
+                                                        id=f"{prefix}-contour-count",
+                                                        min=2,
+                                                        max=15,
+                                                        step=1,
+                                                        value=7,
+                                                        disabled=not has_contours,
+                                                        tooltip=_SLIDER_TOOLTIP,
+                                                    ),
+                                                ],
+                                                id=f"{prefix}-contour-controls-group",
+                                                style={"display": "none"},
+                                            ),
                                         ],
-                                        style={"width": "48%", "display": "inline-block", "marginRight": "2%", "verticalAlign": "top"}
+                                        style={
+                                            "flex": "0 0 220px",
+                                            "paddingRight": "12px",
+                                            "overflowY": "auto",
+                                        },
                                     ),
+                                    # ── Two map graphs ───────────────────────────────
                                     html.Div(
                                         [
-                                            html.H4(f"{map_plot.label_b}", style={"textAlign": "center"}),
-                                            dcc.Graph(figure=fig_b, style={"height": "600px"}),
+                                            html.Div(
+                                                [
+                                                    html.Label(
+                                                        map_plot.label_a,
+                                                        style={"fontWeight": "600", "marginBottom": "4px"},
+                                                    ),
+                                                    dcc.Graph(
+                                                        id=f"{prefix}-graph-a",
+                                                        figure=fig_a,
+                                                        responsive=True,
+                                                        style={"flex": "1 1 auto"},
+                                                        config={
+                                                            "displaylogo": False,
+                                                            "scrollZoom": True,
+                                                            "modeBarButtonsToRemove": [
+                                                                "select2d",
+                                                                "lasso2d",
+                                                            ],
+                                                        },
+                                                    ),
+                                                ],
+                                                style={
+                                                    "display": "flex",
+                                                    "flexDirection": "column",
+                                                    "flex": "1 1 auto",
+                                                },
+                                            ),
+                                            html.Div(
+                                                [
+                                                    html.Label(
+                                                        map_plot.label_b,
+                                                        style={"fontWeight": "600", "marginBottom": "4px"},
+                                                    ),
+                                                    dcc.Graph(
+                                                        id=f"{prefix}-graph-b",
+                                                        figure=fig_b,
+                                                        responsive=True,
+                                                        style={"flex": "1 1 auto"},
+                                                        config={
+                                                            "displaylogo": False,
+                                                            "scrollZoom": True,
+                                                            "modeBarButtonsToRemove": [
+                                                                "select2d",
+                                                                "lasso2d",
+                                                            ],
+                                                        },
+                                                    ),
+                                                ],
+                                                style={
+                                                    "display": "flex",
+                                                    "flexDirection": "column",
+                                                    "flex": "1 1 auto",
+                                                },
+                                            ),
                                         ],
-                                        style={"width": "48%", "display": "inline-block", "verticalAlign": "top"}
+                                        style={
+                                            "display": "flex",
+                                            "flex": "1 1 auto",
+                                            "gap": "8px",
+                                        },
                                     ),
                                 ],
-                                style={"display": "flex", "justifyContent": "space-between"}
+                                style={
+                                    "display": "flex",
+                                    "height": "100%",
+                                    "minHeight": "0",
+                                },
                             ),
                         ],
-                        style={"padding": "20px"}
+                        style={
+                            "padding": "12px",
+                            "boxSizing": "border-box",
+                            "height": "100%",
+                            "overflow": "hidden",
+                        }
                     )
                 ],
             )
@@ -1076,23 +1328,29 @@ class DashMultiPanelDashboard:
 
     def _register_map_callbacks(self, app):
         for idx, map_plot in enumerate(self.map_plots.values()):
-            # Skip DashMapCompare objects (they don't need callbacks in this context)
-            if isinstance(map_plot, DashMapCompare):
-                continue
-
             prefix = f"mp-map-{idx}"
-            has_connections = map_plot.has_connections()
-            has_contours = map_plot.has_contours()
-            has_wells = map_plot.has_wells()
 
-            self._register_map_callback_factory(
-                app=app,
-                prefix=prefix,
-                map_plot=map_plot,
-                has_connections=has_connections,
-                has_contours=has_contours,
-                has_wells=has_wells,
-            )
+            if isinstance(map_plot, DashMapCompare):
+                # Register callbacks for DashMapCompare
+                self._register_map_compare_callbacks(
+                    app=app,
+                    prefix=prefix,
+                    map_compare=map_plot,
+                )
+            else:
+                # Register callbacks for regular DashMapPlot
+                has_connections = map_plot.has_connections()
+                has_contours = map_plot.has_contours()
+                has_wells = map_plot.has_wells()
+
+                self._register_map_callback_factory(
+                    app=app,
+                    prefix=prefix,
+                    map_plot=map_plot,
+                    has_connections=has_connections,
+                    has_contours=has_contours,
+                    has_wells=has_wells,
+                )
 
     def _register_map_callback_factory(
         self,
@@ -1343,6 +1601,120 @@ class DashMultiPanelDashboard:
                 contour_options,
                 well_options,
                 color_error,
+            )
+
+    def _register_map_compare_callbacks(self, app, prefix, map_compare):
+        """Register callbacks for DashMapCompare in multi-panel context."""
+        map_a = map_compare.map_plot_a
+        map_b = map_compare.map_plot_b
+        n_layers = len(map_a.layer_sizes)
+        has_contours = map_a.has_contours() or map_b.has_contours()
+        has_wells = map_a.has_wells() or map_b.has_wells()
+
+        @app.callback(
+            Output(f"{prefix}-graph-a", "figure"),
+            Output(f"{prefix}-graph-b", "figure"),
+            Output(f"{prefix}-grid-controls-group", "style"),
+            Output(f"{prefix}-contour-controls-group", "style"),
+            Output(f"{prefix}-color-error", "children"),
+            Output(f"{prefix}-grid-log", "options"),
+            Output(f"{prefix}-grid-asinh", "options"),
+            Input(f"{prefix}-property", "value"),
+            Input(f"{prefix}-day", "value"),
+            Input(f"{prefix}-layer", "value"),
+            Input(f"{prefix}-show-grid", "value"),
+            Input(f"{prefix}-grid-log", "value"),
+            Input(f"{prefix}-grid-asinh", "value"),
+            Input(f"{prefix}-grid-options", "value"),
+            Input(f"{prefix}-palette", "value"),
+            Input(f"{prefix}-vmin", "value"),
+            Input(f"{prefix}-vmax", "value"),
+            Input(f"{prefix}-show-wells", "value"),
+            Input(f"{prefix}-show-contours", "value"),
+            Input(f"{prefix}-contour-options", "value"),
+            Input(f"{prefix}-contour-count", "value"),
+        )
+        def _update_compare(
+            property_index, day_index, layer,
+            show_grid_values, grid_log_values, grid_asinh_values, grid_options_values, palette,
+            vmin_input, vmax_input,
+            show_wells_values, show_contours_values, contour_options_values,
+            contour_count,
+        ):
+            show_grid = "show" in (show_grid_values or [])
+            grid_log = show_grid and "on" in (grid_log_values or [])
+            grid_asinh = show_grid and "on" in (grid_asinh_values or []) and not grid_log
+            show_grid_options = show_grid and "show" in (grid_options_values or [])
+            show_contours = has_contours and "show" in (show_contours_values or [])
+            show_wells_flag = has_wells and "show" in (show_wells_values or [])
+            show_contour_options = show_contours and "show" in (contour_options_values or [])
+
+            grid_style = {"display": "block" if show_grid_options else "none"}
+            contour_style = {"display": "block" if show_contour_options else "none"}
+            grid_log_options = [{
+                "label": "Log",
+                "value": "on",
+                "disabled": (not show_grid) or grid_asinh,
+            }]
+            grid_asinh_options = [{
+                "label": "Asinh",
+                "value": "on",
+                "disabled": (not show_grid) or grid_log,
+            }]
+
+            synced = map_compare._compute_synced_limits(int(property_index), grid_log)
+            scale_mode = "log" if grid_log else "asinh" if grid_asinh else "linear"
+            color_limits, color_error = _parse_color_limits(
+                vmin_input,
+                vmax_input,
+                scale_mode,
+                auto_vmin=synced[0], auto_vmax=synced[1],
+            )
+            if color_limits is None and not color_error:
+                color_limits = synced
+
+            show_wells_a = show_wells_flag and map_a.has_wells()
+            show_wells_b = show_wells_flag and map_b.has_wells()
+            show_contours_a = show_contours and map_a.has_contours()
+            show_contours_b = show_contours and map_b.has_contours()
+
+            fig_a = map_a.create_map_figure(
+                property_index=int(property_index),
+                day_index=int(day_index),
+                layer=int(layer),
+                palette=str(palette),
+                grid_log_scale=grid_log,
+                grid_asinh_scale=grid_asinh,
+                color_limits=color_limits,
+                add_grid=show_grid,
+                add_connections=False,
+                add_contours=show_contours_a,
+                add_wells=show_wells_a,
+                contour_count=int(contour_count),
+            )
+            fig_b = map_b.create_map_figure(
+                property_index=int(property_index),
+                day_index=int(day_index),
+                layer=int(layer),
+                palette=str(palette),
+                grid_log_scale=grid_log,
+                grid_asinh_scale=grid_asinh,
+                color_limits=color_limits,
+                add_grid=show_grid,
+                add_connections=False,
+                add_contours=show_contours_b,
+                add_wells=show_wells_b,
+                contour_count=int(contour_count),
+            )
+            for fig in (fig_a, fig_b):
+                fig.update_layout(autosize=True, width=None, height=None)
+
+            return (
+                fig_a, fig_b,
+                grid_style, contour_style,
+                color_error,
+                grid_log_options,
+                grid_asinh_options,
             )
 
     def _register_line_callbacks(self, app):
