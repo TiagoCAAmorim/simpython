@@ -512,8 +512,35 @@ class DashMultiPanelDashboard:
                                                         value=[],
                                                         style={"marginRight": "12px"},
                                                     ),
+                                                    dcc.Checklist(
+                                                        id=f"{prefix}-well-options-toggle",
+                                                        options=[
+                                                            {
+                                                                "label": "Options",
+                                                                "value": "show",
+                                                                "disabled": not has_wells,
+                                                            }
+                                                        ],
+                                                        value=[],
+                                                    ),
                                                 ],
                                                 style={"display": "flex", "alignItems": "center"},
+                                            ),
+                                            html.Div(
+                                                [
+                                                    html.Label("Well size (%)"),
+                                                    dcc.Slider(
+                                                        id=f"{prefix}-well-size",
+                                                        min=5,
+                                                        max=200,
+                                                        step=5,
+                                                        value=20,
+                                                        disabled=not has_wells,
+                                                        tooltip=_SLIDER_TOOLTIP,
+                                                    ),
+                                                ],
+                                                id=f"{prefix}-well-controls-group",
+                                                style={"display": "none"},
                                             ),
                                             html.Hr(style={"margin": "12px 0"}),
                                             html.Div(
@@ -1615,6 +1642,7 @@ class DashMultiPanelDashboard:
             Output(f"{prefix}-graph-a", "figure"),
             Output(f"{prefix}-graph-b", "figure"),
             Output(f"{prefix}-grid-controls-group", "style"),
+            Output(f"{prefix}-well-controls-group", "style"),
             Output(f"{prefix}-contour-controls-group", "style"),
             Output(f"{prefix}-color-error", "children"),
             Output(f"{prefix}-grid-log", "options"),
@@ -1630,6 +1658,8 @@ class DashMultiPanelDashboard:
             Input(f"{prefix}-vmin", "value"),
             Input(f"{prefix}-vmax", "value"),
             Input(f"{prefix}-show-wells", "value"),
+            Input(f"{prefix}-well-options-toggle", "value"),
+            Input(f"{prefix}-well-size", "value"),
             Input(f"{prefix}-show-contours", "value"),
             Input(f"{prefix}-contour-options", "value"),
             Input(f"{prefix}-contour-count", "value"),
@@ -1638,18 +1668,21 @@ class DashMultiPanelDashboard:
             property_index, day_index, layer,
             show_grid_values, grid_log_values, grid_asinh_values, grid_options_values, palette,
             vmin_input, vmax_input,
-            show_wells_values, show_contours_values, contour_options_values,
+            show_wells_values, well_options_values, well_size,
+            show_contours_values, contour_options_values,
             contour_count,
         ):
             show_grid = "show" in (show_grid_values or [])
             grid_log = show_grid and "on" in (grid_log_values or [])
             grid_asinh = show_grid and "on" in (grid_asinh_values or []) and not grid_log
             show_grid_options = show_grid and "show" in (grid_options_values or [])
-            show_contours = has_contours and "show" in (show_contours_values or [])
             show_wells_flag = has_wells and "show" in (show_wells_values or [])
+            show_well_options = show_wells_flag and "show" in (well_options_values or [])
+            show_contours = has_contours and "show" in (show_contours_values or [])
             show_contour_options = show_contours and "show" in (contour_options_values or [])
 
             grid_style = {"display": "block" if show_grid_options else "none"}
+            well_style = {"display": "block" if show_well_options else "none"}
             contour_style = {"display": "block" if show_contour_options else "none"}
             grid_log_options = [{
                 "label": "Log",
@@ -1690,6 +1723,7 @@ class DashMultiPanelDashboard:
                 add_connections=False,
                 add_contours=show_contours_a,
                 add_wells=show_wells_a,
+                well_size=float(well_size) if well_size else 20,
                 contour_count=int(contour_count),
             )
             fig_b = map_b.create_map_figure(
@@ -1704,6 +1738,7 @@ class DashMultiPanelDashboard:
                 add_connections=False,
                 add_contours=show_contours_b,
                 add_wells=show_wells_b,
+                well_size=float(well_size) if well_size else 20,
                 contour_count=int(contour_count),
             )
             for fig in (fig_a, fig_b):
@@ -1711,7 +1746,7 @@ class DashMultiPanelDashboard:
 
             return (
                 fig_a, fig_b,
-                grid_style, contour_style,
+                grid_style, well_style, contour_style,
                 color_error,
                 grid_log_options,
                 grid_asinh_options,
