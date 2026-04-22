@@ -1080,6 +1080,21 @@ class DashMapPlot(BaseDashPlot):
         layer_indices = np.where(layer_mask)[0]
         layer_values = values_all[layer_indices]
 
+        def _format_colorbar_value(v):
+            """Format value for colorbar: regular notation for 1e-5 <= |v| <= 1e5, else scientific."""
+            av = abs(v)
+            if av == 0:
+                return "0"
+            if av < 1e-5 or av > 1e5:
+                # Use scientific notation
+                return f"{v:.2e}"
+            # Use standard notation with appropriate precision
+            if av >= 1:
+                return f"{v:.3f}".rstrip("0").rstrip(".")
+            if av >= 0.01:
+                return f"{v:.4f}".rstrip("0").rstrip(".")
+            return f"{v:.6f}".rstrip("0").rstrip(".")
+
         def _build_log_tick_labels(log_min, log_max, n_ticks=7):
             """Build readable log-scale ticks using 1-2-5 steps in original units."""
             log_min = float(log_min)
@@ -1118,18 +1133,8 @@ class DashMapPlot(BaseDashPlot):
                 idx = np.unique(np.round(idx).astype(int))
                 unique_vals = unique_vals[idx]
 
-            def _format_original_value(v):
-                av = abs(v)
-                if av >= 1000:
-                    return f"{v:.0f}"
-                if av >= 1:
-                    return f"{v:.3f}".rstrip("0").rstrip(".")
-                if av >= 0.1:
-                    return f"{v:.4f}".rstrip("0").rstrip(".")
-                return f"{v:.6f}".rstrip("0").rstrip(".")
-
             tick_vals = np.log10(unique_vals)
-            tick_text = [_format_original_value(v) for v in unique_vals]
+            tick_text = [_format_colorbar_value(v) for v in unique_vals]
             return tick_vals, tick_text
 
         def _build_asinh_tick_labels(transformed_min, transformed_max, n_ticks=7):
@@ -1142,7 +1147,7 @@ class DashMapPlot(BaseDashPlot):
                 or transformed_max <= transformed_min
             ):
                 vals = np.array([transformed_min, transformed_max], dtype=float)
-                tick_text = [f"{float(np.sinh(v)):.6g}" for v in vals]
+                tick_text = [_format_colorbar_value(float(np.sinh(v))) for v in vals]
                 return vals, tick_text
 
             raw_min = float(np.sinh(transformed_min))
@@ -1152,7 +1157,7 @@ class DashMapPlot(BaseDashPlot):
             raw_span = raw_max - raw_min
             if not np.isfinite(raw_span) or raw_span <= 0.0:
                 vals = np.array([transformed_min, transformed_max], dtype=float)
-                tick_text = [f"{float(np.sinh(v)):.6g}" for v in vals]
+                tick_text = [_format_colorbar_value(float(np.sinh(v))) for v in vals]
                 return vals, tick_text
 
             rough_step = raw_span / max(target_n - 1, 1)
@@ -1191,17 +1196,7 @@ class DashMapPlot(BaseDashPlot):
             raw_ticks = np.unique(raw_ticks)
             transformed_ticks = np.arcsinh(raw_ticks)
 
-            def _format_original_value(v):
-                av = abs(v)
-                if av >= 1000:
-                    return f"{v:.0f}"
-                if av >= 1:
-                    return f"{v:.3f}".rstrip("0").rstrip(".")
-                if av >= 0.1:
-                    return f"{v:.4f}".rstrip("0").rstrip(".")
-                return f"{v:.6f}".rstrip("0").rstrip(".")
-
-            tick_text = [_format_original_value(float(v)) for v in raw_ticks]
+            tick_text = [_format_colorbar_value(float(v)) for v in raw_ticks]
             return transformed_ticks, tick_text
 
         prop_name = self.property_names[property_index]
@@ -1386,23 +1381,10 @@ class DashMapPlot(BaseDashPlot):
                 grid_colorbar["tickvals"] = tick_vals
                 grid_colorbar["ticktext"] = tick_text
             else:
-                # For linear scale, use smart formatting with scientific notation for small/large values
-                def _format_linear_value(v):
-                    """Format value with scientific notation for very small or very large values."""
-                    av = abs(v)
-                    if av == 0:
-                        return "0"
-                    if av < 1e-5 or av > 1e5:
-                        # Use scientific notation
-                        return f"{v:.2e}"
-                    # Use standard notation with appropriate precision
-                    if av >= 1:
-                        return f"{v:.3g}"
-                    return f"{v:.3g}"
-
+                # For linear scale, use unified formatting with scientific notation for small/large values
                 # Generate reasonable ticks
                 tick_vals = np.linspace(vmin, vmax, min(7, max(2, int(10 * (vmax - vmin) / max(abs(vmin), abs(vmax), 1)))))
-                tick_text = [_format_linear_value(v) for v in tick_vals]
+                tick_text = [_format_colorbar_value(v) for v in tick_vals]
                 grid_colorbar["tickmode"] = "array"
                 grid_colorbar["tickvals"] = tick_vals
                 grid_colorbar["ticktext"] = tick_text
@@ -1804,23 +1786,10 @@ class DashMapPlot(BaseDashPlot):
                 connection_colorbar["tickvals"] = tick_vals
                 connection_colorbar["ticktext"] = tick_text
             else:
-                # For linear scale, use smart formatting with scientific notation for small/large values
-                def _format_linear_value_conn(v):
-                    """Format value with scientific notation for very small or very large values."""
-                    av = abs(v)
-                    if av == 0:
-                        return "0"
-                    if av < 1e-5 or av > 1e5:
-                        # Use scientific notation
-                        return f"{v:.2e}"
-                    # Use standard notation with appropriate precision
-                    if av >= 1:
-                        return f"{v:.3g}"
-                    return f"{v:.3g}"
-
+                # For linear scale, use unified formatting with scientific notation for small/large values
                 # Generate reasonable ticks
                 tick_vals = np.linspace(conn_vmin, conn_vmax, min(7, max(2, int(10 * (conn_vmax - conn_vmin) / max(abs(conn_vmin), abs(conn_vmax), 1)))))
-                tick_text = [_format_linear_value_conn(v) for v in tick_vals]
+                tick_text = [_format_colorbar_value(v) for v in tick_vals]
                 connection_colorbar["tickmode"] = "array"
                 connection_colorbar["tickvals"] = tick_vals
                 connection_colorbar["ticktext"] = tick_text
