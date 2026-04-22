@@ -1182,10 +1182,13 @@ class DashMapPlot(BaseDashPlot):
             return tick_vals, tick_text
 
         def _build_asinh_tick_labels(transformed_min, transformed_max, n_ticks=7):
-            """Build readable asinh-scale ticks with round numbers, well-distributed in visual space.
+            """Build readable asinh-scale ticks using adaptive linear/log strategy.
 
-            Generate meaningful round numbers (1-2-5 rule) in raw domain, then
-            select subset that is well-distributed when viewed in transformed space.
+            Strategy:
+            1. For small values (< 1): use linear spacing (regular scale)
+            2. For large values (> 1): use log spacing (1-2-5 rule)
+            3. Mirror around zero
+            4. Filter to meaningful number based on transformed space distribution
             """
             transformed_min = float(transformed_min)
             transformed_max = float(transformed_max)
@@ -1200,54 +1203,86 @@ class DashMapPlot(BaseDashPlot):
 
             raw_min = float(np.sinh(transformed_min))
             raw_max = float(np.sinh(transformed_max))
-            target_n = int(max(n_ticks, 2))
 
-            raw_span = raw_max - raw_min
-            if not np.isfinite(raw_span) or raw_span <= 0.0:
-                vals = np.array([transformed_min, transformed_max], dtype=float)
-                tick_text = [_format_colorbar_value(float(np.sinh(v))) for v in vals]
-                return vals, tick_text
+            # Get absolute range
+            abs_min = min(abs(raw_min), abs(raw_max))
+            abs_max = max(abs(raw_min), abs(raw_max))
 
-            # Generate many candidate round numbers using 1-2-5 rule
-            rough_step = raw_span / max(target_n - 1, 1)
-            base = 10.0 ** np.floor(np.log10(max(rough_step, 1.0e-12)))
-            multipliers = (1.0, 2.0, 5.0)
+            candidate_ticks = []
 
-            candidates = []
-            for m in multipliers:
-                step = m * base
-                start = np.ceil(raw_min / step) * step
-                stop = np.floor(raw_max / step) * step
-                ticks = np.arange(start, stop + 0.5 * step, step, dtype=float)
-                ticks = ticks[(ticks >= raw_min - 1.0e-12) & (ticks <= raw_max + 1.0e-12)]
-                candidates.extend(ticks)
+            # Region 1: Linear spacing from abs_min to 1 (if abs_min < 1)
+            if abs_min < 1.0:
+                # Use regular scale for small values
+                step = (1.0 - abs_min) / max(3, int(np.log10(1.0 / max(abs_min, 1e-10)) * 2))
+                start = np.ceil(abs_min / step) * step
+                linear_ticks = np.arange(start, 1.0 + 0.5 * step, step)
+                linear_ticks = linear_ticks[linear_ticks <= 1.0]
+                candidate_ticks.extend(linear_ticks)
 
-            # Include zero if it's in range
-            if raw_min < 0.0 < raw_max and 0.0 not in candidates:
-                candidates.append(0.0)
+            # Always include 1 if in reasonable range
+            if abs_min <= 1.0 <= abs_max:
+                candidate_ticks.append(1.0)
 
-            candidates = np.unique(np.asarray(candidates, dtype=float))
-            candidates = np.clip(candidates, raw_min, raw_max)
+            # Region 2: Log spacing from 1 to abs_max (if abs_max > 1)
+            if abs_max > 1.0:
+                # Use 1-2-5 rule for large values
+                log_min_exp = int(np.floor(np.log10(1.0)))
+                log_max_exp = int(np.ceil(np.log10(abs_max)))
+                bases = (1.0, 2.0, 5.0)
+                for exp in range(log_min_exp, log_max_exp + 1):
+                    scale = 10.0 ** exp
+                    for base in bases:
+                        value = base * scale
+                        if 1.0 < value <= abs_max:
+                            candidate_ticks.append(value)
 
-            if candidates.size < 2:
-                candidates = np.array([raw_min, raw_max], dtype=float)
+            # Sort and remove duplicates
+            candidate_ticks = sorted(set(float(v) for v in candidate_ticks))
 
-            # Now select subset that is well-distributed in transformed space
-            # Transform candidates and find those uniformly spaced in transformed domain
-            transformed_candidates = np.arcsinh(candidates)
+            # Mirror around zero
+            mirrored_ticks = []
+            for tick in candidate_ticks:
+                if tick > 0:
+                    mirrored_ticks.append(-tick)
+            mirrored_ticks.append(0.0)
+            mirrored_ticks.extend(candidate_ticks)
+            mirrored_ticks = sorted(set(mirrored_ticks))
 
-            if candidates.size <= target_n:
-                # Use all candidates if we don't have too many
-                selected_indices = np.arange(candidates.size)
-            else:
-                # Select candidates uniformly distributed in transformed space
-                selected_indices = np.linspace(0, candidates.size - 1, target_n)
-                selected_indices = np.unique(np.round(selected_indices).astype(int))
+            # Drop values outside original limits
+            mirrored_ticks = np.asarray([t for t in mirrored_ticks if raw_min - 1e-10 <= t <= raw_max + 1e-10])
 
-            raw_ticks = candidates[selected_indices]
-            transformed_ticks = np.arcsinh(raw_ticks)
+            if mirrored_ticks.size < 2:
+                mirrored_ticks = np.array([raw_min, raw_max], dtype=float)
 
-            tick_text = [_format_colorbar_value(float(v)) for v in raw_ticks]
+            # Apply asinh transformation
+            transformed_ticks = np.arcsinh(mirrored_ticks)
+
+            # Filter ticks that are too close in transformed space
+            # Preserve: extremes, zero, and maintain target count
+            if mirrored_ticks.size > n_ticks + 1:  # +1 for flexibility
+                # Calculate minimum spacing for target number of ticks
+                total_transformed_span = transformed_ticks[-1] - transformed_ticks[0]
+                min_spacing = total_transformed_span / (n_ticks + 0.5)
+
+                # Always keep first, last, and zero
+                keep_indices = {0, len(transformed_ticks) - 1}
+                zero_idx = np.argmin(np.abs(mirrored_ticks))
+                keep_indices.add(zero_idx)
+
+                # Greedily add ticks that are well-spaced
+                current_pos = transformed_ticks[0]
+                for i in range(1, len(transformed_ticks) - 1):
+                    if i not in keep_indices:
+                        if transformed_ticks[i] - current_pos >= min_spacing * 0.8:
+                            keep_indices.add(i)
+                            current_pos = transformed_ticks[i]
+
+                # Sort indices and extract
+                keep_indices = sorted(keep_indices)
+                mirrored_ticks = mirrored_ticks[keep_indices]
+                transformed_ticks = transformed_ticks[keep_indices]
+
+            tick_text = [_format_colorbar_value(float(v)) for v in mirrored_ticks]
             return transformed_ticks, tick_text
 
         prop_name = self.property_names[property_index]
