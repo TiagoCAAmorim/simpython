@@ -696,19 +696,19 @@ class TemplateProcessor:
 
         if self._verbose:
             print('Calculating inverse CDF')
-        df = pd.DataFrame()
+        df_dict = {}
         for column_index, var in enumerate(self.variables):
             data = self.variables[var]
             if self._verbose:
                 print(f"   {var}: {data['distribution']}")
             if not data['active']:
-                df[var] = [data['default']] * n_samples
+                df_dict[var] = [data['default']] * n_samples
             elif data['distribution'] == 'table':
-                df[var] = data['values']
+                df_dict[var] = data['values']
             else:
-                df[var] = self._inv_cdf(
+                df_dict[var] = self._inv_cdf(
                     samples[:, column_index], data, all_uniform)
-        self.experiments_table = df
+        self.experiments_table = pd.DataFrame(df_dict)
 
     def _create_new_file(self, output_file_path, values, text):
         new_text = text
