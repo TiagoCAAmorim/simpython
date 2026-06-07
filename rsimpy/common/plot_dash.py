@@ -717,6 +717,13 @@ class DashScatterPlot(BaseDashPlot):
         """Create scatter figure for one property or all properties."""
         if property_name is None:
             selected_keys = list(self.scatter_data.keys())
+        elif isinstance(property_name, list):
+            invalid = [k for k in property_name if k not in self.scatter_data]
+            if invalid:
+                raise ValueError(
+                    f"property_name keys not found in scatter_data: {invalid}"
+                )
+            selected_keys = property_name
         else:
             if property_name not in self.scatter_data:
                 raise ValueError(

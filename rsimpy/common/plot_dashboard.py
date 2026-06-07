@@ -1098,10 +1098,8 @@ class DashMultiPanelDashboard:
         )
 
     def _build_scatter_panel_tab(self, panel_name, scatter_plot, prefix):
-        options = [{"label": "All", "value": "__all__"}] + [
-            {"label": key, "value": key} for key in scatter_plot.scatter_data.keys()
-        ]
-        initial = scatter_plot.create_scatter_figure(property_name=None)
+        options = [{"label": key, "value": key} for key in scatter_plot.scatter_data.keys()]
+        initial = scatter_plot.create_scatter_figure(property_name=[])
         initial.update_layout(autosize=True, width=None, height=None)
 
         return dcc.Tab(
@@ -1117,8 +1115,10 @@ class DashMultiPanelDashboard:
                                 dcc.Dropdown(
                                     id=f"{prefix}-property",
                                     options=options,
-                                    value="__all__",
-                                    clearable=False,
+                                    value=[],
+                                    multi=True,
+                                    clearable=True,
+                                    placeholder="Select one or more…",
                                 ),
                                 html.Br(),
                                 dcc.Checklist(
@@ -1802,9 +1802,7 @@ class DashMultiPanelDashboard:
             equal_axes_values,
             _plot=scatter_plot,
         ):
-            selected_property = None
-            if property_name and property_name != "__all__":
-                selected_property = str(property_name)
+            selected_property = property_name if property_name else []
             fig = _plot.create_scatter_figure(
                 property_name=selected_property,
                 log_x="on" in (log_x_values or []),
