@@ -1041,6 +1041,8 @@ class DashMapPlot(BaseDashPlot):
         add_wells=False,
         well_size_percent=20.0,
         well_line_width=2.0,
+        xaxis_range=None,
+        yaxis_range=None,
     ):
         """Create a basic polygon map for one property/day/layer selection."""
         n_properties, n_days, _ = self.grid_data.shape
@@ -1520,12 +1522,12 @@ class DashMapPlot(BaseDashPlot):
             yaxis_title="Y",
             xaxis={
                 "tickformat": ".2f",
-                "range": [x_min - x_pad, x_max + x_pad],
+                "range": list(xaxis_range) if xaxis_range is not None else [x_min - x_pad, x_max + x_pad],
                 "autorange": False,
             },
             yaxis={
                 "tickformat": ".2f",
-                "range": [y_min - y_pad, y_max + y_pad],
+                "range": list(yaxis_range) if yaxis_range is not None else [y_min - y_pad, y_max + y_pad],
                 "autorange": False,
             },
             template="plotly_white",

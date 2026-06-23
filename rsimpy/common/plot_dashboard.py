@@ -3,8 +3,11 @@
 
 from __future__ import annotations
 
+import io
+import zipfile
+
 import numpy as np
-from dash import Dash, Input, Output, Patch, ctx, dash_table, dcc, html, no_update
+from dash import Dash, Input, Output, Patch, State, ctx, dash_table, dcc, html, no_update
 
 from rsimpy.common.plot_dash import (
     DashLinePlot,
@@ -737,6 +740,23 @@ class DashMultiPanelDashboard:
                                     tooltip=_SLIDER_TOOLTIP,
                                 ),
                                 html.Br(),
+                                html.Button(
+                                    "Download Maps (All Days)",
+                                    id=f"{prefix}-download-maps-btn",
+                                    n_clicks=0,
+                                ),
+                                dcc.Store(id=f"{prefix}-download-maps-trigger"),
+                                dcc.Loading(
+                                    [
+                                        html.Div(
+                                            id=f"{prefix}-download-maps-status",
+                                            style={"fontSize": "12px", "marginTop": "6px"},
+                                        ),
+                                        dcc.Download(id=f"{prefix}-download-maps"),
+                                    ],
+                                    type="circle",
+                                ),
+                                html.Br(),
                                 html.Div(
                                     [
                                         dcc.Checklist(
@@ -1378,6 +1398,11 @@ class DashMultiPanelDashboard:
                     has_contours=has_contours,
                     has_wells=has_wells,
                 )
+                self._register_map_download_callback(
+                    app=app,
+                    prefix=prefix,
+                    map_plot=map_plot,
+                )
 
     def _register_map_callback_factory(
         self,
@@ -1629,6 +1654,170 @@ class DashMultiPanelDashboard:
                 well_options,
                 color_error,
             )
+
+    def _register_map_download_callback(self, app, prefix, map_plot):
+        """Register callbacks exporting one PNG per day, matching the current view.
+
+        Split in two steps so the user gets immediate feedback: clicking the
+        button first posts a "Preparing N maps..." status (fast round-trip),
+        which in turn triggers the actual export (slow, one figure per day).
+        `dcc.Loading` shows a spinner for the duration of both round-trips.
+        """
+        n_days = map_plot.grid_data.shape[1]
+
+        @app.callback(
+            Output(f"{prefix}-download-maps-trigger", "data"),
+            Output(f"{prefix}-download-maps-status", "children"),
+            Input(f"{prefix}-download-maps-btn", "n_clicks"),
+            prevent_initial_call=True,
+        )
+        def _kickoff_download(n_clicks):
+            if not n_clicks:
+                return no_update, no_update
+            return n_clicks, f"Preparing {n_days} maps..."
+
+        has_connections = map_plot.has_connections()
+        has_contours = map_plot.has_contours()
+        has_wells = map_plot.has_wells()
+
+        @app.callback(
+            Output(f"{prefix}-download-maps", "data"),
+            Output(f"{prefix}-download-maps-status", "children", allow_duplicate=True),
+            Input(f"{prefix}-download-maps-trigger", "data"),
+            State(f"{prefix}-property", "value"),
+            State(f"{prefix}-layer", "value"),
+            State(f"{prefix}-show-grid", "value"),
+            State(f"{prefix}-grid-palette", "value"),
+            State(f"{prefix}-grid-log-scale", "value"),
+            State(f"{prefix}-grid-asinh-scale", "value"),
+            State(f"{prefix}-show-connections", "value"),
+            State(f"{prefix}-connection-palette", "value"),
+            State(f"{prefix}-connection-width", "value"),
+            State(f"{prefix}-connection-segments", "value"),
+            State(f"{prefix}-connection-log-scale", "value"),
+            State(f"{prefix}-connection-asinh-scale", "value"),
+            State(f"{prefix}-show-contours", "value"),
+            State(f"{prefix}-contour-count", "value"),
+            State(f"{prefix}-show-wells", "value"),
+            State(f"{prefix}-well-size", "value"),
+            State(f"{prefix}-vmin", "value"),
+            State(f"{prefix}-vmax", "value"),
+            State(f"{prefix}-graph", "relayoutData"),
+            prevent_initial_call=True,
+        )
+        def _download_all_days(
+            trigger_value,
+            property_index,
+            layer,
+            show_grid_values,
+            grid_palette,
+            grid_log_scale_values,
+            grid_asinh_scale_values,
+            show_connection_values,
+            connection_palette,
+            connection_width,
+            connection_segments,
+            connection_log_scale_values,
+            connection_asinh_scale_values,
+            show_contours_values,
+            contour_count,
+            show_wells_values,
+            well_size,
+            vmin_input,
+            vmax_input,
+            relayout_data,
+        ):
+            if not trigger_value:
+                return no_update, no_update
+
+            show_grid = "show" in (show_grid_values or [])
+            show_connections = has_connections and "show" in (show_connection_values or [])
+            show_contours = has_contours and "show" in (show_contours_values or [])
+            show_wells = has_wells and "show" in (show_wells_values or [])
+
+            grid_log_scale = show_grid and "on" in (grid_log_scale_values or [])
+            grid_asinh_scale = (
+                show_grid and "on" in (grid_asinh_scale_values or []) and not grid_log_scale
+            )
+            connection_log_scale = (
+                show_connections and "on" in (connection_log_scale_values or [])
+            )
+            connection_asinh_scale = (
+                show_connections
+                and "on" in (connection_asinh_scale_values or [])
+                and not connection_log_scale
+            )
+
+            property_index = int(property_index)
+            prop_data = map_plot.grid_data[property_index, :, :]
+            if grid_log_scale:
+                pos = prop_data[np.isfinite(prop_data) & (prop_data > 0)]
+                auto_vmin = float(np.nanmin(pos)) if pos.size > 0 else None
+                auto_vmax = float(np.nanmax(pos)) if pos.size > 0 else None
+            else:
+                fin = prop_data[np.isfinite(prop_data)]
+                auto_vmin = float(np.nanmin(fin)) if fin.size > 0 else None
+                auto_vmax = float(np.nanmax(fin)) if fin.size > 0 else None
+
+            scale_mode = "log" if grid_log_scale else "asinh" if grid_asinh_scale else "linear"
+            color_limits, color_error = _parse_color_limits(
+                vmin_input,
+                vmax_input,
+                scale_mode,
+                auto_vmin=auto_vmin, auto_vmax=auto_vmax,
+            )
+            if color_error:
+                return no_update, f"Could not export: {color_error}"
+
+            xaxis_range = yaxis_range = None
+            if relayout_data:
+                if "xaxis.range[0]" in relayout_data and "xaxis.range[1]" in relayout_data:
+                    xaxis_range = [
+                        relayout_data["xaxis.range[0]"],
+                        relayout_data["xaxis.range[1]"],
+                    ]
+                if "yaxis.range[0]" in relayout_data and "yaxis.range[1]" in relayout_data:
+                    yaxis_range = [
+                        relayout_data["yaxis.range[0]"],
+                        relayout_data["yaxis.range[1]"],
+                    ]
+
+            n_days = map_plot.grid_data.shape[1]
+            width = len(str(max(0, n_days - 1)))
+            prop_name = map_plot.property_names[property_index]
+
+            buffer = io.BytesIO()
+            with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+                for day_index in range(n_days):
+                    day_label = map_plot.day_labels[day_index]
+                    fig = map_plot.create_map_figure(
+                        property_index=property_index,
+                        day_index=day_index,
+                        layer=int(layer),
+                        palette=str(grid_palette),
+                        grid_log_scale=grid_log_scale,
+                        grid_asinh_scale=grid_asinh_scale,
+                        color_limits=color_limits,
+                        add_grid=show_grid,
+                        add_connections=show_connections,
+                        add_contours=show_contours,
+                        add_wells=show_wells,
+                        contour_count=int(contour_count),
+                        connection_palette=str(connection_palette),
+                        connection_log_scale=connection_log_scale,
+                        connection_asinh_scale=connection_asinh_scale,
+                        connection_width=float(connection_width),
+                        connection_line_segments=int(connection_segments),
+                        well_size_percent=float(well_size),
+                        xaxis_range=xaxis_range,
+                        yaxis_range=yaxis_range,
+                    )
+                    png_bytes = fig.to_image(format="png")
+                    file_name = f"{prop_name}_{day_index:0{width}d}_day{day_label}.png"
+                    zf.writestr(file_name, png_bytes)
+
+            status = f"Done — exported {n_days} maps."
+            return dcc.send_bytes(buffer.getvalue(), filename=f"{prefix}_maps.zip"), status
 
     def _register_map_compare_callbacks(self, app, prefix, map_compare):
         """Register callbacks for DashMapCompare in multi-panel context."""
