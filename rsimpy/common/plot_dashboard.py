@@ -10,6 +10,7 @@ import zipfile
 import diskcache
 import kaleido
 import numpy as np
+from PIL import Image
 from dash import (
     Dash,
     DiskcacheManager,
@@ -1794,6 +1795,7 @@ class DashMultiPanelDashboard:
             # per figure once warmed up) — this matters most for large grids.
             kaleido.start_sync_server(silence_warnings=True)
             try:
+                frames = []
                 buffer = io.BytesIO()
                 with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
                     for day_index in range(n_days):
@@ -1822,14 +1824,31 @@ class DashMultiPanelDashboard:
                             well_size_percent=float(well_size),
                             xaxis_range=xaxis_range,
                             yaxis_range=yaxis_range,
+                            # Hover markers only serve interactive tooltips —
+                            # invisible either way in a static render — so skip
+                            # them here to roughly halve the trace count.
+                            add_hover_markers=False,
                         )
                         png_bytes = fig.to_image(format="png")
                         file_name = f"{prop_name}_{day_index:0{width}d}_day{day_label}.png"
                         zf.writestr(file_name, png_bytes)
+                        frames.append(Image.open(io.BytesIO(png_bytes)).convert("RGB"))
+
+                    set_progress(f"Building animation from {n_days} maps...")
+                    gif_buffer = io.BytesIO()
+                    frames[0].save(
+                        gif_buffer,
+                        format="GIF",
+                        save_all=True,
+                        append_images=frames[1:],
+                        duration=400,
+                        loop=0,
+                    )
+                    zf.writestr(f"{prop_name}_animation.gif", gif_buffer.getvalue())
             finally:
                 kaleido.stop_sync_server()
 
-            status = f"Done — exported {n_days} maps."
+            status = f"Done — exported {n_days} maps + animation."
             return dcc.send_bytes(buffer.getvalue(), filename=f"{prefix}_maps.zip"), status
 
     def _register_map_compare_callbacks(self, app, prefix, map_compare):

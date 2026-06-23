@@ -437,6 +437,7 @@ def _add_gradient_connection_line(
     n_segments=20,
     alpha_start=1.0,
     alpha_end=1.0,
+    add_hover_markers=True,
 ):
     """Draw a directional line with linear color gradient from p0 to p1."""
     n_segments = max(int(n_segments), 2)
@@ -459,19 +460,20 @@ def _add_gradient_connection_line(
             )
         )
 
-    hover_x, hover_y = _sample_line_points(p0, p1, n_points=25)
-    fig.add_trace(
-        go.Scatter(
-            x=hover_x,
-            y=hover_y,
-            mode="markers",
-            marker={"size": 10, "opacity": 0.0, "color": "rgba(0,0,0,0)"},
-            text=[hover_text] * len(hover_x),
-            hovertemplate="%{text}<extra></extra>",
-            name="connection-line-hover",
-            showlegend=False,
+    if add_hover_markers:
+        hover_x, hover_y = _sample_line_points(p0, p1, n_points=25)
+        fig.add_trace(
+            go.Scatter(
+                x=hover_x,
+                y=hover_y,
+                mode="markers",
+                marker={"size": 10, "opacity": 0.0, "color": "rgba(0,0,0,0)"},
+                text=[hover_text] * len(hover_x),
+                hovertemplate="%{text}<extra></extra>",
+                name="connection-line-hover",
+                showlegend=False,
+            )
         )
-    )
 
 
 def create_triangle_vertices(center_x, center_y, size, direction="up"):
@@ -1043,8 +1045,16 @@ class DashMapPlot(BaseDashPlot):
         well_line_width=2.0,
         xaxis_range=None,
         yaxis_range=None,
+        add_hover_markers=True,
     ):
-        """Create a basic polygon map for one property/day/layer selection."""
+        """Create a basic polygon map for one property/day/layer selection.
+
+        `add_hover_markers` controls the invisible marker traces used only to
+        power interactive hover tooltips (cell/connection/contour/well). They
+        have no visible effect in the rendered figure (static or interactive)
+        but roughly double the trace count, so disable them for static/image
+        export to speed up rendering.
+        """
         n_properties, n_days, _ = self.grid_data.shape
         if property_index < 0 or property_index >= n_properties:
             raise ValueError(
@@ -1438,21 +1448,22 @@ class DashMapPlot(BaseDashPlot):
                 )
 
                 # Add sparse interior hit points (3x3 = 9) for robust polygon hover.
-                hover_x, hover_y = _sample_quad_interior_points(
-                    poly[:, :2], n_per_side=3, inset=0.2
-                )
-                fig.add_trace(
-                    go.Scatter(
-                        x=hover_x,
-                        y=hover_y,
-                        mode="markers",
-                        marker={"size": 9, "color": "rgba(0,0,0,0.001)"},
-                        text=[hover_text] * len(hover_x),
-                        name="cell-polygon-hover",
-                        hovertemplate="%{text}<extra></extra>",
-                        showlegend=False,
+                if add_hover_markers:
+                    hover_x, hover_y = _sample_quad_interior_points(
+                        poly[:, :2], n_per_side=3, inset=0.2
                     )
-                )
+                    fig.add_trace(
+                        go.Scatter(
+                            x=hover_x,
+                            y=hover_y,
+                            mode="markers",
+                            marker={"size": 9, "color": "rgba(0,0,0,0.001)"},
+                            text=[hover_text] * len(hover_x),
+                            name="cell-polygon-hover",
+                            hovertemplate="%{text}<extra></extra>",
+                            showlegend=False,
+                        )
+                    )
 
             if grid_log_scale:
                 finite_values_current_layer = layer_values[
@@ -1597,18 +1608,19 @@ class DashMapPlot(BaseDashPlot):
                             showlegend=False,
                         )
                     )
-                    fig.add_trace(
-                        go.Scatter(
-                            x=hover_x,
-                            y=hover_y,
-                            mode="markers",
-                            marker={"size": 8, "color": "rgba(0,0,0,0.001)"},
-                            text=hover_t,
-                            hovertemplate="%{text}<extra></extra>",
-                            name="contour-line-hover",
-                            showlegend=False,
+                    if add_hover_markers:
+                        fig.add_trace(
+                            go.Scatter(
+                                x=hover_x,
+                                y=hover_y,
+                                mode="markers",
+                                marker={"size": 8, "color": "rgba(0,0,0,0.001)"},
+                                text=hover_t,
+                                hovertemplate="%{text}<extra></extra>",
+                                name="contour-line-hover",
+                                showlegend=False,
+                            )
                         )
-                    )
 
         if add_connections and self.has_connections():
             conn_values = self.connection_data[connection_property_index, day_index, :]
@@ -1785,6 +1797,7 @@ class DashMapPlot(BaseDashPlot):
                     n_segments=connection_line_segments,
                     alpha_start=alpha_start,
                     alpha_end=alpha_end,
+                    add_hover_markers=add_hover_markers,
                 )
 
             # Cross-layer connections summarized as triangles at selected layer cells.
@@ -1842,18 +1855,19 @@ class DashMapPlot(BaseDashPlot):
                     name=f"connection-triangle-{direction}",
                 )
                 # Single center hit point improves triangle hover reliability.
-                fig.add_trace(
-                    go.Scatter(
-                        x=[triangle_center_x],
-                        y=[triangle_center_y],
-                        mode="markers",
-                        marker={"size": 12, "color": "rgba(0,0,0,0.001)"},
-                        text=[triangle_hover_text],
-                        hovertemplate="%{text}<extra></extra>",
-                        name="connection-triangle-hover",
-                        showlegend=False,
+                if add_hover_markers:
+                    fig.add_trace(
+                        go.Scatter(
+                            x=[triangle_center_x],
+                            y=[triangle_center_y],
+                            mode="markers",
+                            marker={"size": 12, "color": "rgba(0,0,0,0.001)"},
+                            text=[triangle_hover_text],
+                            hovertemplate="%{text}<extra></extra>",
+                            name="connection-triangle-hover",
+                            showlegend=False,
+                        )
                     )
-                )
 
             if connection_log_scale:
                 conn_finite_current_day = conn_values[
@@ -2034,17 +2048,18 @@ class DashMapPlot(BaseDashPlot):
                         )
                     )
 
-                fig.add_trace(
-                    go.Scatter(
-                        x=hover_x,
-                        y=hover_y,
-                        mode="markers",
-                        marker={"size": 10, "color": "rgba(0,0,0,0.001)"},
-                        text=hover_t,
-                        hovertemplate="%{text}<extra></extra>",
-                        name="well-hover",
-                        showlegend=False,
+                if add_hover_markers:
+                    fig.add_trace(
+                        go.Scatter(
+                            x=hover_x,
+                            y=hover_y,
+                            mode="markers",
+                            marker={"size": 10, "color": "rgba(0,0,0,0.001)"},
+                            text=hover_t,
+                            hovertemplate="%{text}<extra></extra>",
+                            name="well-hover",
+                            showlegend=False,
+                        )
                     )
-                )
 
         return fig
