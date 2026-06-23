@@ -1305,13 +1305,16 @@ class DashMapPlot(BaseDashPlot):
         day_label = self.day_labels[day_index]
         figure_title = f"{self.title} ({prop_name} @ {day_label} d, k={layer})"
 
-        property_all_days = self.grid_data[property_index, :, :]
-        finite_values_global = property_all_days[np.isfinite(property_all_days)]
-        positive_values_global = finite_values_global[finite_values_global > 0.0]
         user_color_limits = color_limits is not None
 
         if grid_log_scale:
             if color_limits is None:
+                # Only scan the (potentially large) all-days array when the
+                # caller hasn't already supplied explicit limits — repeating
+                # this scan once per day adds up for big grids/long runs.
+                property_all_days = self.grid_data[property_index, :, :]
+                finite_values_global = property_all_days[np.isfinite(property_all_days)]
+                positive_values_global = finite_values_global[finite_values_global > 0.0]
                 if positive_values_global.size == 0:
                     vmin, vmax = 0.0, 1.0
                 else:
@@ -1343,6 +1346,8 @@ class DashMapPlot(BaseDashPlot):
 
         elif grid_asinh_scale:
             if color_limits is None:
+                property_all_days = self.grid_data[property_index, :, :]
+                finite_values_global = property_all_days[np.isfinite(property_all_days)]
                 if finite_values_global.size == 0:
                     vmin, vmax = 0.0, 1.0
                 else:
@@ -1372,6 +1377,8 @@ class DashMapPlot(BaseDashPlot):
 
         else:
             if color_limits is None:
+                property_all_days = self.grid_data[property_index, :, :]
+                finite_values_global = property_all_days[np.isfinite(property_all_days)]
                 if finite_values_global.size == 0:
                     vmin, vmax = 0.0, 1.0
                 else:

@@ -4,10 +4,25 @@
 from __future__ import annotations
 
 import io
+import tempfile
 import zipfile
 
+import diskcache
+import kaleido
 import numpy as np
-from dash import Dash, Input, Output, Patch, State, ctx, dash_table, dcc, html, no_update
+from dash import (
+    Dash,
+    DiskcacheManager,
+    Input,
+    Output,
+    Patch,
+    State,
+    ctx,
+    dash_table,
+    dcc,
+    html,
+    no_update,
+)
 
 from rsimpy.common.plot_dash import (
     DashLinePlot,
@@ -745,17 +760,11 @@ class DashMultiPanelDashboard:
                                     id=f"{prefix}-download-maps-btn",
                                     n_clicks=0,
                                 ),
-                                dcc.Store(id=f"{prefix}-download-maps-trigger"),
-                                dcc.Loading(
-                                    [
-                                        html.Div(
-                                            id=f"{prefix}-download-maps-status",
-                                            style={"fontSize": "12px", "marginTop": "6px"},
-                                        ),
-                                        dcc.Download(id=f"{prefix}-download-maps"),
-                                    ],
-                                    type="circle",
+                                html.Div(
+                                    id=f"{prefix}-download-maps-status",
+                                    style={"fontSize": "12px", "marginTop": "6px"},
                                 ),
+                                dcc.Download(id=f"{prefix}-download-maps"),
                                 html.Br(),
                                 html.Div(
                                     [
@@ -1656,34 +1665,20 @@ class DashMultiPanelDashboard:
             )
 
     def _register_map_download_callback(self, app, prefix, map_plot):
-        """Register callbacks exporting one PNG per day, matching the current view.
+        """Register a background callback exporting one PNG per day.
 
-        Split in two steps so the user gets immediate feedback: clicking the
-        button first posts a "Preparing N maps..." status (fast round-trip),
-        which in turn triggers the actual export (slow, one figure per day).
-        `dcc.Loading` shows a spinner for the duration of both round-trips.
+        Runs as a Dash background callback (via `DiskcacheManager`) so the
+        per-day progress (`set_progress`) can be pushed to the status `Div`
+        while the export is in flight, instead of blocking the request.
         """
-        n_days = map_plot.grid_data.shape[1]
-
-        @app.callback(
-            Output(f"{prefix}-download-maps-trigger", "data"),
-            Output(f"{prefix}-download-maps-status", "children"),
-            Input(f"{prefix}-download-maps-btn", "n_clicks"),
-            prevent_initial_call=True,
-        )
-        def _kickoff_download(n_clicks):
-            if not n_clicks:
-                return no_update, no_update
-            return n_clicks, f"Preparing {n_days} maps..."
-
         has_connections = map_plot.has_connections()
         has_contours = map_plot.has_contours()
         has_wells = map_plot.has_wells()
 
         @app.callback(
             Output(f"{prefix}-download-maps", "data"),
-            Output(f"{prefix}-download-maps-status", "children", allow_duplicate=True),
-            Input(f"{prefix}-download-maps-trigger", "data"),
+            Output(f"{prefix}-download-maps-status", "children"),
+            Input(f"{prefix}-download-maps-btn", "n_clicks"),
             State(f"{prefix}-property", "value"),
             State(f"{prefix}-layer", "value"),
             State(f"{prefix}-show-grid", "value"),
@@ -1703,10 +1698,13 @@ class DashMultiPanelDashboard:
             State(f"{prefix}-vmin", "value"),
             State(f"{prefix}-vmax", "value"),
             State(f"{prefix}-graph", "relayoutData"),
+            background=True,
+            progress=Output(f"{prefix}-download-maps-status", "children"),
             prevent_initial_call=True,
         )
         def _download_all_days(
-            trigger_value,
+            set_progress,
+            n_clicks,
             property_index,
             layer,
             show_grid_values,
@@ -1727,7 +1725,7 @@ class DashMultiPanelDashboard:
             vmax_input,
             relayout_data,
         ):
-            if not trigger_value:
+            if not n_clicks:
                 return no_update, no_update
 
             show_grid = "show" in (show_grid_values or [])
@@ -1768,6 +1766,11 @@ class DashMultiPanelDashboard:
             )
             if color_error:
                 return no_update, f"Could not export: {color_error}"
+            if color_limits is None and auto_vmin is not None and auto_vmax is not None:
+                # Pin the auto-computed scale so create_map_figure doesn't
+                # rescan the (potentially large) all-days array on every
+                # iteration of the per-day export loop below.
+                color_limits = [auto_vmin, auto_vmax]
 
             xaxis_range = yaxis_range = None
             if relayout_data:
@@ -1786,35 +1789,45 @@ class DashMultiPanelDashboard:
             width = len(str(max(0, n_days - 1)))
             prop_name = map_plot.property_names[property_index]
 
-            buffer = io.BytesIO()
-            with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-                for day_index in range(n_days):
-                    day_label = map_plot.day_labels[day_index]
-                    fig = map_plot.create_map_figure(
-                        property_index=property_index,
-                        day_index=day_index,
-                        layer=int(layer),
-                        palette=str(grid_palette),
-                        grid_log_scale=grid_log_scale,
-                        grid_asinh_scale=grid_asinh_scale,
-                        color_limits=color_limits,
-                        add_grid=show_grid,
-                        add_connections=show_connections,
-                        add_contours=show_contours,
-                        add_wells=show_wells,
-                        contour_count=int(contour_count),
-                        connection_palette=str(connection_palette),
-                        connection_log_scale=connection_log_scale,
-                        connection_asinh_scale=connection_asinh_scale,
-                        connection_width=float(connection_width),
-                        connection_line_segments=int(connection_segments),
-                        well_size_percent=float(well_size),
-                        xaxis_range=xaxis_range,
-                        yaxis_range=yaxis_range,
-                    )
-                    png_bytes = fig.to_image(format="png")
-                    file_name = f"{prop_name}_{day_index:0{width}d}_day{day_label}.png"
-                    zf.writestr(file_name, png_bytes)
+            # Reuse one headless-Chrome session for the whole export instead of
+            # letting kaleido spin up a fresh browser per day (~1.3s vs ~0.07s
+            # per figure once warmed up) — this matters most for large grids.
+            kaleido.start_sync_server(silence_warnings=True)
+            try:
+                buffer = io.BytesIO()
+                with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+                    for day_index in range(n_days):
+                        day_label = map_plot.day_labels[day_index]
+                        set_progress(
+                            f"Exporting day {day_index + 1} of {n_days} ({day_label})..."
+                        )
+                        fig = map_plot.create_map_figure(
+                            property_index=property_index,
+                            day_index=day_index,
+                            layer=int(layer),
+                            palette=str(grid_palette),
+                            grid_log_scale=grid_log_scale,
+                            grid_asinh_scale=grid_asinh_scale,
+                            color_limits=color_limits,
+                            add_grid=show_grid,
+                            add_connections=show_connections,
+                            add_contours=show_contours,
+                            add_wells=show_wells,
+                            contour_count=int(contour_count),
+                            connection_palette=str(connection_palette),
+                            connection_log_scale=connection_log_scale,
+                            connection_asinh_scale=connection_asinh_scale,
+                            connection_width=float(connection_width),
+                            connection_line_segments=int(connection_segments),
+                            well_size_percent=float(well_size),
+                            xaxis_range=xaxis_range,
+                            yaxis_range=yaxis_range,
+                        )
+                        png_bytes = fig.to_image(format="png")
+                        file_name = f"{prop_name}_{day_index:0{width}d}_day{day_label}.png"
+                        zf.writestr(file_name, png_bytes)
+            finally:
+                kaleido.stop_sync_server()
 
             status = f"Done — exported {n_days} maps."
             return dcc.send_bytes(buffer.getvalue(), filename=f"{prefix}_maps.zip"), status
@@ -2033,7 +2046,10 @@ class DashMultiPanelDashboard:
 
     def create_app(self):
         """Create a Dash app with nested tabs and automatic callbacks."""
-        app = Dash(__name__)
+        cache_dir = tempfile.mkdtemp(prefix="dash_map_download_cache_")
+        background_callback_manager = DiskcacheManager(diskcache.Cache(cache_dir))
+
+        app = Dash(__name__, background_callback_manager=background_callback_manager)
         app.layout = self.create_layout()
         self._register_map_callbacks(app)
         self._register_line_callbacks(app)
