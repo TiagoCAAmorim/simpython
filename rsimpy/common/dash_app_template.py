@@ -10,11 +10,12 @@ import argparse
 from pathlib import Path
 
 import numpy as np
-from dash import Dash, Input, Output, ctx, dcc, html, no_update
 import plotly.graph_objects as go
 import pandas as pd
 
 from rsimpy.cmg.sr3reader import Sr3Reader
+from rsimpy.cmg.sr3reader.plot_dash import PlotHandlerDash
+from rsimpy.common.plot_dashboard import DashMapCompare
 
 from rsimpy.common.plot_dash import (
     DashLinePlot,
@@ -23,7 +24,10 @@ from rsimpy.common.plot_dash import (
     DashTable,
     add_triangle_trace,
 )
-from rsimpy.common.plot_dashboard import DashMultiPanelDashboard
+from rsimpy.common.plot_dashboard import DashMapCompare, DashMultiPanelDashboard
+
+
+DEMO_EXAMPLES = ("step4generic", "sr3", "compare")
 
 
 PALETTE_OPTIONS = [
@@ -242,515 +246,14 @@ def build_step_2_2_demo_map_plot(n_rows=10, n_cols=20, n_days=5):
 
 
 def create_dash_template_app(map_plot=None):
-    """Create Dash app with property/day/layer controls wired to DashMapPlot."""
-    if map_plot is None:
-        map_plot = build_step_2_2_demo_map_plot()
+    """Return the simplest example dashboard used for upgrade testing.
 
-    n_properties, n_days, _ = map_plot.grid_data.shape
-    n_layers = len(map_plot.layer_sizes)
-    has_connections = map_plot.has_connections()
-    has_contours = map_plot.has_contours()
-    has_wells = map_plot.has_wells()
-
-    day_marks = {idx: str(idx) for idx in range(n_days)}
-    layer_marks = {idx + 1: str(idx + 1) for idx in range(n_layers)}
-
-    app = Dash(__name__)
-
-    initial_figure = map_plot.create_map_figure(
-        property_index=0,
-        day_index=0,
-        layer=1,
-        add_connections=False,
-        add_contours=False,
-        add_wells=False,
-        contour_count=7,
-    )
-    initial_figure.update_layout(autosize=True, width=None, height=None)
-
-    app.layout = html.Div(
-        [
-            html.H3("rsimpy Dash Map - Step 2.3"),
-            html.Div(
-                [
-                    html.Div(
-                        [
-                            html.Label("Layer"),
-                            dcc.Slider(
-                                id="map-layer-slider",
-                                min=1,
-                                max=max(1, n_layers),
-                                step=1,
-                                marks=layer_marks,
-                                value=1,
-                                disabled=n_layers == 1,
-                            ),
-                            html.Br(),
-                            html.Label("Day"),
-                            dcc.Slider(
-                                id="map-day-slider",
-                                min=0,
-                                max=max(0, n_days - 1),
-                                step=1,
-                                marks=day_marks,
-                                value=0,
-                            ),
-                            html.Hr(style={"margin": "12px 0"}),
-                            html.Div(
-                                [
-                                    dcc.Checklist(
-                                        id="map-show-grid",
-                                        options=[
-                                            {
-                                                "label": "Grid",
-                                                "value": "show",
-                                            }
-                                        ],
-                                        value=["show"],
-                                        style={"marginRight": "12px"},
-                                    ),
-                                    dcc.Checklist(
-                                        id="map-grid-log-scale",
-                                        options=[
-                                            {
-                                                "label": "Log",
-                                                "value": "on",
-                                            }
-                                        ],
-                                        value=[],
-                                        style={"marginRight": "12px"},
-                                    ),
-                                    dcc.Checklist(
-                                        id="map-grid-options-toggle",
-                                        options=[
-                                            {
-                                                "label": "Options",
-                                                "value": "show",
-                                                "disabled": False,
-                                            }
-                                        ],
-                                        value=[],
-                                    ),
-                                ],
-                                style={
-                                    "display": "flex",
-                                    "alignItems": "center",
-                                    "columnGap": "12px",
-                                },
-                            ),
-                            html.Div(
-                                [
-                                    html.Label("Property"),
-                                    dcc.Dropdown(
-                                        id="map-property-dropdown",
-                                        options=[
-                                            {
-                                                "label": map_plot.property_names[i],
-                                                "value": i,
-                                            }
-                                            for i in range(n_properties)
-                                        ],
-                                        value=0,
-                                        clearable=False,
-                                    ),
-                                ],
-                                id="map-property-controls-group",
-                                style={"display": "block"},
-                            ),
-                            html.Div(
-                                [
-                                    html.Label("Grid palette"),
-                                    dcc.Dropdown(
-                                        id="map-grid-palette",
-                                        options=PALETTE_OPTIONS,
-                                        value="Turbo",
-                                        clearable=False,
-                                    ),
-                                ],
-                                id="map-grid-controls-group",
-                                style={"display": "block"},
-                            ),
-                            html.Hr(style={"margin": "12px 0"}),
-                            html.Div(
-                                [
-                                    dcc.Checklist(
-                                        id="map-show-connections",
-                                        options=[
-                                            {
-                                                "label": "Connections",
-                                                "value": "show",
-                                                "disabled": not has_connections,
-                                            }
-                                        ],
-                                        value=[],
-                                        style={"marginRight": "12px"},
-                                    ),
-                                    dcc.Checklist(
-                                        id="map-connection-log-scale",
-                                        options=[
-                                            {
-                                                "label": "Log",
-                                                "value": "on",
-                                                "disabled": not has_connections,
-                                            }
-                                        ],
-                                        value=[],
-                                        style={"marginRight": "12px"},
-                                    ),
-                                    dcc.Checklist(
-                                        id="map-connection-options-toggle",
-                                        options=[
-                                            {
-                                                "label": "Options",
-                                                "value": "show",
-                                                "disabled": not has_connections,
-                                            }
-                                        ],
-                                        value=[],
-                                    ),
-                                ],
-                                style={
-                                    "display": "flex",
-                                    "alignItems": "center",
-                                    "columnGap": "12px",
-                                },
-                            ),
-                            html.Div(
-                                [
-                                    html.Label("Connection palette"),
-                                    dcc.Dropdown(
-                                        id="map-connection-palette",
-                                        options=PALETTE_OPTIONS,
-                                        value="Plasma",
-                                        clearable=False,
-                                    ),
-                                    html.Br(),
-                                    html.Label("Connection line width"),
-                                    dcc.Slider(
-                                        id="map-connection-width",
-                                        min=1.0,
-                                        max=10.0,
-                                        step=0.5,
-                                        value=5.0,
-                                        disabled=not has_connections,
-                                    ),
-                                    html.Br(),
-                                    html.Label("Gradient segments"),
-                                    dcc.Slider(
-                                        id="map-connection-segments",
-                                        min=3,
-                                        max=20,
-                                        step=1,
-                                        value=3,
-                                        disabled=not has_connections,
-                                    ),
-                                ],
-                                id="map-connection-controls-group",
-                                style={"display": "none"},
-                            ),
-                            html.Hr(style={"margin": "12px 0"}),
-                            html.Div(
-                                [
-                                    dcc.Checklist(
-                                        id="map-show-wells",
-                                        options=[
-                                            {
-                                                "label": "Wells",
-                                                "value": "show",
-                                                "disabled": not has_wells,
-                                            }
-                                        ],
-                                        value=[],
-                                        style={"marginRight": "12px"},
-                                    ),
-                                    dcc.Checklist(
-                                        id="map-well-options-toggle",
-                                        options=[
-                                            {
-                                                "label": "Options",
-                                                "value": "show",
-                                                "disabled": not has_wells,
-                                            }
-                                        ],
-                                        value=[],
-                                    ),
-                                ],
-                                style={
-                                    "display": "flex",
-                                    "alignItems": "center",
-                                    "columnGap": "12px",
-                                },
-                            ),
-                            html.Div(
-                                [
-                                    html.Label("Well size (%)"),
-                                    dcc.Slider(
-                                        id="map-well-size",
-                                        min=5,
-                                        max=200,
-                                        step=5,
-                                        value=20,
-                                        disabled=not has_wells,
-                                    ),
-                                ],
-                                id="map-well-controls-group",
-                                style={"display": "none"},
-                            ),
-                            html.Hr(style={"margin": "12px 0"}),
-                            html.Div(
-                                [
-                                    dcc.Checklist(
-                                        id="map-show-contours",
-                                        options=[
-                                            {
-                                                "label": "Contours",
-                                                "value": "show",
-                                                "disabled": not has_contours,
-                                            }
-                                        ],
-                                        value=[],
-                                        style={"marginRight": "12px"},
-                                    ),
-                                    dcc.Checklist(
-                                        id="map-contour-options-toggle",
-                                        options=[
-                                            {
-                                                "label": "Options",
-                                                "value": "show",
-                                                "disabled": not has_contours,
-                                            }
-                                        ],
-                                        value=[],
-                                    ),
-                                ],
-                                style={
-                                    "display": "flex",
-                                    "alignItems": "center",
-                                    "columnGap": "12px",
-                                },
-                            ),
-                            html.Div(
-                                [
-                                    html.Label("Contour count"),
-                                    dcc.Slider(
-                                        id="map-contour-count",
-                                        min=2,
-                                        max=15,
-                                        step=1,
-                                        value=7,
-                                        disabled=not has_contours,
-                                    ),
-                                ],
-                                id="map-contour-controls-group",
-                                style={"display": "none"},
-                            ),
-                        ],
-                        style={
-                            "flex": "0 0 24%",
-                            "maxWidth": "420px",
-                            "overflowY": "auto",
-                            "paddingRight": "12px",
-                        },
-                    ),
-                    html.Div(
-                        [
-                            dcc.Graph(
-                                id="map-graph",
-                                figure=initial_figure,
-                                responsive=True,
-                                style={"height": "100%", "width": "100%"},
-                                config={
-                                    "displaylogo": False,
-                                    "modeBarButtonsToRemove": ["select2d", "lasso2d"],
-                                    "scrollZoom": True,
-                                },
-                            )
-                        ],
-                        style={"flex": "1 1 auto", "height": "100%"},
-                    ),
-                ],
-                style={
-                    "display": "flex",
-                    "height": "calc(100vh - 72px)",
-                    "minHeight": "560px",
-                    "overflow": "hidden",
-                },
-            ),
-        ],
-        style={
-            "padding": "12px",
-            "boxSizing": "border-box",
-            "width": "100vw",
-            "height": "100vh",
-            "overflow": "hidden",
-        },
-    )
-
-    @app.callback(
-        Output("map-grid-options-toggle", "value"),
-        Output("map-connection-options-toggle", "value"),
-        Output("map-contour-options-toggle", "value"),
-        Output("map-well-options-toggle", "value"),
-        Input("map-show-grid", "value"),
-        Input("map-show-connections", "value"),
-        Input("map-show-contours", "value"),
-        Input("map-show-wells", "value"),
-        prevent_initial_call=True,
-    )
-    def _sync_options_toggles(
-        _show_grid_values,
-        _show_connections_values,
-        _show_contours_values,
-        _show_wells_values,
-    ):
-        # Reset only the options toggle that corresponds to the changed show toggle.
-        trigger = ctx.triggered_id
-        grid_value = [] if trigger == "map-show-grid" else no_update
-        connection_value = [] if trigger == "map-show-connections" else no_update
-        contour_value = [] if trigger == "map-show-contours" else no_update
-        well_value = [] if trigger == "map-show-wells" else no_update
-        return grid_value, connection_value, contour_value, well_value
-
-    @app.callback(
-        Output("map-graph", "figure"),
-        Output("map-property-controls-group", "style"),
-        Output("map-grid-controls-group", "style"),
-        Output("map-connection-controls-group", "style"),
-        Output("map-contour-controls-group", "style"),
-        Output("map-well-controls-group", "style"),
-        Output("map-grid-log-scale", "options"),
-        Output("map-connection-log-scale", "options"),
-        Output("map-grid-options-toggle", "options"),
-        Output("map-connection-options-toggle", "options"),
-        Output("map-contour-options-toggle", "options"),
-        Output("map-well-options-toggle", "options"),
-        Input("map-show-grid", "value"),
-        Input("map-property-dropdown", "value"),
-        Input("map-day-slider", "value"),
-        Input("map-grid-palette", "value"),
-        Input("map-grid-log-scale", "value"),
-        Input("map-layer-slider", "value"),
-        Input("map-show-connections", "value"),
-        Input("map-connection-options-toggle", "value"),
-        Input("map-show-contours", "value"),
-        Input("map-contour-options-toggle", "value"),
-        Input("map-grid-options-toggle", "value"),
-        Input("map-show-wells", "value"),
-        Input("map-well-options-toggle", "value"),
-        Input("map-contour-count", "value"),
-        Input("map-connection-palette", "value"),
-        Input("map-connection-width", "value"),
-        Input("map-connection-segments", "value"),
-        Input("map-connection-log-scale", "value"),
-        Input("map-well-size", "value"),
-    )
-    def _update_map_figure(
-        show_grid_values,
-        property_index,
-        day_index,
-        grid_palette,
-        grid_log_scale_values,
-        layer,
-        show_connections_values,
-        connection_options_values,
-        show_contours_values,
-        contour_options_values,
-        grid_options_values,
-        show_wells_values,
-        well_options_values,
-        contour_count,
-        connection_palette,
-        connection_width,
-        connection_segments,
-        connection_log_scale_values,
-        well_size,
-    ):
-        show_connections = (
-            map_plot.has_connections() and "show" in (show_connections_values or [])
-        )
-        show_grid = "show" in (show_grid_values or [])
-        show_contours = (
-            map_plot.has_contours() and "show" in (show_contours_values or [])
-        )
-        show_wells = map_plot.has_wells() and "show" in (show_wells_values or [])
-        show_grid_options = show_grid and "show" in (grid_options_values or [])
-        show_connection_options = (
-            show_connections and "show" in (connection_options_values or [])
-        )
-        show_contour_options = (
-            show_contours and "show" in (contour_options_values or [])
-        )
-        show_well_options = show_wells and "show" in (well_options_values or [])
-        grid_log_scale = show_grid and "on" in (grid_log_scale_values or [])
-        connection_log_scale = (
-            show_connections and "on" in (connection_log_scale_values or [])
-        )
-        property_style = {"display": "block" if show_grid else "none"}
-        grid_style = {"display": "block" if show_grid_options else "none"}
-        connection_style = {"display": "block" if show_connection_options else "none"}
-        contour_style = {"display": "block" if show_contour_options else "none"}
-        well_style = {"display": "block" if show_well_options else "none"}
-        grid_log_options = [{"label": "Log", "value": "on", "disabled": not show_grid}]
-        connection_log_options = [{
-            "label": "Log",
-            "value": "on",
-            "disabled": (not has_connections) or (not show_connections),
-        }]
-        grid_options = [{
-            "label": "Options",
-            "value": "show",
-            "disabled": not show_grid,
-        }]
-        connection_options = [{
-            "label": "Options",
-            "value": "show",
-            "disabled": (not has_connections) or (not show_connections),
-        }]
-        contour_options = [{
-            "label": "Options",
-            "value": "show",
-            "disabled": (not has_contours) or (not show_contours),
-        }]
-        well_options = [{
-            "label": "Options",
-            "value": "show",
-            "disabled": (not has_wells) or (not show_wells),
-        }]
-        fig = map_plot.create_map_figure(
-                property_index=int(property_index),
-                day_index=int(day_index),
-                layer=int(layer),
-                palette=str(grid_palette),
-                grid_log_scale=grid_log_scale,
-                add_grid=show_grid,
-                add_connections=show_connections,
-                add_contours=show_contours,
-                add_wells=show_wells,
-                contour_count=int(contour_count),
-                connection_palette=str(connection_palette),
-                connection_log_scale=connection_log_scale,
-                connection_width=float(connection_width),
-                connection_line_segments=int(connection_segments),
-                well_size_percent=float(well_size),
-            )
-        fig.update_layout(autosize=True, width=None, height=None)
-        return (
-            fig,
-            property_style,
-            grid_style,
-            connection_style,
-            contour_style,
-            well_style,
-            grid_log_options,
-            connection_log_options,
-            grid_options,
-            connection_options,
-            contour_options,
-            well_options,
-        )
-
-    return app
-
+    The previous inline HTML/callback template was replaced by a thin wrapper
+    so this module can serve as a launcher for example apps while the reusable
+    Dash behavior lives in the shared dashboard modules.
+    """
+    del map_plot
+    return create_step_4_generic_wrapper_working_example_app()
 
 
 def build_step_3_demo_line_plot(n_days=15):
@@ -812,9 +315,6 @@ def build_step_3_demo_table(n_rows=30):
         width=1000,
         height=420,
     )
-
-
-
 
 
 def create_step_4_generic_wrapper_working_example_app():
@@ -898,23 +398,65 @@ def create_step_4_generic_wrapper_working_example_app():
     return wrapper.create_app()
 
 
+def _get_common_sr3_grid_days(*sr3_readers):
+    """Return the shared grid days after normalizing floating-point drift."""
+    day_sets = []
+    for reader in sr3_readers:
+        rounded_days = np.round(np.asarray(reader.dates.get_days("grid"), dtype=float), 0)
+        day_sets.append(set(rounded_days.tolist()))
+
+    common_days = sorted(set.intersection(*day_sets))
+    if not common_days:
+        raise ValueError("No common grid days found between the SR3 files.")
+    return np.asarray(common_days, dtype=float)
+
+
 def create_sr3_working_example_app():
     """Create a runnable SR3-backed dashboard example app."""
     sr3_file = Path("tests/sr3/base_case_3a.sr3")
+    sr3_compare_file = Path("tests/sr3/base_case_bo.sr3")
     if not sr3_file.exists():
         raise FileNotFoundError(f"SR3 example file not found: {sr3_file}")
+    if not sr3_compare_file.exists():
+        raise FileNotFoundError(f"SR3 example file not found: {sr3_compare_file}")
 
     sr3 = Sr3Reader(str(sr3_file))
-    days = sr3.dates.get_days("grid")
+    sr3_compare = Sr3Reader(str(sr3_compare_file))
+
+    common_grid_days = _get_common_sr3_grid_days(sr3, sr3_compare)
+    common_properties = [("matrix", "POR"), ("matrix", "PERMI"), ("matrix", "PERMJ"), ("matrix", "PRES")]
+
+    # Create map tabs from base_case_3a
     map_obj_1 = sr3.plots.make_map(
         properties=[("matrix", "BLOCKDEPTH"), ("matrix", "POR")],
-        days=days[:3],
+        days=sr3.dates.get_days("grid")[:3],
         title="Map A",
     )
     map_obj_2 = sr3.plots.make_map(
         properties=[("matrix", "PRES")],
-        days=days[:10],
+        days=sr3.dates.get_days("grid")[:10],
         title="Map B",
+    )
+
+    # Create synchronized comparison maps using common properties and common days
+    plots_a = PlotHandlerDash(sr3)
+    map_compare_a = plots_a.make_map(
+        properties=common_properties,
+        days=common_grid_days,
+        title="Base Case 3a",
+    )
+    plots_b = PlotHandlerDash(sr3_compare)
+    map_compare_b = plots_b.make_map(
+        properties=common_properties,
+        days=common_grid_days,
+        title="Base Case BO",
+    )
+    compare_map = DashMapCompare(
+        map_plot_a=map_compare_a,
+        map_plot_b=map_compare_b,
+        label_a="3a",
+        label_b="BO",
+        title="Map Compare",
     )
 
     days = sr3.dates.get_days("well")
@@ -943,7 +485,7 @@ def create_sr3_working_example_app():
     )
 
     panel = sr3.plots.dashboard(
-        maps={"Map A": map_obj_1, "Map B": map_obj_2},
+        maps={"Map A": map_obj_1, "Map B": map_obj_2, "Map Compare": compare_map},
         lines={"Line A": line_obj},
         scatter={"Scatter A": scatter_obj},
         table={"Table A": table_obj},
@@ -952,20 +494,85 @@ def create_sr3_working_example_app():
     return panel.app
 
 
-def create_working_example_app(example="step4generic"):
+def build_map_compare_demo(n_rows=10, n_cols=15, n_days=5):
+    """Build two DashMapPlot objects for the map comparison demo.
+
+    Map A uses base values; Map B adds a small perturbation to the same data,
+    simulating a comparison between two model runs.
+    """
+    rng = np.random.default_rng(42)
+    layer_sizes_a = [n_rows * n_cols, (n_rows - 1) * (n_cols - 1)]
+    layer_sizes_b = list(layer_sizes_a)
+
+    def _make_verts(rows, cols):
+        verts = _make_regular_grid_vertices(rows, cols)
+        verts[:, :, 0] *= 10.0
+        verts[:, :, 1] *= 10.0
+        return verts
+
+    verts_l1 = _make_verts(n_rows, n_cols)
+    verts_l2 = _make_verts(n_rows - 1, n_cols - 1)
+    vertices = np.concatenate([verts_l1, verts_l2], axis=0)
+    n_cells = vertices.shape[0]
+
+    base_data = np.zeros((3, n_days, n_cells), dtype=float)
+    for d in range(n_days):
+        base_data[0, d, :] = np.arange(n_cells, dtype=float) + 1.0
+        base_data[1, d, :] = (np.arange(n_cells, dtype=float) % n_cols) + 1.0
+        base_data[2, d, :] = 50.0 + 20.0 * float(d) + rng.uniform(0, 5, n_cells)
+
+    perturbed_data = base_data.copy()
+    perturbed_data[2] *= 1.0 + rng.uniform(-0.15, 0.15, (n_days, n_cells))
+
+    property_names = ["Cell Index", "Column", "Pressure"]
+    day_labels = [str(d * 30) for d in range(n_days)]
+
+    map_a = DashMapPlot(
+        vertices=vertices,
+        layer_sizes=layer_sizes_a,
+        grid_data=base_data,
+        property_names=property_names,
+        day_labels=day_labels,
+        title="Base Case",
+    )
+    map_b = DashMapPlot(
+        vertices=vertices,
+        layer_sizes=layer_sizes_b,
+        grid_data=perturbed_data,
+        property_names=property_names,
+        day_labels=day_labels,
+        title="Perturbed Case",
+    )
+    return DashMapCompare(
+        map_plot_a=map_a,
+        map_plot_b=map_b,
+        label_a="Base Case",
+        label_b="Perturbed Case",
+        title="Map Comparison Demo",
+    )
+
+
+def create_map_compare_app():
+    """Create a map comparison Dash app using synthetic demo data."""
+    return build_map_compare_demo().create_app()
+
+
+def create_working_example_app(example="sr3"):
     """Create a named working example app.
 
     Parameters
     ----------
     example : str
-        Supported values are "step4generic" and "sr3".
+        Supported values are "step4generic", "sr3", and "compare".
     """
     choice = str(example).strip().lower()
     if choice == "step4generic":
         return create_step_4_generic_wrapper_working_example_app()
     if choice == "sr3":
         return create_sr3_working_example_app()
-    raise ValueError("example must be 'step4generic' or 'sr3'.")
+    if choice == "compare":
+        return create_map_compare_app()
+    raise ValueError("example must be 'step4generic', 'sr3', or 'compare'.")
 
 
 def _parse_cli_args():
@@ -975,7 +582,7 @@ def _parse_cli_args():
     )
     parser.add_argument(
         "--example",
-        choices=["step4generic", "sr3"],
+        choices=["step4generic", "sr3", "compare"],
         default="sr3",
         help="Select which demo app to run.",
     )
@@ -984,11 +591,18 @@ def _parse_cli_args():
         action="store_true",
         help="Enable Dash debug mode.",
     )
+    parser.add_argument(
+        "--list-examples",
+        action="store_true",
+        help="Print available example names and exit.",
+    )
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = _parse_cli_args()
-    args.example = 'sr3'
+    if args.list_examples:
+        print("\n".join(DEMO_EXAMPLES))
+        raise SystemExit(0)
     demo_app = create_working_example_app(example=args.example)
     demo_app.run(debug=bool(args.debug))

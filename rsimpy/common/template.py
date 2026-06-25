@@ -13,7 +13,7 @@ import pandas as pd  # type: ignore # noqa: F401
 
 from rsimpy.common import file_utils  # type: ignore # pylint: disable=import-error,wrong-import-position
 
-
+MAX_SAMPLES_FOR_LHS = 1000
 class TemplateProcessor:
     """
     Class that represents a project to generate files based on a template
@@ -62,7 +62,7 @@ class TemplateProcessor:
 
     def __init__(self, template_path, verbose=False, output_file_path=None,
                  variables_table=None, all_uniform=False, n_samples=0,
-                 encoding='utf-8'):
+                 encoding='utf-8', lhs_iterations=1):
         """
         Parameters
         ----------
@@ -89,6 +89,9 @@ class TemplateProcessor:
         encoding : str, optional
             Encoding used for reading and writing files.
             (default: 'utf-8')
+        lhs_iterations : int, optional
+            Number of iterations for Latin Hypercube Sampling.
+            (default: 1)
         """
 
         self._template_path = Path(template_path)
@@ -99,6 +102,7 @@ class TemplateProcessor:
         self._verbose = verbose
         self._all_uniform = all_uniform
         self._encoding = encoding
+        self._lhs_iterations = lhs_iterations
 
         self._valid_distributions = {
             'uniform':      {'parameters': 2,
@@ -650,6 +654,10 @@ class TemplateProcessor:
     def generate_experiments(self, n_samples=0, all_uniform=None):
         """Generates a table (experiments_table) with all experiments.
 
+        Uses Latin Hypercube Sampling to generate the samples for all variables.
+        If the number of samples is larger than 1000, random sampling is used
+        instead to avoid long execution times.
+
         Parameters
         ----------
         n_samples : int, optional
@@ -677,27 +685,30 @@ class TemplateProcessor:
         if len(self.variables) == 1:
             iterations = 1
         else:
-            iterations = min(100, max(1, int(1e6*np.power(n_samples, -2.))))
-        samples = lhs(len(self.variables),
-                      samples=n_samples,
-                      criterion='maximin',
-                      iterations=iterations)
+            iterations = self._lhs_iterations
+        if n_samples > MAX_SAMPLES_FOR_LHS:
+            samples = np.random.rand(n_samples, len(self.variables))
+        else:
+            samples = lhs(len(self.variables),
+                          samples=n_samples,
+                          criterion='maximin',
+                          iterations=iterations)
 
         if self._verbose:
             print('Calculating inverse CDF')
-        df = pd.DataFrame()
+        df_dict = {}
         for column_index, var in enumerate(self.variables):
             data = self.variables[var]
             if self._verbose:
                 print(f"   {var}: {data['distribution']}")
             if not data['active']:
-                df[var] = [data['default']] * n_samples
+                df_dict[var] = [data['default']] * n_samples
             elif data['distribution'] == 'table':
-                df[var] = data['values']
+                df_dict[var] = data['values']
             else:
-                df[var] = self._inv_cdf(
+                df_dict[var] = self._inv_cdf(
                     samples[:, column_index], data, all_uniform)
-        self.experiments_table = df
+        self.experiments_table = pd.DataFrame(df_dict)
 
     def _create_new_file(self, output_file_path, values, text):
         new_text = text

@@ -76,7 +76,7 @@ class PlotHandlerDash:
             return None, None
         filtered = all_connections[keep_mask]
 
-        connection_indices = np.searchsorted(selected_complete, filtered[:, :2]).T.astype(int) + 1
+        connection_indices = np.searchsorted(selected_complete, filtered[:, :2]).T.astype(int)
         n_conn = connection_indices.shape[1]
         n_days = len(days)
         if connection_values is None:
@@ -137,7 +137,7 @@ class PlotHandlerDash:
             well_con = np.array([cells[wc] for wc in well_con if cells[wc] in selected_complete])
             if len(well_con) == 0:
                 continue
-            well_con = np.searchsorted(selected_complete, well_con).astype(int) + 1
+            well_con = np.searchsorted(selected_complete, well_con).astype(int)
             well_name = f"{well},{well_types[well]}"
             wells[well_name] = well_con
 
@@ -245,6 +245,8 @@ class PlotHandlerDash:
         if add_wells:
             wells = self._build_map_wells(selected_complete=selected_complete)
 
+        day_labels = [str(int(d)) for d in days] if days is not None else None
+
         return DashMapPlot(
             vertices=vertices,
             layer_sizes=layer_sizes,
@@ -255,6 +257,7 @@ class PlotHandlerDash:
             connection_data=con_data,
             connection_property_names=["Transmissibility"] if con_data is not None else None,
             wells=wells,
+            day_labels=day_labels,
             width=width,
             height=height,
             title=title,
