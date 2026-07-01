@@ -6,7 +6,7 @@ import numpy as np
 from bokeh.plotting import figure
 from bokeh.models import (
     HoverTool, LinearColorMapper, LogColorMapper,
-    ColorBar, BasicTicker, LogTicker, Select, ColumnDataSource, CustomJS, Slider,
+    ColorBar, FixedTicker, LogTicker, Select, ColumnDataSource, CustomJS, Slider,
     CheckboxGroup
 )
 from bokeh.palettes import (
@@ -328,6 +328,65 @@ def _normalize_out_of_range_colors(out_of_range_colors):
         return out_of_range_colors, out_of_range_colors
 
 
+def _generate_linear_ticks(vmin, vmax, target_n=6):
+    """
+    Generate "nice" linear tick locations within [vmin, vmax] using the
+    1-2-5 rule.
+
+    Ticks are round numbers (e.g. 400, 420, 440), not necessarily equal to
+    vmin/vmax, mirroring the approach used for log/asinh colorbar ticks. If
+    the initial step is too coarse to place at least two ticks in range
+    (e.g. a narrow color_limits window), the step is progressively refined
+    until at least two round-number ticks fit.
+
+    Returns
+    -------
+    ticks : list of float
+    """
+    vmin = float(vmin)
+    vmax = float(vmax)
+    if not np.isfinite(vmin) or not np.isfinite(vmax) or vmax <= vmin:
+        return [vmin, vmax]
+
+    span = vmax - vmin
+    rough_step = span / max(target_n - 1, 1)
+    exp0 = int(np.floor(np.log10(max(rough_step, 1.0e-12))))
+
+    best_ticks = None
+    best_score = None
+    for k in range(0, 20):
+        base = 10.0 ** (exp0 - k)
+        found_at_this_precision = False
+        for m in (1.0, 2.0, 5.0):
+            step = m * base
+            start = np.ceil(vmin / step) * step
+            stop = np.floor(vmax / step) * step
+            ticks = np.arange(start, stop + 0.5 * step, step, dtype=float)
+            ticks = ticks[(ticks >= vmin - 1.0e-9) & (ticks <= vmax + 1.0e-9)]
+            ticks[np.isclose(ticks, 0.0, atol=step * 1.0e-6)] = 0.0
+            if ticks.size >= 2:
+                found_at_this_precision = True
+                score = abs(int(ticks.size) - target_n)
+                if best_score is None or score < best_score:
+                    best_score = score
+                    best_ticks = ticks
+        if found_at_this_precision:
+            break
+
+    if best_ticks is None:
+        return [vmin, vmax]
+
+    ticks = np.unique(np.clip(best_ticks, vmin, vmax))
+    if ticks.size > target_n:
+        idx = np.linspace(0, ticks.size - 1, target_n)
+        idx = np.unique(np.round(idx).astype(int))
+        zero_idx = np.where(ticks == 0.0)[0]
+        if zero_idx.size > 0 and zero_idx[0] not in idx:
+            idx = np.unique(np.append(idx, zero_idx[0]))
+        ticks = ticks[idx]
+    return ticks.tolist()
+
+
 def _create_color_mapper(palette, log_scale, vmin, vmax):
     """
     Create a color mapper for the given palette and scale.
@@ -352,7 +411,7 @@ def _create_color_mapper(palette, log_scale, vmin, vmax):
         ticker = LogTicker()
     else:
         mapper = LinearColorMapper(palette=color_palette, low=vmin, high=vmax)
-        ticker = BasicTicker()
+        ticker = FixedTicker(ticks=_generate_linear_ticks(vmin, vmax))
 
     return mapper, ticker, color_palette
 
@@ -3336,7 +3395,9 @@ def plot_polygon_grid(vertices, values=None, width=800, height=600,
             if conn_log_scale:
                 conn_ticker = LogTicker()
             else:
-                conn_ticker = BasicTicker()
+                conn_ticker = FixedTicker(
+                    ticks=_generate_linear_ticks(connection_mapper.low, connection_mapper.high)
+                )
 
             conn_color_bar = ColorBar(
                 color_mapper=connection_mapper,
