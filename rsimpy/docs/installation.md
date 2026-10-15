@@ -3,25 +3,41 @@
 ## Requirements
 
 ### Python Version
-- Python 3.7 or higher
+- Python 3.10 or higher
 
 ### Dependencies
 
-rsimpy requires the following Python packages:
+Dependencies are declared in `pyproject.toml` and installed automatically by `pip`.
 
-**Core dependencies:**
-- `numpy` - Numerical computing
-- `pandas` - Data manipulation and analysis
-- `xarray` - Multi-dimensional labeled arrays
-- `scipy` - Scientific computing and optimization
+**Core** (always installed):
 
-**Visualization:**
-- `matplotlib` - Static plotting
-- `bokeh` - Interactive visualizations
+| Package | Version | Used for |
+|---|---|---|
+| `numpy` | >= 2.2.3 | Numerical arrays |
+| `pandas` | >= 2.2.3 | Tabular data and CSV export |
+| `xarray` | >= 2025.1.2 | Labeled multi-dimensional results |
+| `scipy` | >= 1.15.2 | Interpolation and numerical routines |
+| `h5py` | >= 3.13.0 | Reading SR3 (HDF5) files |
+| `matplotlib` | >= 3.10.1 | Static plots |
+| `bokeh` | >= 3.0.0 | Interactive plots |
+| `plotly` | >= 5.24.0 | Interactive map plots |
+| `dash` | >= 2.18.0 | Map plot dashboard |
 
-**Optional:**
-- `h5py` - For HDF5 file support (if needed)
-- `netcdf4` - For NetCDF export (if needed)
+**Optional extras:**
+
+| Extra | Packages | Needed for |
+|---|---|---|
+| `dashboard` | `kaleido`, `diskcache`, `pillow` | `rsimpy.common.plot_dashboard` (image/GIF export, background callbacks) |
+| `template` | `pyDOE` | `rsimpy.common.template` (Latin hypercube sampling) |
+| `test` | `pytest` | Running the test suite |
+| `all` | all of the above | Everything |
+
+Install extras with, for example:
+
+```bash
+pip install -e ".[dashboard]"
+pip install -e ".[all]"
+```
 
 ## Installation Methods
 
@@ -98,13 +114,10 @@ pip install -e /path/to/simpython
 
 ```bash
 # Create conda environment
-conda create -n rsimpy python=3.9
+conda create -n rsimpy python=3.12
 
 # Activate
 conda activate rsimpy
-
-# Install dependencies
-conda install numpy pandas scipy matplotlib bokeh xarray
 
 # Install rsimpy
 pip install -e /path/to/simpython
@@ -134,7 +147,7 @@ If you have issues with dependencies:
 pip install --upgrade pip
 
 # Install dependencies manually
-pip install numpy pandas scipy matplotlib bokeh xarray
+pip install -r requirements.txt
 
 # Then install rsimpy
 pip install -e .
@@ -245,11 +258,8 @@ cd simpython
 python -m venv dev_env
 source dev_env/bin/activate  # or dev_env\Scripts\activate on Windows
 
-# Install in development mode with dev dependencies
-pip install -e .
-
-# Install testing tools
-pip install pytest pytest-cov
+# Install in development mode with all optional dependencies
+pip install -e ".[all]"
 
 # Run tests
 python -m pytest tests/

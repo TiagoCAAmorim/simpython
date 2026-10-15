@@ -56,13 +56,35 @@ Comprehensive documentation is available in the `rsimpy/docs/` directory:
 
 ### Installation
 
+Requires Python 3.10+. Packaging is defined in [pyproject.toml](pyproject.toml); dependencies are installed automatically.
+
 ```bash
 # Clone the repository
 git clone https://github.com/TiagoCAAmorim/simpython.git
 cd simpython
 
-# Install in development mode
+# Install in editable (development) mode
 pip install -e .
+
+# Optional: also install test dependencies
+pip install -e ".[test]"
+```
+
+With `-e`, the installed package points to the source folder, so code changes take effect without reinstalling.
+
+#### Using rsimpy from another project
+
+Activate the other project's environment and install by path:
+
+```bash
+pip install -e /path/to/simpython
+```
+
+The package is imported as `rsimpy` (not `simpython`):
+
+```python
+from rsimpy.cmg.sr3reader import Sr3Reader
+from rsimpy.common import plot_utils
 ```
 
 See [Installation Guide](rsimpy/docs/installation.md) for detailed instructions.
@@ -72,13 +94,14 @@ See [Installation Guide](rsimpy/docs/installation.md) for detailed instructions.
 #### Sr3Reader
 
 ```python
+import numpy as np
 from rsimpy.cmg.sr3reader import Sr3Reader
 
 sr3_file_path = "./model.sr3"
 sr3 = Sr3Reader(sr3_file_path)
 
 # Get available elements
-well_ names = sr3.elements.get("well").keys()
+well_names = sr3.elements.get("well").keys()
 group_names = sr3.elements.get("group").keys()
 is_2phi2k = "FRACTURE" in sr3.elements.get("grid").keys()
 
@@ -106,12 +129,12 @@ elapsed_values = elapsed_data["ELAPSED"].sel(element="").values
 
 # Get grid data
 grid_data = sr3.data.get("grid", ["SO","PRES","VISO","Z(CO2)"], "MATRIX", days=10.)
-grid_so = file_read["SO"].sel(day=10.).values
+grid_so = grid_data["SO"].sel(day=10.).values
 
 # Get relative permeability tables
 krel = sr3.krel.get(table_number=2)
 sw = krel['sw'].values
-krow = krel['sw'].values
+krow = krel['krow'].values
 
 # Save data to csv
 grid_data.to_csv('./grid_data.csv')
@@ -133,6 +156,7 @@ axes = sr3.grid.coordinates.plot_planes(all_layers_act[layer_index], marker='')
 #### GridFile
 
 ```python
+from pathlib import Path
 from rsimpy.cmg.gridfile import GridFile
 
 inc_file_path = Path('./grid/POR.inc')
